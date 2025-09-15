@@ -1,0 +1,13 @@
+{
+  "Variables": {
+    "USERS_TABLE": "buffett-chat-api-dev-users",
+    "ANONYMOUS_SESSIONS_TABLE": "buffett-chat-api-dev-anon-sessions",
+    "ENVIRONMENT": "dev",
+    "LOG_LEVEL": "INFO",
+    "PROJECT_NAME": "buffett-chat-api",
+    "CHAT_SESSIONS_TABLE": "buffett-chat-api-dev-chat-sessions",
+    "CONNECTIONS_TABLE": "buffett-chat-api-dev-websocket-connections",
+    "RATE_LIMITS_TABLE": "buffett-chat-api-dev-enhanced-rate-limits",
+    "WEBSOCKET_API_ENDPOINT": "52x14spfai.execute-api.us-east-1.amazonaws.com/dev"
+  }
+}
