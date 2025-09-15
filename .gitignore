@@ -41,6 +41,7 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+package-lock.json
 
 # =============================================================================
 # Build Artifacts and Deployment Packages
@@ -53,6 +54,13 @@ build/
 dist/
 lambda-packages/
 deploy/
+
+# =============================================================================
+# Python Dependencies and Lambda Layers
+# =============================================================================
+**/layers/python/
+**/auth-verify-clean/
+**/auth-verify/
 
 # =============================================================================
 # Terraform State and Configuration
