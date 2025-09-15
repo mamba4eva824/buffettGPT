@@ -1,0 +1,58 @@
+# Copy this file to terraform.tfvars and fill in your values
+
+# Core Configuration
+aws_region = "us-east-1"
+environment = "prod"
+project_name = "buffett-chat-api"
+
+# Network Configuration
+vpc_id = "vpc-xxxxxxxxx"
+private_subnet_ids = ["subnet-xxxxxxxxx", "subnet-yyyyyyyyy"]
+
+# Bedrock Configuration
+bedrock_agent_id = "P82I6ITJGO"
+bedrock_agent_alias = "production"
+bedrock_region = "us-east-1"
+bedrock_knowledge_base_id = "D1ZVQ1VWHU"
+
+# Performance Configuration
+dynamodb_billing_mode = "PAY_PER_REQUEST"
+enable_semantic_optimization = "true"
+semantic_relevance_threshold = "0.7"
+max_chunks_per_query = "3"
+
+# Security Configuration
+enable_deletion_protection = true
+enable_pitr = true
+log_retention_days = 30
+
+# ===============================================================================
+# PROVISIONED CONCURRENCY CONFIGURATION
+# Dev-First Approach: PC disabled by default, enable for testing
+# ===============================================================================
+
+# Current Development Values (PC disabled for cost savings)
+provisioned_concurrency_baseline = 0          # No PC in dev - save costs
+provisioned_concurrency_min = 0               # Min for scaling (when enabled)
+provisioned_concurrency_max = 3               # Max for dev testing
+provisioned_concurrency_utilization_target = 75.0  # Target when scaling
+enable_scheduled_scaling = false              # Keep simple for dev
+enable_pc_alerts = false                      # Reduce CloudWatch noise
+
+# To Test Provisioned Concurrency in Dev (uncomment to enable):
+# provisioned_concurrency_baseline = 1        # Enable 1 PC unit for testing
+# enable_pc_alerts = true                     # Enable monitoring
+
+# Future Production Values (when staging/prod environments are ready):
+# provisioned_concurrency_baseline = 2        # 2 units for prod
+# provisioned_concurrency_min = 1            # Minimum during low traffic  
+# provisioned_concurrency_max = 8            # Maximum during peak traffic
+# enable_scheduled_scaling = true            # Cost optimization
+# enable_pc_alerts = true                    # Full monitoring
+
+# Additional Tags
+additional_tags = {
+  Owner = "platform-team"
+  CostCenter = "engineering"
+  Application = "buffett-chat-api"
+}
