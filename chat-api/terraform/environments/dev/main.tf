@@ -48,6 +48,7 @@ locals {
     LOG_LEVEL                 = "DEBUG"
     CHAT_SESSIONS_TABLE       = module.dynamodb.chat_sessions_table_name
     CHAT_MESSAGES_TABLE       = module.dynamodb.chat_messages_table_name
+    CONVERSATIONS_TABLE       = module.dynamodb.conversations_table_name
     WEBSOCKET_CONNECTIONS_TABLE = module.dynamodb.websocket_connections_table_name
     ENHANCED_RATE_LIMITS_TABLE = module.dynamodb.enhanced_rate_limits_table_name
     KMS_KEY_ID                = module.core.kms_key_id
