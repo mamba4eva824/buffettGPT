@@ -34,6 +34,12 @@ locals {
       memory_size = 512
       description = "Chat message processor with Bedrock integration"
     }
+    conversations_handler = {
+      handler     = "conversations_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Conversations management API handler"
+    }
   }
 }
 

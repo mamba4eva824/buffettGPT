@@ -57,8 +57,8 @@ resource "aws_lambda_function" "auth_callback" {
   timeout       = 30
   memory_size   = 256
 
-  filename         = "../../../lambda-auth/auth-callback/auth_callback.zip"
-  source_code_hash = filebase64sha256("../../../lambda-auth/auth-callback/auth_callback.zip")
+  filename         = "../../../../lambda-auth/auth-callback/auth_callback.zip"
+  source_code_hash = filebase64sha256("../../../../lambda-auth/auth-callback/auth_callback.zip")
 
   layers = [aws_lambda_layer_version.auth_dependencies.arn]
 

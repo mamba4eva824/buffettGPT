@@ -33,7 +33,7 @@ variable "bedrock_region" {
 variable "enable_authentication" {
   description = "Enable authentication module"
   type        = bool
-  default     = true
+  default     = false  # Temporarily disabled for conversations table deployment
 }
 
 variable "google_client_id" {

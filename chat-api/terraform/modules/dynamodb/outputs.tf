@@ -44,6 +44,17 @@ output "enhanced_rate_limits_table_arn" {
   value       = aws_dynamodb_table.enhanced_rate_limits.arn
 }
 
+# Conversations Table
+output "conversations_table_name" {
+  description = "Name of the conversations table"
+  value       = aws_dynamodb_table.conversations.name
+}
+
+output "conversations_table_arn" {
+  description = "ARN of the conversations table"
+  value       = aws_dynamodb_table.conversations.arn
+}
+
 # Anonymous Sessions Table (conditional)
 output "anonymous_sessions_table_name" {
   description = "Name of the anonymous sessions table"
@@ -63,6 +74,7 @@ output "table_summary" {
       chat_sessions        = aws_dynamodb_table.chat_sessions.name
       chat_messages        = aws_dynamodb_table.chat_messages.name
       websocket_connections = aws_dynamodb_table.websocket_connections.name
+      conversations        = aws_dynamodb_table.conversations.name
     }
     rate_limiting = {
       enhanced_rate_limits = aws_dynamodb_table.enhanced_rate_limits.name
