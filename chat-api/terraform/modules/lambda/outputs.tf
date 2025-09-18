@@ -21,27 +21,32 @@ output "function_invoke_arns" {
 # Individual Function Outputs for Easy Reference
 output "chat_http_handler_arn" {
   description = "ARN of the chat HTTP handler function"
-  value       = aws_lambda_function.functions["chat_http_handler"].arn
+  value       = try(aws_lambda_function.functions["chat_http_handler"].arn, null)
 }
 
 output "websocket_connect_arn" {
   description = "ARN of the WebSocket connect function"
-  value       = aws_lambda_function.functions["websocket_connect"].arn
+  value       = try(aws_lambda_function.functions["websocket_connect"].arn, null)
 }
 
 output "websocket_disconnect_arn" {
   description = "ARN of the WebSocket disconnect function"
-  value       = aws_lambda_function.functions["websocket_disconnect"].arn
+  value       = try(aws_lambda_function.functions["websocket_disconnect"].arn, null)
 }
 
 output "websocket_message_arn" {
   description = "ARN of the WebSocket message function"
-  value       = aws_lambda_function.functions["websocket_message"].arn
+  value       = try(aws_lambda_function.functions["websocket_message"].arn, null)
 }
 
 output "chat_processor_arn" {
   description = "ARN of the chat processor function"
-  value       = aws_lambda_function.functions["chat_processor"].arn
+  value       = try(aws_lambda_function.functions["chat_processor"].arn, null)
+}
+
+output "conversations_handler_arn" {
+  description = "ARN of the conversations handler function"
+  value       = try(aws_lambda_function.functions["conversations_handler"].arn, null)
 }
 
 # Log Groups

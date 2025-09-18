@@ -119,7 +119,7 @@ module "lambda" {
   project_name              = local.project_name
   environment               = local.environment
   lambda_role_arn           = module.core.lambda_role_arn
-  lambda_package_path       = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api"
+  lambda_package_path       = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build"
   runtime                   = "python3.11"
   common_env_vars           = local.lambda_common_env_vars
   function_env_vars         = local.lambda_function_env_vars
@@ -152,7 +152,9 @@ module "api_gateway" {
   # API configuration
   enable_cors           = true
   enable_authorization  = var.enable_authentication
-  authorizer_function_arn = null  # Auth disabled for dev
+  authorizer_function_arn = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
+  authorizer_function_name = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
+  authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
   auth_callback_function_arn = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
 
   common_tags = local.common_tags

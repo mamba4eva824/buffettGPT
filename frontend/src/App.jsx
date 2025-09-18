@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw } from "lucide-react";
+import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen } from "lucide-react";
 import { AuthProvider, AuthButton, useAuth } from "./auth.jsx";
+import { useConversations } from "./hooks/useConversations.js";
+import { ConversationList } from "./components/ConversationList.jsx";
+import { loadConversationHistory } from "./api/conversationsApi.js";
 
 /*************************
  * Environment Configuration *
@@ -42,7 +45,7 @@ function prettyTime(ts) { try { return new Date(ts).toLocaleTimeString(); } catc
 /************************
  * useWebSocket hook     *
  ************************/
-function useAwsWebSocket({ wsUrl, userId, token }) {
+function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversations }) {
   const socketRef = useRef(null);
   const [status, setStatus] = useState("disconnected");
   const [sessionId, setSessionId] = useState("");
@@ -71,6 +74,11 @@ function useAwsWebSocket({ wsUrl, userId, token }) {
     // Add token if available (for WebSocket authorization)
     if (token) {
       params.append('token', token);
+    }
+
+    // Add conversation_id if available (to continue existing conversation)
+    if (conversationId) {
+      params.append('conversation_id', conversationId);
     }
 
     // Append parameters if any exist
@@ -113,7 +121,9 @@ function useAwsWebSocket({ wsUrl, userId, token }) {
           console.log('📨 Received WebSocket message:', data);
         }
         if (data.type === "welcome") {
-          setSessionId(data.session_id || "");
+          // Use conversation_id as session_id if available, otherwise fall back to session_id
+          const effectiveSessionId = data.conversation_id || data.session_id || "";
+          setSessionId(effectiveSessionId);
           setMessages((m) => [
             ...m,
             { id: `sys-${uid8()}`, type: "system", content: data.message || "Welcome!", timestamp: data.timestamp || nowIso() },
@@ -157,21 +167,26 @@ function useAwsWebSocket({ wsUrl, userId, token }) {
             }
             return [
               ...m,
-              { 
-                id: messageId, 
-                type: "assistant", 
-                content: messageContent, 
-                timestamp: data.timestamp || nowIso(), 
-                meta: { processingTime: processingTime } 
+              {
+                id: messageId,
+                type: "assistant",
+                content: messageContent,
+                timestamp: data.timestamp || nowIso(),
+                meta: { processingTime: processingTime }
               },
             ];
           });
+
+          // Refresh conversations to update inbox ordering
+          if (fetchConversations) {
+            fetchConversations();
+          }
         } else if (data.type === "error") {
           setMessages((m) => [ ...m, { id: `err-${uid8()}`, type: "system", content: data.message || "Error.", timestamp: data.timestamp || nowIso() } ]);
         }
       } catch (e) { /* ignore */ }
     };
-  }, [wsUrl, userId, token, pendingAssistantId]);
+  }, [wsUrl, userId, token, conversationId, pendingAssistantId, fetchConversations]);
 
   const disconnect = useCallback(() => {
     setPendingAssistantId(null);
@@ -333,6 +348,19 @@ function deriveTitle(msgs) {
 function ChatApp() {
   // Get authentication state
   const { user, isAuthenticated, token } = useAuth();
+
+  // Use conversations hook for managing chat history
+  const {
+    conversations,
+    loading: conversationsLoading,
+    selectedConversation,
+    setSelectedConversation,
+    createConversation,
+    updateConversation,
+    archiveConversation,
+    deleteConversation,
+    fetchConversations
+  } = useConversations({ token, userId: user?.id });
   
   // Log environment config only once on component mount
   useEffect(() => {
@@ -344,6 +372,15 @@ function ChatApp() {
   // Settings - Use environment variables as defaults, allow localStorage override
   const [wsUrl, setWsUrl] = useState(() => {
     const saved = getLS(LS_KEYS.wsUrl);
+    // Migration: Clear old URLs that don't match current environment
+    if (saved && saved !== ENV_CONFIG.WEBSOCKET_URL) {
+      localStorage.removeItem(LS_KEYS.wsUrl);
+      localStorage.removeItem(LS_KEYS.restUrl); // Also clear REST URL for consistency
+      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
+        console.log('🧹 Cleared old URLs from localStorage for migration');
+      }
+      return ENV_CONFIG.WEBSOCKET_URL;
+    }
     const url = saved || ENV_CONFIG.WEBSOCKET_URL;
     if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
       console.log('🔗 WebSocket URL:', url, saved ? '(from localStorage)' : '(from env)');
@@ -374,7 +411,13 @@ function ChatApp() {
     return null;
   }, [isAuthenticated, user?.id]);
 
-  const { status, sessionId, messages, connect, disconnect, sendMessage, setMessages } = useAwsWebSocket({ wsUrl, userId, token });
+  const { status, sessionId, messages, connect, disconnect, sendMessage, setMessages } = useAwsWebSocket({
+    wsUrl,
+    userId,
+    token,
+    conversationId: selectedConversation?.conversation_id,
+    fetchConversations
+  });
 
   // Local sidebar state (simple client-side sessions list for now)
   const [sessions, setSessions] = useState(() => {
@@ -387,6 +430,9 @@ function ChatApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyLoadId, setHistoryLoadId] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [activeTab, setActiveTab] = useState('conversations'); // 'conversations' or 'local'
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Persist settings
   useEffect(() => { setLS(LS_KEYS.wsUrl, wsUrl); }, [wsUrl]);
@@ -394,18 +440,43 @@ function ChatApp() {
   useEffect(() => { setLS(LS_KEYS.userName, userName); }, [userName]);
 
   // Auto connect when WS URL is present
-  useEffect(() => { 
+  useEffect(() => {
     if (wsUrl) {
       if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
         console.log('🔄 Auto-connecting to WebSocket...');
       }
-      connect(); 
+      connect();
     }
   }, [wsUrl, connect]);
 
-  // Track sessions list
+  // Reconnect WebSocket when authentication state changes
+  useEffect(() => {
+    if (wsUrl && isAuthenticated && token) {
+      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
+        console.log('🔐 Reconnecting WebSocket after authentication...');
+      }
+      disconnect();
+      // Short delay to ensure clean reconnection
+      setTimeout(() => connect(), 200);
+    }
+  }, [isAuthenticated, token, wsUrl, connect, disconnect]);
+
+  // Reconnect WebSocket when selected conversation changes
+  useEffect(() => {
+    if (wsUrl && selectedConversation) {
+      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
+        console.log('🔄 Reconnecting WebSocket for conversation:', selectedConversation.conversation_id);
+      }
+      disconnect();
+      setTimeout(() => connect(), 100);
+    }
+  }, [selectedConversation?.conversation_id, wsUrl, connect, disconnect]);
+
+  // Track sessions list and update conversation if authenticated
   useEffect(() => {
     if (!sessionId) return;
+
+    // Update local sessions for fallback
     setSessions((prev) => {
       const existing = prev.find((s) => s.id === sessionId);
       const title = deriveTitle(messages);
@@ -415,29 +486,66 @@ function ChatApp() {
       setLS(LS_KEYS.sessions, JSON.stringify(next));
       return next;
     });
-  }, [sessionId, messages]);
+
+    // Update conversation in backend if authenticated and has selected conversation
+    if (isAuthenticated && selectedConversation && messages.length > 0) {
+      const title = deriveTitle(messages);
+      if (title !== selectedConversation.title) {
+        updateConversation(selectedConversation.conversation_id, {
+          title,
+          message_count: messages.length,
+          updated_at: Math.floor(Date.now() / 1000)
+        });
+      }
+    }
+  }, [sessionId, messages, isAuthenticated, selectedConversation, updateConversation]);
 
   const doSend = useCallback(async () => {
     if (!input.trim()) return;
-    
+
     const messageText = input.trim();
     setInput("");
-    
+
+    // Create conversation if needed (for authenticated users)
+    if (isAuthenticated && !selectedConversation && messages.length === 0) {
+      const title = messageText.slice(0, 50) + (messageText.length > 50 ? '...' : '');
+      const newConv = await createConversation(title);
+      if (newConv) {
+        setSelectedConversation(newConv);
+        // useEffect will handle WebSocket reconnection with the new conversation_id
+        // Wait a moment for the WebSocket to reconnect before sending
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    // For authenticated users, wait for WebSocket connection if it's in progress
+    if (isAuthenticated && token && status === "connecting") {
+      setIsConnecting(true);
+      // Wait up to 3 seconds for connection
+      let attempts = 0;
+      while (status === "connecting" && attempts < 15) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        attempts++;
+      }
+      setIsConnecting(false);
+    }
+
     // Check if we should use REST API (authenticated and has REST URL)
     if (isAuthenticated && token && restUrl && status !== "connected") {
       // Add user message immediately
-      const userMsg = { 
-        id: `usr-${uid8()}`, 
-        type: "user", 
-        content: messageText, 
-        timestamp: nowIso() 
+      const userMsg = {
+        id: `usr-${uid8()}`,
+        type: "user",
+        content: messageText,
+        timestamp: nowIso()
       };
       setMessages((m) => [...m, userMsg]);
-      
+
       try {
-        // Send via REST API
-        const response = await sendChatMessage(restUrl, messageText, sessionId || uid8(), token);
-        
+        // Send via REST API - use conversation_id if available, otherwise sessionId
+        const effectiveSessionId = selectedConversation?.conversation_id || sessionId || uid8();
+        const response = await sendChatMessage(restUrl, messageText, effectiveSessionId, token);
+
         // Add AI response
         const aiMsg = {
           id: response.ai_message_id || `ai-${uid8()}`,
@@ -447,7 +555,12 @@ function ChatApp() {
           meta: { processingTime: response.processing_time }
         };
         setMessages((m) => [...m, aiMsg]);
-        
+
+        // Refresh conversations to update inbox ordering
+        if (fetchConversations) {
+          fetchConversations();
+        }
+
       } catch (error) {
         console.error('REST API error:', error);
         // Add error message
@@ -463,14 +576,29 @@ function ChatApp() {
       // Use WebSocket or demo mode
       sendMessage(messageText);
     }
-  }, [input, sendMessage, isAuthenticated, token, restUrl, status, sessionId, setMessages]);
+  }, [input, sendMessage, isAuthenticated, token, restUrl, status, sessionId, setMessages, selectedConversation, createConversation, fetchConversations]);
 
-  const newChat = useCallback(() => {
-    // New WebSocket connection == new backend session.
-    disconnect();
+  const newChat = useCallback(async () => {
+    // Clear messages first
     setMessages([]);
+
+    // If authenticated, create a new conversation in the backend
+    if (isAuthenticated && token) {
+      const title = `Chat ${new Date().toLocaleDateString()}`;
+      const newConv = await createConversation(title);
+      if (newConv) {
+        setSelectedConversation(newConv);
+        // Don't manually reconnect here - let useEffect handle it
+        return; // Exit early, conversation change will trigger reconnect
+      }
+    }
+
+    // For non-authenticated users or if conversation creation failed
+    // Clear selection and start fresh session
+    setSelectedConversation(null);
+    disconnect();
     setTimeout(() => connect(), 50);
-  }, [disconnect, connect, setMessages]);
+  }, [disconnect, connect, setMessages, setSelectedConversation, isAuthenticated, token, createConversation]);
 
   const removeSession = useCallback((id) => {
     setSessions((prev) => {
@@ -479,6 +607,36 @@ function ChatApp() {
       return next;
     });
   }, []);
+
+  // Load conversation messages when switching conversations
+  const loadConversationMessages = useCallback(async (conversationId) => {
+    if (!token || !conversationId) return;
+
+    try {
+      setLoadingHistory(true);
+      const { messages } = await loadConversationHistory(conversationId, token);
+
+      // Format messages for display
+      const formattedMessages = messages.map((m) => ({
+        id: m.message_id || uid8(),
+        type: m.message_type || "user",
+        content: m.content || "",
+        timestamp: m.timestamp || nowIso(),
+        meta: {
+          tokens_used: m.tokens_used,
+          model: m.model,
+          processingTime: m.processing_time_ms
+        }
+      }));
+
+      setMessages(formattedMessages);
+    } catch (error) {
+      console.error('Error loading conversation messages:', error);
+      // Don't alert on error, just log it
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [token, setMessages]);
 
   const loadHistory = useCallback(async () => {
     if (!restUrl) return;
@@ -489,7 +647,7 @@ function ChatApp() {
     try {
       setLoadingHistory(true);
       const data = await fetchHistory(restUrl, historyLoadId, token, 200);
-      
+
       // Handle different response formats from your user-history lambda
       let items = [];
       if (historyLoadId && data?.messages) {
@@ -512,7 +670,7 @@ function ChatApp() {
           }));
         }
       }
-      
+
       setMessages(items);
     } catch (e) {
       alert(e.message || "Failed to load history");
@@ -553,24 +711,99 @@ function ChatApp() {
               <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"/>
             </div>
 
-            <div className="mt-6 text-xs uppercase tracking-wide text-slate-400">Your conversations</div>
-            <div className="mt-2 space-y-1 overflow-y-auto pr-1" style={{maxHeight: "calc(100vh - 280px)"}}>
-              {sessions.filter(s => s.title?.toLowerCase().includes(search.toLowerCase())).map((s) => (
-                <div key={s.id} className="group flex items-center justify-between rounded-lg px-2 py-2 hover:bg-slate-50">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <MessageSquare className="h-4 w-4 shrink-0 text-slate-400"/>
-                    <div className="min-w-0">
-                      <div className="truncate text-sm text-slate-700">{s.title || s.id}</div>
-                      <div className="truncate text-[11px] text-slate-400">{new Date(s.updatedAt || s.createdAt).toLocaleString()}</div>
+            {/* Conversation Tabs */}
+            {isAuthenticated && (
+              <div className="mt-4 flex gap-1 rounded-lg bg-slate-100 p-1">
+                <button
+                  onClick={() => setActiveTab('conversations')}
+                  className={classNames(
+                    "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                    activeTab === 'conversations'
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  Cloud
+                </button>
+                <button
+                  onClick={() => setActiveTab('local')}
+                  className={classNames(
+                    "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+                    activeTab === 'local'
+                      ? "bg-white text-slate-900 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  Local
+                </button>
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-between">
+              <div className="text-xs uppercase tracking-wide text-slate-400">
+                {activeTab === 'conversations' && isAuthenticated ? 'Cloud Conversations' : 'Local Sessions'}
+              </div>
+              {activeTab === 'conversations' && isAuthenticated && (
+                <button
+                  onClick={() => setShowArchived(!showArchived)}
+                  className={classNames(
+                    "rounded-md p-1 text-xs",
+                    showArchived
+                      ? "text-indigo-600 hover:bg-indigo-50"
+                      : "text-slate-400 hover:bg-slate-50"
+                  )}
+                  title={showArchived ? "Show active" : "Show archived"}
+                >
+                  {showArchived ? <FolderOpen className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                </button>
+              )}
+            </div>
+
+            <div className="mt-2 space-y-1 overflow-y-auto pr-1" style={{maxHeight: "calc(100vh - 320px)"}}>
+              {/* Show conversation list for authenticated users */}
+              {activeTab === 'conversations' && isAuthenticated ? (
+                <ConversationList
+                  conversations={conversations.filter(c =>
+                    c.title?.toLowerCase().includes(search.toLowerCase())
+                  )}
+                  selectedConversation={selectedConversation}
+                  onSelectConversation={async (conv) => {
+                    setSelectedConversation(conv);
+                    // Load messages for this conversation
+                    if (conv.conversation_id) {
+                      await loadConversationMessages(conv.conversation_id);
+                      // useEffect will handle WebSocket reconnection with conversation_id
+                    }
+                  }}
+                  onUpdateConversation={updateConversation}
+                  onArchiveConversation={archiveConversation}
+                  onDeleteConversation={deleteConversation}
+                  showArchived={showArchived}
+                  loading={conversationsLoading}
+                />
+              ) : (
+                /* Show local sessions for non-authenticated users or local tab */
+                <>
+                  {sessions.filter(s => s.title?.toLowerCase().includes(search.toLowerCase())).map((s) => (
+                    <div key={s.id} className="group flex items-center justify-between rounded-lg px-2 py-2 hover:bg-slate-50">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-slate-400"/>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm text-slate-700">{s.title || s.id}</div>
+                          <div className="truncate text-[11px] text-slate-400">{new Date(s.updatedAt || s.createdAt).toLocaleString()}</div>
+                        </div>
+                      </div>
+                      <button onClick={()=>removeSession(s.id)} className="invisible ml-2 rounded-md p-1 text-slate-300 hover:bg-slate-100 hover:text-slate-600 group-hover:visible" title="Remove">
+                        <Trash2 className="h-4 w-4"/>
+                      </button>
                     </div>
-                  </div>
-                  <button onClick={()=>removeSession(s.id)} className="invisible ml-2 rounded-md p-1 text-slate-300 hover:bg-slate-100 hover:text-slate-600 group-hover:visible" title="Remove">
-                    <Trash2 className="h-4 w-4"/>
-                  </button>
-                </div>
-              ))}
-              {sessions.length === 0 && (
-                <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center text-xs text-slate-500">No conversations yet</div>
+                  ))}
+                  {sessions.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-slate-200 p-3 text-center text-xs text-slate-500">
+                      {!isAuthenticated ? "Sign in to save conversations" : "No local sessions"}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -584,9 +817,13 @@ function ChatApp() {
               <div className="flex items-center gap-3">
                 <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">{ENV_CONFIG.APP_NAME}</div>
                 {connectionBadge}
-                {sessionId && (
+                {selectedConversation ? (
+                  <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs text-indigo-600">
+                    {selectedConversation.title}
+                  </div>
+                ) : sessionId ? (
                   <div className="rounded-full bg-slate-50 px-3 py-1 text-xs text-slate-500">Session: {sessionId.slice(0,8)}…</div>
-                )}
+                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 {!wsUrl && (
@@ -627,15 +864,15 @@ function ChatApp() {
               <div className="mx-auto flex max-w-3xl items-end gap-2">
                 <textarea
                   rows={1}
-                  placeholder={status!=="connected"?"Try demo mode! Ask anything, or connect in Settings for real AI…":"Ask Warren Buffett about investing and business..."}
+                  placeholder={isConnecting ? "Connecting..." : status!=="connected"?"Try demo mode! Ask anything, or connect in Settings for real AI…":"Ask Warren Buffett about investing and business..."}
                   value={input}
                   onChange={(e)=>setInput(e.target.value)}
                   onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); doSend(); } }}
                   className="min-h-[44px] max-h-40 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                  disabled={false}
+                  disabled={isConnecting}
                 />
-                <button onClick={doSend} disabled={!input.trim()} className={classNames("inline-flex h-[44px] items-center gap-2 rounded-2xl px-4 text-sm font-medium shadow-sm", !input.trim()?"bg-slate-200 text-slate-500":"bg-indigo-600 text-white hover:bg-indigo-700") }>
-                  <Send className="h-4 w-4"/>
+                <button onClick={doSend} disabled={!input.trim() || isConnecting} className={classNames("inline-flex h-[44px] items-center gap-2 rounded-2xl px-4 text-sm font-medium shadow-sm", (!input.trim() || isConnecting)?"bg-slate-200 text-slate-500":"bg-indigo-600 text-white hover:bg-indigo-700") }>
+                  {isConnecting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Send className="h-4 w-4"/>}
                 </button>
               </div>
               <div className="mx-auto mt-2 flex max-w-3xl items-center justify-between text-xs text-slate-400">

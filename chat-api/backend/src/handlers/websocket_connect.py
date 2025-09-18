@@ -58,22 +58,46 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Extract query parameters for session info
         query_params = event.get('queryStringParameters') or {}
         session_id = query_params.get('session_id')
+        conversation_id = query_params.get('conversation_id')
+
+        # If conversation_id is provided, use it as session_id for consistency
+        # This links WebSocket sessions to persistent conversations
+        if conversation_id:
+            session_id = conversation_id
+            logger.info(f"Using conversation_id as session_id: {conversation_id}", extra={
+                'connection_id': connection_id,
+                'conversation_id': conversation_id
+            })
 
         # Get authenticated user ID from authorizer context (if available)
         user_id = None
         user_type = 'anonymous'
 
+        # Check authorizer context first (from JWT authorizer)
         if 'requestContext' in event and 'authorizer' in event['requestContext']:
-            # WebSocket connections with JWT authorization will have user_id in context
-            user_id = event['requestContext']['authorizer'].get('user_id')
-            if user_id:
-                user_type = 'authenticated'
+            authorizer = event['requestContext']['authorizer']
+
+            # For Lambda authorizer, user_id is in the context
+            if isinstance(authorizer, dict):
+                user_id = authorizer.get('user_id')
+                if user_id:
+                    user_type = 'authenticated'
+                    logger.info(f"Authenticated user from authorizer: {user_id}", extra={
+                        'connection_id': connection_id,
+                        'user_id': user_id,
+                        'authorizer_type': 'jwt_lambda'
+                    })
 
         # Fallback to query parameter for demo/testing mode (when no authorization)
         if not user_id:
             user_id = query_params.get('user_id')
             if user_id and not user_id.startswith('anonymous_'):
                 user_type = 'authenticated'
+                logger.info(f"User from query parameter: {user_id}", extra={
+                    'connection_id': connection_id,
+                    'user_id': user_id,
+                    'auth_method': 'query_param'
+                })
 
         # If still no user_id, generate device fingerprint-based ID
         if not user_id:
@@ -154,11 +178,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'session_updated': session_update_result.get('updated', False)
         })
 
-        # Prepare response with user type information
+        # Prepare welcome message for WebSocket client
         response_body = {
+            "type": "welcome",
             "message": "Connected successfully",
             "connection_id": connection_id,
             "session_id": session_id,
+            "conversation_id": conversation_id if conversation_id else session_id,
             "user_id": user_id,
             "user_type": user_type,
             "features": {

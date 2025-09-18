@@ -22,9 +22,10 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from decimal import Decimal
+from utils.conversation_updater import update_conversation_timestamp
 
 # Import rate limiting functionality
-from rate_limiter import rate_limit_decorator, check_rate_limit_manual
+from utils.rate_limiter import rate_limit_decorator, check_rate_limit_manual
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -208,6 +209,10 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
     try:
         messages_table.put_item(Item=convert_floats_to_decimals(user_message_record))
         logger.info(f"Successfully saved user message: {message_id} for session: {session_id}, user: {user_id}")
+
+        # Update conversation timestamp for inbox sorting
+        update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+
     except Exception as e:
         logger.error(f"Failed to save user message to DynamoDB: {str(e)}", exc_info=True)
         logger.error(f"Message record that failed: {json.dumps(user_message_record, default=str)}")
@@ -277,6 +282,10 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
         try:
             messages_table.put_item(Item=convert_floats_to_decimals(ai_message_record))
             logger.info(f"Successfully saved AI response: {ai_message_id} for session: {session_id}, user: {user_id}")
+
+            # Update conversation timestamp for inbox sorting
+            update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+
         except Exception as save_error:
             logger.error(f"Failed to save AI message to DynamoDB: {str(save_error)}", exc_info=True)
             logger.error(f"AI message record that failed: {json.dumps(ai_message_record, default=str)}")
@@ -320,6 +329,10 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
         try:
             messages_table.put_item(Item=convert_floats_to_decimals(error_message_record))
             logger.info(f"Saved error response message: {ai_message_id}")
+
+            # Update conversation timestamp for inbox sorting
+            update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+
         except Exception as save_error:
             logger.error(f"Failed to save error message to DynamoDB: {str(save_error)}")
         
