@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from decimal import Decimal
 from botocore.exceptions import ClientError
+from utils.conversation_updater import update_conversation_timestamp
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -217,8 +218,8 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
         
         ai_response = bedrock_result['response']
         ai_message_id = str(uuid.uuid4())
-        
-        # Store AI response in DynamoDB
+
+        # Store AI response in DynamoDB with token tracking
         current_time = datetime.utcnow()
         ai_message_record = {
             'session_id': session_id,
@@ -231,12 +232,26 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
             'status': 'completed',
             'parent_message_id': message_id,
             'processing_time_ms': bedrock_result.get('processing_time_ms'),
+            'tokens_used': bedrock_result.get('tokens_used', 0),
+            'model': MODEL_ID,
+            'conversation_id': session_id,  # Using session_id as conversation_id for now
             'environment': ENVIRONMENT,
             'project': PROJECT_NAME
         }
+
+        # Add detailed token metadata if available
+        if 'metadata' in bedrock_result:
+            metadata = bedrock_result['metadata']
+            if 'input_tokens' in metadata:
+                ai_message_record['input_tokens'] = metadata['input_tokens']
+            if 'output_tokens' in metadata:
+                ai_message_record['output_tokens'] = metadata['output_tokens']
         
         messages_table.put_item(Item=convert_floats_to_decimals(ai_message_record))
-        
+
+        # Update conversation timestamp for inbox sorting
+        update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+
         # Send response via WebSocket if connection is active
         if connection_active:
             # Stop typing indicator
@@ -319,19 +334,20 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
 
 def call_bedrock_optimized(user_message: str, session_id: str) -> Dict[str, Any]:
     """
-    Optimized Bedrock call using semantic retrieval + direct model invocation
-    
+    Optimized Bedrock call using semantic retrieval + direct model invocation with token tracking
+
     Provides 60-70% token cost reduction by:
     1. Retrieving only top relevant chunks from Pinecone Knowledge Base
-    2. Building focused prompt with limited context  
+    2. Building focused prompt with limited context
     3. Calling Claude directly instead of full agent pipeline
-    
+    4. Tracks actual token usage from model response
+
     Args:
         user_message: User's message
         session_id: Chat session ID
-    
+
     Returns:
-        Dictionary with success status, response, and processing time
+        Dictionary with success status, response, processing time, and token usage
     """
     
     start_time = time.time()
@@ -401,15 +417,15 @@ My response:"""
 
 Please provide a brief response explaining that this specific question isn't covered in my letters, but offer a general investment principle if relevant. Keep it short and direct."""
 
-        # STEP 4: Direct Claude invocation (bypassing agent overhead)
-        model_response = bedrock_runtime.invoke_model(
+        # STEP 4: Direct Claude invocation with streaming for token tracking
+        model_response = bedrock_runtime.invoke_model_with_response_stream(
             modelId=MODEL_ID,
             body=json.dumps({
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": 800,  # Controlled response length
                 "messages": [
                     {
-                        "role": "user", 
+                        "role": "user",
                         "content": prompt
                     }
                 ],
@@ -417,29 +433,68 @@ Please provide a brief response explaining that this specific question isn't cov
                 "system": "You are Warren Buffett providing investment wisdom based on your shareholder letters."
             })
         )
-        
-        response_body = json.loads(model_response['body'].read())
-        ai_response = response_body['content'][0]['text']
+
+        # Process the streaming response
+        ai_response = ""
+        input_tokens = 0
+        output_tokens = 0
+
+        stream = model_response.get('body', [])
+        for event in stream:
+            chunk = json.loads(event['chunk']['bytes'].decode('utf-8'))
+
+            if chunk['type'] == 'message_start':
+                # Extract usage metrics from message_start
+                if 'message' in chunk and 'usage' in chunk['message']:
+                    input_tokens = chunk['message']['usage'].get('input_tokens', 0)
+
+            elif chunk['type'] == 'content_block_delta':
+                # Accumulate response text
+                if 'delta' in chunk and 'text' in chunk['delta']:
+                    ai_response += chunk['delta']['text']
+
+            elif chunk['type'] == 'message_delta':
+                # Extract final token counts
+                if 'usage' in chunk:
+                    output_tokens = chunk['usage'].get('output_tokens', 0)
+
+            elif chunk['type'] == 'message_stop':
+                # Final metrics might be here
+                if 'amazon-bedrock-invocationMetrics' in chunk:
+                    metrics = chunk['amazon-bedrock-invocationMetrics']
+                    if 'inputTokenCount' in metrics:
+                        input_tokens = metrics['inputTokenCount']
+                    if 'outputTokenCount' in metrics:
+                        output_tokens = metrics['outputTokenCount']
+
+        total_tokens = input_tokens + output_tokens
         
         processing_time = (time.time() - start_time) * 1000
-        
-        # Calculate estimated token savings
+
+        # Calculate token savings using actual metrics
         estimated_original_tokens = 2500  # Typical agent call with full context
-        estimated_optimized_tokens = len(prompt.split()) * 1.3  # Our focused prompt
-        token_savings_percent = ((estimated_original_tokens - estimated_optimized_tokens) / estimated_original_tokens) * 100
-        
-        logger.info(f"✅ Optimized call completed in {processing_time:.0f}ms, estimated {token_savings_percent:.1f}% token savings")
-        
+        actual_tokens_used = total_tokens
+        token_savings_percent = ((estimated_original_tokens - actual_tokens_used) / estimated_original_tokens) * 100 if actual_tokens_used > 0 else 0
+
+        logger.info(f"✅ Optimized call completed in {processing_time:.0f}ms, {token_savings_percent:.1f}% token savings", extra={
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': total_tokens
+        })
+
         return {
             'success': True,
             'response': ai_response,
             'processing_time_ms': processing_time,
+            'tokens_used': total_tokens,
             'metadata': {
                 'method': 'optimized_retrieval',
                 'chunks_used': len(relevant_chunks),
                 'relevance_scores': [c['score'] for c in relevant_chunks],
-                'estimated_token_savings_percent': round(token_savings_percent, 1),
-                'prompt_tokens_approx': len(prompt.split()),
+                'token_savings_percent': round(token_savings_percent, 1),
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'total_tokens': total_tokens,
                 'sources': [c['source'] for c in relevant_chunks]
             }
         }
@@ -462,11 +517,13 @@ Please provide a brief response explaining that this specific question isn't cov
 
 def call_bedrock_original(user_message: str, session_id: str) -> Dict[str, Any]:
     """
-    Original approach using full agent pipeline (fallback method)
+    Original approach using full agent pipeline with token tracking
     """
-    
+
     start_time = time.time()
-    
+    total_input_tokens = 0
+    total_output_tokens = 0
+
     try:
         logger.debug(f"Calling Bedrock agent (original method)", extra={
             'agent_id': BEDROCK_AGENT_ID,
@@ -474,14 +531,14 @@ def call_bedrock_original(user_message: str, session_id: str) -> Dict[str, Any]:
             'session_id': session_id,
             'message_length': len(user_message)
         })
-        
+
         response = bedrock_client.invoke_agent(
             agentId=BEDROCK_AGENT_ID,
             agentAliasId=BEDROCK_AGENT_ALIAS,
             sessionId=session_id,
             inputText=user_message
         )
-        
+
         # Extract response from Bedrock event stream
         ai_response = ""
         for event in response.get('completion', []):
@@ -490,39 +547,58 @@ def call_bedrock_original(user_message: str, session_id: str) -> Dict[str, Any]:
                 if 'bytes' in chunk_data:
                     chunk_text = chunk_data['bytes'].decode('utf-8')
                     ai_response += chunk_text
-        
+                # Check for attribution data which may contain token info
+                if 'attribution' in chunk_data:
+                    logger.debug(f"Attribution data: {chunk_data['attribution']}")
+
+            # InvokeAgent doesn't directly provide token metrics
+            # We'll estimate based on character count for now
+
         if not ai_response.strip():
             raise Exception("Empty response from Bedrock agent")
-        
+
+        # Estimate token usage (rough approximation: 1 token ≈ 4 characters)
+        # This is a fallback when using invoke_agent which doesn't provide token metrics
+        estimated_input_tokens = len(user_message) // 4
+        estimated_output_tokens = len(ai_response) // 4
+
         # Add some Warren Buffett branding if this is the Buffett advisor
         if 'buffett' in PROJECT_NAME.lower():
             ai_response = format_buffett_response(ai_response)
-        
+
         processing_time = (time.time() - start_time) * 1000
-        
+
         logger.info(f"Original agent response completed", extra={
             'session_id': session_id,
             'processing_time_ms': processing_time,
-            'response_length': len(ai_response)
+            'response_length': len(ai_response),
+            'estimated_input_tokens': estimated_input_tokens,
+            'estimated_output_tokens': estimated_output_tokens
         })
-        
+
         return {
             'success': True,
             'response': ai_response,
             'processing_time_ms': processing_time,
-            'metadata': {'method': 'original_agent'}
+            'tokens_used': estimated_input_tokens + estimated_output_tokens,
+            'metadata': {
+                'method': 'original_agent',
+                'input_tokens': estimated_input_tokens,
+                'output_tokens': estimated_output_tokens,
+                'token_calculation': 'estimated'
+            }
         }
-        
+
     except Exception as e:
         error_msg = str(e)
         processing_time = (time.time() - start_time) * 1000
-        
+
         logger.error(f"Original Bedrock agent call failed", extra={
             'session_id': session_id,
             'error': error_msg,
             'processing_time_ms': processing_time
         }, exc_info=True)
-        
+
         return {
             'success': False,
             'error': error_msg,

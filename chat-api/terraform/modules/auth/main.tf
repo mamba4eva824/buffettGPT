@@ -1,7 +1,8 @@
 # Auth Module - Google OAuth Authentication
 
 locals {
-  function_name = "${var.project_name}-${var.environment}-auth-callback"
+  auth_callback_function_name = "${var.project_name}-${var.environment}-auth-callback"
+  auth_verify_function_name   = "${var.project_name}-${var.environment}-auth-verify"
 }
 
 # DynamoDB Users Table
@@ -35,32 +36,21 @@ resource "aws_dynamodb_table" "users" {
   )
 }
 
-# Lambda Layer for Google Auth dependencies
-resource "aws_lambda_layer_version" "auth_dependencies" {
-  filename            = "${path.module}/layers/auth_dependencies.zip"
-  layer_name          = "${var.project_name}-${var.environment}-auth-deps"
-  compatible_runtimes = ["python3.11"]
-  description         = "Google Auth and JWT dependencies"
-
-  lifecycle {
-    ignore_changes = [filename]
-  }
-}
-
+# Lambda Layer removed - using AWS Lambda runtime dependencies
 
 # Auth Callback Lambda Function
 resource "aws_lambda_function" "auth_callback" {
-  function_name = local.function_name
+  function_name = local.auth_callback_function_name
   role          = var.lambda_role_arn
   handler       = "auth_callback.lambda_handler"
   runtime       = "python3.11"
   timeout       = 30
   memory_size   = 256
 
-  filename         = "../../../../lambda-auth/auth-callback/auth_callback.zip"
-  source_code_hash = filebase64sha256("../../../../lambda-auth/auth-callback/auth_callback.zip")
+  filename         = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_callback.zip"
+  source_code_hash = filebase64sha256("/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_callback.zip")
 
-  layers = [aws_lambda_layer_version.auth_dependencies.arn]
+  # layers = [] # Removed - using AWS Lambda runtime dependencies
 
   environment {
     variables = {
@@ -75,7 +65,50 @@ resource "aws_lambda_function" "auth_callback" {
   tags = merge(
     var.common_tags,
     {
-      Name        = local.function_name
+      Name        = local.auth_callback_function_name
+      Environment = var.environment
+    }
+  )
+}
+
+# Auth Verify Lambda Function (JWT Authorizer for WebSocket)
+resource "aws_lambda_function" "auth_verify" {
+  function_name = local.auth_verify_function_name
+  role          = var.lambda_role_arn
+  handler       = "auth_verify.lambda_handler"
+  runtime       = "python3.11"
+  timeout       = 30
+  memory_size   = 256
+
+  filename         = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_verify.zip"
+  source_code_hash = filebase64sha256("/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_verify.zip")
+
+  environment {
+    variables = {
+      JWT_SECRET_ARN = aws_secretsmanager_secret.jwt_secret.arn
+      ENVIRONMENT    = var.environment
+      PROJECT_NAME   = var.project_name
+    }
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name        = local.auth_verify_function_name
+      Environment = var.environment
+    }
+  )
+}
+
+# CloudWatch Log Group for auth_verify
+resource "aws_cloudwatch_log_group" "auth_verify" {
+  name              = "/aws/lambda/${local.auth_verify_function_name}"
+  retention_in_days = 7
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name        = "${local.auth_verify_function_name}-logs"
       Environment = var.environment
     }
   )
@@ -83,13 +116,13 @@ resource "aws_lambda_function" "auth_callback" {
 
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "auth_callback" {
-  name              = "/aws/lambda/${local.function_name}"
+  name              = "/aws/lambda/${local.auth_callback_function_name}"
   retention_in_days = 7
 
   tags = merge(
     var.common_tags,
     {
-      Name        = "${local.function_name}-logs"
+      Name        = "${local.auth_callback_function_name}-logs"
       Environment = var.environment
     }
   )
@@ -106,7 +139,7 @@ resource "aws_lambda_permission" "api_gateway" {
 
 # IAM Policy for DynamoDB and Secrets Manager access
 resource "aws_iam_policy" "auth_lambda_policy" {
-  name        = "${local.function_name}-policy"
+  name        = "${local.auth_callback_function_name}-policy"
   description = "IAM policy for auth callback Lambda"
 
   policy = jsonencode({
@@ -142,5 +175,32 @@ resource "aws_iam_policy" "auth_lambda_policy" {
 # Attach policy to Lambda role
 resource "aws_iam_role_policy_attachment" "auth_lambda_policy" {
   policy_arn = aws_iam_policy.auth_lambda_policy.arn
+  role       = split("/", var.lambda_role_arn)[1]
+}
+
+# IAM Policy for auth_verify Lambda (Secrets Manager access only)
+resource "aws_iam_policy" "auth_verify_lambda_policy" {
+  name        = "${local.auth_verify_function_name}-policy"
+  description = "IAM policy for auth verify Lambda"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          aws_secretsmanager_secret.jwt_secret.arn
+        ]
+      }
+    ]
+  })
+}
+
+# Attach auth_verify policy to Lambda role
+resource "aws_iam_role_policy_attachment" "auth_verify_lambda_policy" {
+  policy_arn = aws_iam_policy.auth_verify_lambda_policy.arn
   role       = split("/", var.lambda_role_arn)[1]
 }

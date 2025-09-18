@@ -11,6 +11,7 @@ import os
 import time
 from datetime import datetime
 from typing import Dict, Any, Optional
+from utils.conversation_updater import update_conversation_timestamp
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -217,7 +218,10 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
         }
         
         messages_table.put_item(Item=message_record)
-        
+
+        # Update conversation timestamp for inbox sorting
+        update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+
         # Queue message for processing
         queue_message = {
             'message_id': message_id,

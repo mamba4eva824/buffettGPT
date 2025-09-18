@@ -15,7 +15,7 @@ resource "aws_apigatewayv2_api" "http_api" {
   description   = "HTTP API for ${var.project_name} chat functionality"
 
   cors_configuration {
-    allow_credentials = false
+    allow_credentials = true  # Required for authenticated requests
     allow_headers = [
       "content-type",
       "x-amz-date",
@@ -23,19 +23,30 @@ resource "aws_apigatewayv2_api" "http_api" {
       "x-api-key",
       "x-amz-security-token",
       "x-amz-user-agent",
-      "x-session-id"
+      "x-session-id",
+      "x-conversation-id"
     ]
     allow_methods = [
       "GET",
-      "POST", 
+      "POST",
+      "PUT",
+      "DELETE",
       "OPTIONS"
     ]
-    allow_origins = [
-      "*"  # For development - restrict in production
+    allow_origins = var.environment == "prod" ? [
+      "https://your-cloudfront-domain.com"  # Replace with actual production domain
+    ] : [
+      "http://localhost:5173",  # Vite dev server
+      "http://localhost:5174",  # Alternative Vite port
+      "http://localhost:3000",  # Alternative dev port
+      "http://localhost:4173",  # Vite preview
+      "http://127.0.0.1:5173"   # Alternative localhost
+      # Removed "*" as it conflicts with allow_credentials = true
     ]
     expose_headers = [
       "x-session-id",
-      "x-request-id"
+      "x-request-id",
+      "x-conversation-id"
     ]
     max_age = 86400  # 24 hours
   }
@@ -177,8 +188,8 @@ resource "aws_apigatewayv2_authorizer" "http_jwt_authorizer" {
   authorizer_type                   = "REQUEST"
   authorizer_uri                    = var.authorizer_function_arn
   name                              = "${local.resource_prefix}-http-jwt-authorizer"
-  authorizer_payload_format_version = "2.0"
-  enable_simple_responses           = true
+  authorizer_payload_format_version = "1.0"
+  authorizer_credentials_arn        = aws_iam_role.authorizer_invocation_role[0].arn
   identity_sources                  = ["$request.header.Authorization"]
 }
 
@@ -188,7 +199,8 @@ resource "aws_apigatewayv2_authorizer" "websocket_jwt_authorizer" {
   authorizer_type            = "REQUEST"
   authorizer_uri             = var.authorizer_function_arn
   name                       = "${local.resource_prefix}-websocket-jwt-authorizer"
-  identity_sources           = ["route.request.header.Authorization", "route.request.querystring.token"]
+  # Remove identity_sources to ensure authorizer is called for all connections (including anonymous)
+  # identity_sources           = ["route.request.header.Authorization", "route.request.querystring.token"]
   authorizer_credentials_arn = aws_iam_role.authorizer_invocation_role[0].arn
 }
 
@@ -231,7 +243,7 @@ resource "aws_iam_role_policy" "authorizer_invocation_policy" {
       {
         Effect   = "Allow"
         Action   = "lambda:InvokeFunction"
-        Resource = var.authorizer_function_arn
+        Resource = var.authorizer_function_arn_for_iam
       }
     ]
   })
@@ -245,9 +257,25 @@ resource "aws_iam_role_policy" "authorizer_invocation_policy" {
 resource "aws_apigatewayv2_integration" "chat_lambda_integration" {
   api_id           = aws_apigatewayv2_api.http_api.id
   integration_type = "AWS_PROXY"
-  
+
   integration_method     = "POST"
   integration_uri        = var.lambda_arns["chat_http_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# Conversations Handler Integration
+resource "aws_apigatewayv2_integration" "conversations_handler_integration" {
+  count            = var.enable_conversations_routes ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["conversations_handler"]
   payload_format_version = "2.0"
   timeout_milliseconds   = 30000
 
@@ -292,12 +320,112 @@ resource "aws_apigatewayv2_route" "chat_options_route" {
 }
 
 # ================================================
+# Conversations API Routes
+# ================================================
+
+# GET /conversations - List all conversations
+resource "aws_apigatewayv2_route" "list_conversations" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /conversations"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# POST /conversations - Create new conversation
+resource "aws_apigatewayv2_route" "create_conversation" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "POST /conversations"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# GET /conversations/{conversation_id} - Get specific conversation
+resource "aws_apigatewayv2_route" "get_conversation" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /conversations/{conversation_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# PUT /conversations/{conversation_id} - Update conversation
+resource "aws_apigatewayv2_route" "update_conversation" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "PUT /conversations/{conversation_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# DELETE /conversations/{conversation_id} - Delete conversation
+resource "aws_apigatewayv2_route" "delete_conversation" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "DELETE /conversations/{conversation_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# GET /conversations/{conversation_id}/messages - Get conversation messages
+resource "aws_apigatewayv2_route" "get_conversation_messages" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /conversations/{conversation_id}/messages"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# OPTIONS /conversations - CORS preflight
+resource "aws_apigatewayv2_route" "conversations_options" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /conversations"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /conversations/{conversation_id} - CORS preflight
+resource "aws_apigatewayv2_route" "conversation_options" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /conversations/{conversation_id}"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /conversations/{conversation_id}/messages - CORS preflight
+resource "aws_apigatewayv2_route" "conversation_messages_options" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /conversations/{conversation_id}/messages"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# ================================================
 # Auth Callback Routes and Integration
 # ================================================
 
 # Auth Callback Integration (conditional)
 resource "aws_apigatewayv2_integration" "auth_callback_integration" {
-  count            = var.auth_callback_function_arn != null ? 1 : 0
+  count            = var.enable_auth_routes ? 1 : 0
   api_id           = aws_apigatewayv2_api.http_api.id
   integration_type = "AWS_PROXY"
 
@@ -307,7 +435,7 @@ resource "aws_apigatewayv2_integration" "auth_callback_integration" {
 
 # POST /auth/callback route
 resource "aws_apigatewayv2_route" "auth_callback_post_route" {
-  count     = var.auth_callback_function_arn != null ? 1 : 0
+  count     = var.enable_auth_routes ? 1 : 0
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "POST /auth/callback"
   target    = "integrations/${aws_apigatewayv2_integration.auth_callback_integration[0].id}"
@@ -317,7 +445,7 @@ resource "aws_apigatewayv2_route" "auth_callback_post_route" {
 
 # OPTIONS /auth/callback route for CORS
 resource "aws_apigatewayv2_route" "auth_callback_options_route" {
-  count     = var.auth_callback_function_arn != null ? 1 : 0
+  count     = var.enable_auth_routes ? 1 : 0
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "OPTIONS /auth/callback"
   target    = "integrations/${aws_apigatewayv2_integration.auth_callback_integration[0].id}"
@@ -403,6 +531,16 @@ resource "aws_lambda_permission" "http_api_lambda_permission" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
 
+# Conversations Handler Lambda Permission
+resource "aws_lambda_permission" "conversations_api_permission" {
+  count         = var.enable_conversations_routes ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPIConversations"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["conversations_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
+
 resource "aws_lambda_permission" "websocket_connect_permission" {
   statement_id  = "AllowExecutionFromWebSocketConnect"
   action        = "lambda:InvokeFunction"
@@ -432,7 +570,7 @@ resource "aws_lambda_permission" "http_authorizer_permission" {
   count         = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
   statement_id  = "AllowHTTPAuthorizerInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = var.authorizer_function_arn
+  function_name = var.authorizer_function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/authorizers/${aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id}"
 }
@@ -441,7 +579,7 @@ resource "aws_lambda_permission" "websocket_authorizer_permission" {
   count         = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
   statement_id  = "AllowWebSocketAuthorizerInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = var.authorizer_function_arn
+  function_name = var.authorizer_function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.websocket_api.execution_arn}/authorizers/${aws_apigatewayv2_authorizer.websocket_jwt_authorizer[0].id}"
 }

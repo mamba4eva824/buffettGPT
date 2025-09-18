@@ -40,17 +40,36 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         API Gateway response
     """
+    # Use print to ensure output
+    print(f"CONVERSATIONS HANDLER INVOKED")
+    print(f"Event keys: {list(event.keys())}")
 
     try:
+        # Log the entire event for debugging
+        print(f"Full event structure: {json.dumps(event, default=str)[:2000]}")  # Limit to 2000 chars
+        logger.info(f"Full event structure: {json.dumps(event, default=str)[:2000]}")
+
         # Extract HTTP method and path
         http_method = event['requestContext']['http']['method']
-        path = event['requestContext']['http']['path']
+        full_path = event['requestContext']['http']['path']
 
-        logger.info(f"Handling {http_method} request to {path}", extra={
+        # Remove stage prefix from path (e.g., /dev/conversations -> /conversations)
+        # API Gateway v2 includes the stage in the path
+        path = full_path
+        if '/' in full_path[1:]:  # Check if there's a second slash after the first
+            path_parts = full_path.split('/', 2)  # Split into ['', 'dev', 'conversations']
+            if len(path_parts) > 2:
+                path = '/' + path_parts[2]  # Get everything after stage
+
+        logger.info(f"Handling {http_method} request to {path} (full: {full_path})", extra={
             'environment': ENVIRONMENT,
             'project': PROJECT_NAME,
             'request_id': context.aws_request_id
         })
+
+        # Handle OPTIONS for CORS preflight
+        if http_method == 'OPTIONS':
+            return create_response(200, {'message': 'CORS preflight response'})
 
         # Route based on method and path
         if http_method == 'GET' and path == '/conversations':
@@ -61,6 +80,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return get_conversation(event)
         elif http_method == 'POST' and path == '/conversations':
             return create_conversation(event)
+        elif http_method == 'PUT' and '/conversations/' in path:
+            return update_conversation(event)
         elif http_method == 'PATCH' and '/conversations/' in path:
             return update_conversation(event)
         elif http_method == 'DELETE' and '/conversations/' in path:
@@ -91,11 +112,60 @@ def get_user_id(event: Dict[str, Any]) -> Optional[str]:
         User ID or None
     """
 
+    # Debug logging to understand the event structure
+    if 'requestContext' in event:
+        logger.debug(f"RequestContext structure: {str(event.get('requestContext', {}))}")
+
     # Try to get from authorizer (authenticated users)
     if 'requestContext' in event and 'authorizer' in event['requestContext']:
-        user_id = event['requestContext']['authorizer'].get('user_id')
-        if user_id:
-            return user_id
+        authorizer = event['requestContext']['authorizer']
+        logger.debug(f"Authorizer data: {str(authorizer)}")
+
+        # For Lambda authorizer with API Gateway HTTP v2 (payload format 1.0)
+        # The context from auth_verify is passed under 'lambda' key
+        if isinstance(authorizer, dict):
+            # Try lambda.user_id (for Lambda authorizers with context)
+            if 'lambda' in authorizer and isinstance(authorizer['lambda'], dict):
+                user_id = authorizer['lambda'].get('user_id')
+                if user_id:
+                    logger.info(f"Found user_id in authorizer.lambda: {user_id}")
+                    return user_id
+
+            # Try direct user_id (fallback)
+            user_id = authorizer.get('user_id')
+            if user_id:
+                logger.info(f"Found user_id directly in authorizer: {user_id}")
+                return user_id
+
+    # Try to decode JWT from Authorization header (temporary solution)
+    headers = event.get('headers', {})
+    auth_header = headers.get('authorization', headers.get('Authorization', ''))
+
+    if auth_header.startswith('Bearer '):
+        try:
+            import base64
+
+            token = auth_header[7:]  # Remove 'Bearer ' prefix
+            # JWT has 3 parts separated by dots: header.payload.signature
+            parts = token.split('.')
+            if len(parts) == 3:
+                # Decode the payload (middle part)
+                # Add padding if necessary
+                payload = parts[1]
+                padding = 4 - len(payload) % 4
+                if padding != 4:
+                    payload += '=' * padding
+
+                decoded = base64.urlsafe_b64decode(payload)
+                claims = json.loads(decoded)
+
+                # Get user_id from JWT claims
+                user_id = claims.get('sub') or claims.get('user_id') or claims.get('id')
+                if user_id:
+                    logger.info(f"Extracted user_id from JWT: {user_id}")
+                    return user_id
+        except Exception as e:
+            logger.warning(f"Failed to decode JWT: {e}")
 
     # Try to get from query parameters (anonymous users)
     query_params = event.get('queryStringParameters', {})
@@ -103,7 +173,6 @@ def get_user_id(event: Dict[str, Any]) -> Optional[str]:
         return query_params['user_id']
 
     # Try to get from headers (for WebSocket or custom auth)
-    headers = event.get('headers', {})
     if 'x-user-id' in headers:
         return headers['x-user-id']
 
@@ -460,7 +529,9 @@ def create_response(status_code: int, body: Any = None) -> Dict[str, Any]:
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',  # Configure based on your CORS needs
+            'Access-Control-Allow-Origin': '*',  # Allow all origins for development
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
             'X-Environment': ENVIRONMENT,
             'X-Project': PROJECT_NAME
         }
