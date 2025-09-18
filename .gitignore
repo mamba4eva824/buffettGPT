@@ -206,3 +206,126 @@ dev.err
 # Temporary files
 *.tmp
 *.temp
+
+# =============================================================================
+# SENSITIVE DATA PROTECTION
+# =============================================================================
+# Environment files with actual secrets
+.env
+.env.local
+.env.production
+.env.development
+.env.staging
+.env.prod
+.env.dev
+.env.test
+**/.env
+!**/.env.example
+!**/.env.local.example
+
+# Terraform variable files with secrets
+*.tfvars
+!*.tfvars.example
+!terraform.tfvars.example
+terraform.tfvars
+dev.auto.tfvars
+prod.auto.tfvars
+staging.auto.tfvars
+secrets.tfvars
+*.secret.tfvars
+
+# AWS and Cloud credentials
+.aws/
+aws-credentials.json
+credentials.json
+secrets.json
+config.json
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# API Keys and Tokens
+api_keys.json
+tokens.json
+auth_tokens.json
+jwt_secrets.json
+oauth_credentials.json
+
+# Database credentials
+db_credentials.json
+database_config.json
+connection_strings.json
+
+# Third-party service credentials
+google_credentials.json
+slack_credentials.json
+pinecone_credentials.json
+bedrock_credentials.json
+
+# Backup files that might contain sensitive data
+*.backup
+*.bak
+state-backup-*.json
+terraform.tfstate.backup
+*.tfstate.backup
+
+# Documentation that might contain sensitive info
+docs/
+documentation/
+guides/
+implementation_guides/
+deployment_guides/
+architecture_docs/
+
+# Pinecone project (separate project with sensitive data)
+pinecone_bedrock/
+
+# Lambda build artifacts that might contain secrets
+**/build/
+**/lambda_package/
+**/layers/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+**/.venv/
+**/venv/
+**/env/
+
+# Node.js dependencies
+node_modules/
+**/node_modules/
+
+# IDE and editor files
+.vscode/
+.idea/
+.claude/
+.cursor/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs that might contain sensitive data
+*.log
+logs/
+**/logs/
+
+# Temporary and cache files
+.cache/
+.tmp/
+.temp/
+*.tmp
+*.temp
