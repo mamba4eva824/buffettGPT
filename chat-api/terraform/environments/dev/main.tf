@@ -12,14 +12,15 @@ terraform {
   }
   
   # Backend configuration for state management
-  # Using local backend - uncomment S3 backend when bucket is created
-  # backend "s3" {
-  #   bucket = "buffett-chat-terraform-state"
-  #   key    = "dev/terraform.tfstate"
-  #   region = "us-east-1"
-  #   # Enable state locking
-  #   dynamodb_table = "terraform-state-locks"
-  # }
+  # S3 backend with encryption and state locking
+  backend "s3" {
+    bucket         = "buffett-chat-terraform-state-430118826061"
+    key            = "dev/terraform.tfstate"
+    region         = "us-east-1"
+    encrypt        = true
+    kms_key_id     = "arn:aws:kms:us-east-1:430118826061:key/d964f8d5-fe43-45c3-9193-3fe8a7d6e12b"
+    dynamodb_table = "buffett-chat-terraform-state-locks"
+  }
 }
 
 provider "aws" {
@@ -54,9 +55,9 @@ locals {
     KMS_KEY_ID                = module.core.kms_key_id
     CHAT_PROCESSING_QUEUE_URL = module.core.chat_processing_queue_url
     
-    # Bedrock Configuration
-    BEDROCK_AGENT_ID    = var.bedrock_agent_id
-    BEDROCK_AGENT_ALIAS = var.bedrock_agent_alias
+    # Bedrock Configuration - Use module outputs when available
+    BEDROCK_AGENT_ID    = try(module.bedrock.agent_id, var.bedrock_agent_id)
+    BEDROCK_AGENT_ALIAS = try(module.bedrock.agent_alias_id, var.bedrock_agent_alias)
     BEDROCK_REGION      = var.bedrock_region
 
     # WebSocket endpoint for API Gateway Management API (needed by multiple functions)
@@ -119,7 +120,7 @@ module "lambda" {
   project_name              = local.project_name
   environment               = local.environment
   lambda_role_arn           = module.core.lambda_role_arn
-  lambda_package_path       = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build"
+  lambda_package_path       = "${path.root}/../../../backend/build"
   runtime                   = "python3.11"
   common_env_vars           = local.lambda_common_env_vars
   function_env_vars         = local.lambda_function_env_vars
@@ -180,6 +181,7 @@ module "auth" {
   # Dependencies
   lambda_role_arn           = module.core.lambda_role_arn
   api_gateway_execution_arn = module.api_gateway.http_api_execution_arn
+  dependencies_layer_arn    = module.lambda.dependencies_layer_arn
 
   common_tags = local.common_tags
 }
@@ -219,6 +221,63 @@ module "monitoring" {
   alert_email      = var.alert_email
   
   common_tags = local.common_tags
+}
+
+# ================================================
+# Bedrock Module - Agent, Knowledge Base, and Guardrails
+# ================================================
+# Fixed: Circular dependency resolved by using wildcard for knowledge base ARN in IAM policy
+
+module "bedrock" {
+  source = "../../modules/bedrock"
+
+  project_name = local.project_name
+  environment  = local.environment
+  aws_region   = var.aws_region
+
+  # Agent Configuration
+  agent_name          = var.bedrock_agent_name
+  agent_description   = var.bedrock_agent_description
+  foundation_model_id = var.bedrock_foundation_model
+  agent_instruction   = var.bedrock_agent_instruction
+
+  # Knowledge Base Configuration
+  knowledge_base_name        = var.bedrock_knowledge_base_name
+  knowledge_base_description = var.bedrock_knowledge_base_description
+  # embedding_model_arn - using module default (Titan v2 with 1024 dimensions)
+  # source_bucket_arn - using module default (arn:aws:s3:::buffet-training-data)
+  create_data_source         = true
+
+  # Pinecone Configuration
+  # pinecone_connection_string - using module default (configured Pinecone host)
+  pinecone_api_key          = var.pinecone_api_key
+
+  # Data Source and Chunking Configuration
+  enable_chunking_configuration = true
+  chunking_strategy            = "SEMANTIC"
+  max_tokens_per_chunk         = 300
+
+  # Disable prompt override to use AWS defaults (fixes JSON formatting issues)
+  enable_prompt_override = false
+
+  #Create agent version after deployment
+  # Set to false to prevent automatic version creation on every apply
+  # Use the deployment script or manual process to create versions
+  #create_agent_version = false
+
+  # Guardrails Configuration - Enabled for financial advisor safety
+  enable_guardrails         = true
+  guardrail_name           = var.bedrock_guardrail_name
+  guardrail_description    = var.bedrock_guardrail_description
+  blocked_input_messaging  = "I can only provide financial advice and investment guidance. Please ask questions related to investment planning, retirement, tax strategies, insurance, estate planning, or financial goal setting."
+  blocked_outputs_messaging = "I cannot provide that type of advice. I'm designed to help with financial planning, investment strategies, retirement planning, tax planning, insurance analysis, estate planning basics, and financial goal setting. Please ask a finance-related question."
+
+  # Enable policies for comprehensive guardrails
+  enable_content_policy                = true
+  enable_sensitive_information_policy  = false  # Disabled since no PII/regex configured
+  enable_topic_policy                 = true
+  enable_word_policy                  = true
+  enable_contextual_grounding         = true
 }
 
 # ================================================
