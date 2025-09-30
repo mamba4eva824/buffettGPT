@@ -115,7 +115,7 @@ def handle_health_check(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "status": "healthy",
             "service": PROJECT_NAME,
             "environment": ENVIRONMENT,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.utcnow().isoformat() + 'Z',
             "version": "2.0",
             "checks": {
                 "dynamodb": check_dynamodb_health(),
@@ -189,18 +189,19 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
     """Process chat message and return response"""
     
     # Create or update session
-    timestamp = datetime.utcnow().isoformat()
+    timestamp_iso = datetime.utcnow().isoformat() + 'Z'
+    timestamp_unix = int(datetime.utcnow().timestamp())
     message_id = str(uuid.uuid4())
     
     # Save user message to DynamoDB
     user_message_record = {
-        'session_id': session_id,
-        'timestamp': timestamp,
+        'conversation_id': session_id,
+        'timestamp': timestamp_unix,  # Unix timestamp for DynamoDB LSI
         'message_id': message_id,
         'message_type': 'user',  # Changed from 'type' to match WebSocket handler
         'content': user_message,
         'user_id': user_id,
-        'created_at': timestamp,
+        'created_at': timestamp_iso,
         'status': 'received',
         'environment': ENVIRONMENT,
         'project': PROJECT_NAME
@@ -211,7 +212,7 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
         logger.info(f"Successfully saved user message: {message_id} for session: {session_id}, user: {user_id}")
 
         # Update conversation timestamp for inbox sorting
-        update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+        update_conversation_timestamp(session_id, datetime.utcnow().isoformat() + 'Z')
 
     except Exception as e:
         logger.error(f"Failed to save user message to DynamoDB: {str(e)}", exc_info=True)
@@ -224,8 +225,8 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
         'session_id': session_id,
         'user_id': user_id,
         'status': 'active',
-        'last_activity': timestamp,
-        'expires_at': int(expires_at.timestamp())
+        'last_activity': timestamp_iso,
+        'expires_at': expires_at.isoformat() + 'Z'
     }
     
     # Check if session exists
@@ -238,16 +239,16 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
                 UpdateExpression='SET last_activity = :activity, #status = :status, expires_at = :expires',
                 ExpressionAttributeNames={'#status': 'status'},
                 ExpressionAttributeValues={
-                    ':activity': timestamp,
+                    ':activity': timestamp_iso,
                     ':status': 'active',
-                    ':expires': int(expires_at.timestamp())
+                    ':expires': expires_at.isoformat() + 'Z'
                 }
             )
             logger.info(f"Updated session: {session_id}")
         else:
             # Create new session
             session_data.update({
-                'created_at': timestamp,
+                'created_at': timestamp_iso,
                 'message_count': 0
             })
             sessions_table.put_item(Item=convert_floats_to_decimals(session_data))
@@ -262,15 +263,16 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
         
         # Save AI response to DynamoDB
         ai_message_id = str(uuid.uuid4())
-        ai_timestamp = datetime.utcnow().isoformat()
+        ai_timestamp_iso = datetime.utcnow().isoformat() + 'Z'
+        ai_timestamp_unix = int(datetime.utcnow().timestamp())
         
         ai_message_record = {
-            'session_id': session_id,
-            'timestamp': ai_timestamp,
+            'conversation_id': session_id,
+            'timestamp': ai_timestamp_unix,  # Unix timestamp for DynamoDB LSI
             'message_id': ai_message_id,
             'message_type': 'assistant',  # Changed from 'type' to match WebSocket handler
             'content': ai_response['message'],
-            'created_at': ai_timestamp,
+            'created_at': ai_timestamp_iso,
             'processing_time': ai_response.get('processing_time', 0),
             'bedrock_response_id': ai_response.get('response_id', ''),
             'user_id': user_id,  # Add user_id for consistency
@@ -298,7 +300,7 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
             'ai_message_id': ai_message_id,
             'response': ai_response['message'],
             'processing_time': ai_response.get('processing_time', 0),
-            'timestamp': ai_timestamp,
+            'timestamp': ai_timestamp_unix,  # Unix timestamp for DynamoDB LSI
             'status': 'success'
         }
         
@@ -310,15 +312,16 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
         
         # Save error response
         ai_message_id = str(uuid.uuid4())
-        ai_timestamp = datetime.utcnow().isoformat()
+        ai_timestamp_iso = datetime.utcnow().isoformat() + 'Z'
+        ai_timestamp_unix = int(datetime.utcnow().timestamp())
         
         error_message_record = {
-            'session_id': session_id,
-            'timestamp': ai_timestamp,
+            'conversation_id': session_id,
+            'timestamp': ai_timestamp_unix,  # Unix timestamp for DynamoDB LSI
             'message_id': ai_message_id,
             'message_type': 'assistant',  # Changed from 'type' to match WebSocket handler
             'content': error_response,
-            'created_at': ai_timestamp,
+            'created_at': ai_timestamp_iso,
             'error': str(e),
             'status': 'error',
             'user_id': user_id,  # Add user_id for consistency
@@ -341,7 +344,7 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
             'user_message_id': message_id,
             'ai_message_id': ai_message_id,
             'response': error_response,
-            'timestamp': ai_timestamp,
+            'timestamp': ai_timestamp_unix,  # Unix timestamp for DynamoDB LSI
             'status': 'error',
             'error': 'bedrock_unavailable'
         }
@@ -387,8 +390,8 @@ def call_bedrock_agent(user_message: str, session_id: str) -> Dict[str, Any]:
                 else:
                     response_text = "Unable to process response from AI assistant."
         
-        # Format response with Warren Buffett branding
-        formatted_response = f"🏛️ **Warren Buffett Investment Advisor**\n\n{response_text}\n\n---\n📚 *Source: Warren Buffett Shareholder Letters*\n⏱️ *Response generated in {processing_time:.2f} seconds*"
+        # Return clean response without branding
+        formatted_response = response_text
         
         return {
             'message': formatted_response,
@@ -516,7 +519,7 @@ def create_error_response(status_code: int, error: str, message: str) -> Dict[st
     error_data = {
         "error": error,
         "message": message,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.utcnow().isoformat() + 'Z',
         "status_code": status_code
     }
     

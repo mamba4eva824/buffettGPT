@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { MessageSquare, Archive, Trash2, Edit2, Check, X, Clock, Hash } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { MessageSquare, Archive, Trash2, Edit2, Check, X, Hash, MoreHorizontal } from 'lucide-react';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 function classNames(...classes) {
   return classes.filter(Boolean).join(' ');
@@ -21,31 +22,16 @@ export function ConversationList({
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [conversationToDelete, setConversationToDelete] = useState(null);
+  const dropdownRef = useRef(null);
 
   // Filter conversations based on archive status
   const visibleConversations = conversations.filter(
     conv => showArchived ? conv.is_archived : !conv.is_archived
   );
 
-  // Format timestamp for display
-  const formatTime = (timestamp) => {
-    if (!timestamp) return 'Never';
-
-    const date = new Date(timestamp * 1000); // Convert Unix timestamp to JS Date
-    const now = new Date();
-    const diffMs = now - date;
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return `${diffDays} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
-  };
 
   // Start editing a conversation title
   const startEdit = (conv) => {
@@ -55,7 +41,8 @@ export function ConversationList({
 
   // Save edited title
   const saveEdit = async () => {
-    if (editTitle.trim() && editTitle !== selectedConversation?.title) {
+    const conversationBeingEdited = conversations.find(conv => conv.conversation_id === editingId);
+    if (editTitle.trim() && editTitle !== conversationBeingEdited?.title) {
       await onUpdateConversation(editingId, { title: editTitle.trim() });
     }
     setEditingId(null);
@@ -67,6 +54,25 @@ export function ConversationList({
     setEditingId(null);
     setEditTitle('');
   };
+
+  // Toggle dropdown menu
+  const toggleDropdown = (conversationId) => {
+    setOpenDropdownId(openDropdownId === conversationId ? null : conversationId);
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpenDropdownId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -92,9 +98,30 @@ export function ConversationList({
     );
   }
 
+  const handleDeleteConfirm = () => {
+    if (conversationToDelete) {
+      onDeleteConversation(conversationToDelete.conversation_id);
+      setConversationToDelete(null);
+    }
+  };
+
   return (
-    <div className="space-y-1">
-      {visibleConversations.map((conv) => {
+    <>
+      <DeleteConfirmationModal
+        isOpen={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setConversationToDelete(null);
+        }}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Conversation"
+        message="Are you sure you want to delete this conversation? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
+
+      <div className="space-y-1">
+        {visibleConversations.map((conv) => {
         const isSelected = selectedConversation?.conversation_id === conv.conversation_id;
         const isEditing = editingId === conv.conversation_id;
 
@@ -105,12 +132,9 @@ export function ConversationList({
               'group relative flex items-center rounded-lg px-3 py-2 transition-colors',
               isSelected
                 ? 'bg-indigo-50 text-indigo-700'
-                : 'hover:bg-slate-50 text-slate-700'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
             )}
           >
-            {/* Conversation Icon */}
-            <MessageSquare className="mr-3 h-4 w-4 flex-shrink-0 text-slate-400" />
-
             {/* Conversation Details */}
             <div
               className="min-w-0 flex-1 cursor-pointer"
@@ -126,7 +150,7 @@ export function ConversationList({
                       if (e.key === 'Enter') saveEdit();
                       if (e.key === 'Escape') cancelEdit();
                     }}
-                    className="flex-1 rounded border border-indigo-300 bg-white px-2 py-1 text-sm outline-none focus:border-indigo-500"
+                    className="flex-1 rounded border border-indigo-300 dark:border-indigo-600 bg-white dark:bg-slate-700 px-2 py-1 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500 dark:focus:border-indigo-400"
                     autoFocus
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -135,7 +159,7 @@ export function ConversationList({
                       e.stopPropagation();
                       saveEdit();
                     }}
-                    className="rounded p-1 text-green-600 hover:bg-green-50"
+                    className="rounded p-1 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/20"
                   >
                     <Check className="h-3 w-3" />
                   </button>
@@ -144,7 +168,7 @@ export function ConversationList({
                       e.stopPropagation();
                       cancelEdit();
                     }}
-                    className="rounded p-1 text-red-600 hover:bg-red-50"
+                    className="rounded p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -154,57 +178,73 @@ export function ConversationList({
                   <div className="truncate text-sm font-medium">
                     {conv.title || 'Untitled Conversation'}
                   </div>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                    <Clock className="h-3 w-3" />
-                    <span>{formatTime(conv.updated_at)}</span>
-                    {conv.message_count > 0 && (
-                      <>
-                        <span>•</span>
-                        <span>{conv.message_count} messages</span>
-                      </>
-                    )}
-                  </div>
+                  {conv.message_count > 0 && (
+                    <div className="mt-1 text-xs text-slate-500">
+                      {conv.message_count} messages
+                    </div>
+                  )}
                 </>
               )}
             </div>
 
-            {/* Action Buttons */}
+            {/* 3-Dot Menu */}
             {!isEditing && (
-              <div className="ml-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="relative ml-2">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    startEdit(conv);
+                    toggleDropdown(conv.conversation_id);
                   }}
-                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                  title="Rename"
+                  className="rounded p-1 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 hover:text-slate-600 dark:hover:text-slate-300 opacity-0 transition-opacity group-hover:opacity-100"
+                  title="Options"
                 >
-                  <Edit2 className="h-3 w-3" />
+                  <MoreHorizontal className="h-4 w-4" />
                 </button>
-                {!conv.is_archived && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onArchiveConversation(conv.conversation_id);
-                    }}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    title="Archive"
+
+                {/* Dropdown Menu */}
+                {openDropdownId === conv.conversation_id && (
+                  <div
+                    ref={dropdownRef}
+                    className="absolute right-0 top-8 z-10 w-32 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 py-1 shadow-lg"
                   >
-                    <Archive className="h-3 w-3" />
-                  </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startEdit(conv);
+                        setOpenDropdownId(null);
+                      }}
+                      className="flex w-full items-center px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600"
+                    >
+                      <Edit2 className="mr-2 h-3 w-3" />
+                      Edit
+                    </button>
+                    {!conv.is_archived && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onArchiveConversation(conv.conversation_id);
+                          setOpenDropdownId(null);
+                        }}
+                        className="flex w-full items-center px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600"
+                      >
+                        <Archive className="mr-2 h-3 w-3" />
+                        Archive
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConversationToDelete(conv);
+                        setDeleteModalOpen(true);
+                        setOpenDropdownId(null);
+                      }}
+                      className="flex w-full items-center px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    >
+                      <Trash2 className="mr-2 h-3 w-3" />
+                      Delete
+                    </button>
+                  </div>
                 )}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm('Delete this conversation? This cannot be undone.')) {
-                      onDeleteConversation(conv.conversation_id);
-                    }
-                  }}
-                  className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
-                  title="Delete"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
               </div>
             )}
 
@@ -215,7 +255,8 @@ export function ConversationList({
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
 

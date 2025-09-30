@@ -24,3 +24,17 @@ body {
   width: 100%;
   height: 100vh;
 }
+
+/* Fade Pulse Animation for Evaluating Text */
+@keyframes fadePulse {
+  0%, 100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.fade-pulse-evaluating {
+  animation: fadePulse 1.5s ease-in-out infinite;
+}

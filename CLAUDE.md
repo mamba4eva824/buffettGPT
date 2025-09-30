@@ -2,7 +2,7 @@
 
 ## 🚨 CRITICAL: TERRAFORM DEPLOYMENT ENFORCEMENT
 
-**ABSOLUTE RULE**: ALL infrastructure changes to dev environment MUST use Terraform.
+**ABSOLUTE RULE**: ALL infrastructure changes to dev environment MUST use Terraform. 
 
 ### Required Terraform Workflow:
 1. **Infrastructure as Code** → All changes must be in `.tf` files

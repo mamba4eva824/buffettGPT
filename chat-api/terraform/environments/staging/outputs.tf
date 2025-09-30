@@ -79,9 +79,9 @@ output "bedrock_knowledge_base_id" {
 output "staging_access_info" {
   description = "Information for accessing the staging environment"
   value = {
-    environment    = "staging"
-    http_api_url   = module.api_gateway.http_api_endpoint
-    websocket_url  = module.api_gateway.websocket_api_endpoint
-    instructions   = "Share these URLs with friends and family for testing. Frontend will be deployed separately to CloudFront."
+    environment   = "staging"
+    http_api_url  = module.api_gateway.http_api_endpoint
+    websocket_url = module.api_gateway.websocket_api_endpoint
+    instructions  = "Share these URLs with friends and family for testing. Frontend will be deployed separately to CloudFront."
   }
 }

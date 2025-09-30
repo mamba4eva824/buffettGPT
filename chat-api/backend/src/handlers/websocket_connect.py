@@ -178,34 +178,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'session_updated': session_update_result.get('updated', False)
         })
 
-        # Prepare welcome message for WebSocket client
-        response_body = {
-            "type": "welcome",
-            "message": "Connected successfully",
-            "connection_id": connection_id,
-            "session_id": session_id,
-            "conversation_id": conversation_id if conversation_id else session_id,
-            "user_id": user_id,
-            "user_type": user_type,
-            "features": {
-                "message_history": user_type == 'authenticated',
-                "session_expires_in_hours": session_ttl_hours
-            },
-            "timestamp": datetime.utcnow().isoformat()
-        }
-
-        # Add upgrade suggestion for anonymous users
-        if user_type == 'anonymous':
-            response_body["upgrade_suggestion"] = {
-                "message": "Sign in to save your chat history and get more features",
-                "benefits": [
-                    "Save chat history",
-                    "Longer session duration",
-                    "Personalized responses"
-                ]
-            }
-
-        return create_response(200, response_body)
+        # WebSocket $connect routes cannot return a response body
+        # The welcome message will be sent via the management API after connection
+        return create_response(200)
         
     except Exception as e:
         processing_time = (time.time() - start_time) * 1000
@@ -218,10 +193,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'traceback': str(e)
         }, exc_info=True)
         
-        return create_response(500, {
-            "error": "Internal server error",
-            "message": "Failed to establish connection"
-        })
+        return create_response(500)
 
 def update_session_connection(
     session_id: str,
@@ -247,10 +219,10 @@ def update_session_connection(
         current_time_iso = current_datetime.isoformat()
         current_timestamp = int(current_datetime.timestamp())
 
-        # Since the sessions table has a composite key (session_id + timestamp),
+        # Since the sessions table has a composite key (conversation_id + timestamp),
         # we need to create a new entry for each connection
         session_data = {
-            'session_id': session_id,
+            'conversation_id': session_id,
             'timestamp': current_timestamp,  # Range key
             'user_id': user_id,
             'user_type': user_type,
