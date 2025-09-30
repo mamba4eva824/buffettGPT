@@ -128,6 +128,7 @@ jobs:
       - name: Terraform Plan
         working-directory: chat-api/terraform/environments/staging
         run: |
+          set +e
           terraform plan -out=tfplan \
             -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
             -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
@@ -135,8 +136,17 @@ jobs:
             -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
             -var="bedrock_agent_id=${{ secrets.BEDROCK_AGENT_ID }}" \
             -var="bedrock_agent_alias=${{ secrets.BEDROCK_AGENT_ALIAS }}" \
-            -var='alert_email=${{ secrets.ALERT_EMAIL || "" }}' \
-            -detailed-exitcode || [ $? -eq 2 ]
+            -var="alert_email=${{ secrets.ALERT_EMAIL }}" \
+            -detailed-exitcode
+          EXIT_CODE=$?
+          set -e
+          if [ $EXIT_CODE -eq 0 ] || [ $EXIT_CODE -eq 2 ]; then
+            echo "Terraform plan succeeded"
+            exit 0
+          else
+            echo "Terraform plan failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
 
       - name: Terraform Apply
         working-directory: chat-api/terraform/environments/staging
