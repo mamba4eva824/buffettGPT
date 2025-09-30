@@ -33,16 +33,16 @@ resource "aws_apigatewayv2_api" "http_api" {
       "DELETE",
       "OPTIONS"
     ]
-    allow_origins = var.environment == "prod" ? [
-      "https://your-cloudfront-domain.com"  # Replace with actual production domain
-    ] : [
-      "http://localhost:5173",  # Vite dev server
-      "http://localhost:5174",  # Alternative Vite port
-      "http://localhost:3000",  # Alternative dev port
-      "http://localhost:4173",  # Vite preview
-      "http://127.0.0.1:5173"   # Alternative localhost
-      # Removed "*" as it conflicts with allow_credentials = true
-    ]
+    allow_origins = concat(
+      var.cloudfront_url != "" ? [var.cloudfront_url] : [],
+      var.environment == "prod" ? [] : [
+        "http://localhost:5173",  # Vite dev server
+        "http://localhost:5174",  # Alternative Vite port
+        "http://localhost:3000",  # Alternative dev port
+        "http://localhost:4173",  # Vite preview
+        "http://127.0.0.1:5173"   # Alternative localhost
+      ]
+    )
     expose_headers = [
       "x-session-id",
       "x-request-id",

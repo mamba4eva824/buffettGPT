@@ -63,6 +63,12 @@ variable "enable_auth_routes" {
   default     = true
 }
 
+variable "cloudfront_url" {
+  description = "CloudFront URL to add to CORS allowed origins"
+  type        = string
+  default     = ""
+}
+
 variable "common_tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
