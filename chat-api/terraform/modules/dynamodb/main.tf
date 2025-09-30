@@ -8,11 +8,11 @@
 resource "aws_dynamodb_table" "chat_sessions" {
   name           = "${var.project_name}-${var.environment}-chat-sessions"
   billing_mode   = var.billing_mode
-  hash_key       = "session_id"
+  hash_key       = "conversation_id"
   range_key      = "timestamp"
 
   attribute {
-    name = "session_id"
+    name = "conversation_id"
     type = "S"
   }
 
@@ -27,7 +27,7 @@ resource "aws_dynamodb_table" "chat_sessions" {
   }
 
   global_secondary_index {
-    name            = "user-sessions-index"
+    name            = "user-conversations-index"
     hash_key        = "user_id"
     range_key       = "timestamp"
     projection_type = "ALL"
@@ -61,11 +61,11 @@ resource "aws_dynamodb_table" "chat_sessions" {
 resource "aws_dynamodb_table" "chat_messages" {
   name           = "${var.project_name}-${var.environment}-chat-messages"
   billing_mode   = var.billing_mode
-  hash_key       = "session_id"
+  hash_key       = "conversation_id"
   range_key      = "message_id"
 
   attribute {
-    name = "session_id"
+    name = "conversation_id"
     type = "S"
   }
 
