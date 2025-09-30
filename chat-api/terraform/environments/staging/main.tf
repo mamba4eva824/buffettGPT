@@ -154,6 +154,7 @@ module "api_gateway" {
   authorizer_function_name        = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
   auth_callback_function_arn      = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
+  cloudfront_url                  = "https://d2bmcia2ei4z1i.cloudfront.net"
 
   common_tags = local.common_tags
 }
@@ -172,7 +173,7 @@ module "auth" {
   # OAuth Configuration
   google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
-  frontend_url         = var.frontend_url != "" ? var.frontend_url : "https://placeholder-will-be-updated-after-cloudfront"
+  frontend_url         = "https://d2bmcia2ei4z1i.cloudfront.net"
   jwt_secret           = var.jwt_secret
 
   # Dependencies
@@ -279,6 +280,13 @@ module "bedrock" {
   # This allows the alias to point to numbered versions (1, 2, 3, etc.)
   create_agent_version = true
 }
+
+# ================================================
+# CloudFront + S3 Frontend Module
+# ================================================
+# Note: CloudFront distribution (E9XUZCDMBX6Z) and S3 bucket (buffett-staging-frontend)
+# are manually managed and deployed via GitHub Actions CI/CD pipeline.
+# The deploy-frontend job in .github/workflows/deploy-staging.yml handles deployment.
 
 # ================================================
 # Post-Deployment Configuration

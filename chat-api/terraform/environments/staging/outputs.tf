@@ -73,15 +73,41 @@ output "bedrock_knowledge_base_id" {
 }
 
 # ================================================
+# CloudFront Outputs
+# ================================================
+# Note: CloudFront is manually managed outside Terraform
+
+output "cloudfront_distribution_id" {
+  description = "The ID of the CloudFront distribution"
+  value       = "E9XUZCDMBX6Z"
+}
+
+output "cloudfront_url" {
+  description = "The CloudFront distribution URL"
+  value       = "https://d2bmcia2ei4z1i.cloudfront.net"
+}
+
+output "cloudfront_domain_name" {
+  description = "The CloudFront distribution domain name"
+  value       = "d2bmcia2ei4z1i.cloudfront.net"
+}
+
+output "s3_bucket_name" {
+  description = "The S3 bucket name for frontend files"
+  value       = "buffett-staging-frontend"
+}
+
+# ================================================
 # Access Instructions Output
 # ================================================
 
 output "staging_access_info" {
   description = "Information for accessing the staging environment"
   value = {
-    environment   = "staging"
-    http_api_url  = module.api_gateway.http_api_endpoint
-    websocket_url = module.api_gateway.websocket_api_endpoint
-    instructions  = "Share these URLs with friends and family for testing. Frontend will be deployed separately to CloudFront."
+    environment    = "staging"
+    frontend_url   = "https://d2bmcia2ei4z1i.cloudfront.net"
+    http_api_url   = module.api_gateway.http_api_endpoint
+    websocket_url  = module.api_gateway.websocket_api_endpoint
+    instructions   = "Share the frontend URL with friends and family for testing."
   }
 }
