@@ -13,14 +13,18 @@ variable "aws_region" {
 }
 
 # Bedrock Configuration
+# Note: These are optional - the Bedrock module will create these resources
+# Only provide values if using an existing agent (not recommended for staging)
 variable "bedrock_agent_id" {
-  description = "Bedrock agent ID"
+  description = "Bedrock agent ID (optional - will be created by module)"
   type        = string
+  default     = ""
 }
 
 variable "bedrock_agent_alias" {
-  description = "Bedrock agent alias"
+  description = "Bedrock agent alias (optional - will be created by module)"
   type        = string
+  default     = ""
 }
 
 variable "bedrock_region" {
@@ -33,7 +37,7 @@ variable "bedrock_region" {
 variable "enable_authentication" {
   description = "Enable authentication module"
   type        = bool
-  default     = true  # Enable auth for staging (friends & family testing)
+  default     = true # Enable auth for staging (friends & family testing)
 }
 
 variable "google_client_id" {
@@ -51,7 +55,7 @@ variable "google_client_secret" {
 variable "frontend_url" {
   description = "Frontend application URL (CloudFront distribution)"
   type        = string
-  default     = ""  # Will be populated after CloudFront is created
+  default     = "" # Will be populated after CloudFront is created
 }
 
 variable "jwt_secret" {
@@ -64,7 +68,7 @@ variable "jwt_secret" {
 variable "enable_monitoring" {
   description = "Enable monitoring module"
   type        = bool
-  default     = true  # Enable monitoring for staging
+  default     = true # Enable monitoring for staging
 }
 
 variable "alert_email" {
