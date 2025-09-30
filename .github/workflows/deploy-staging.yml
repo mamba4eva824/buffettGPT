@@ -1,0 +1,231 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - main  # Auto-deploy when pushing to main
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT: staging
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  build-backend:
+    name: Build Backend Lambda Functions
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build Lambda Layer
+        working-directory: chat-api/backend
+        run: |
+          chmod +x scripts/build_layer.sh
+          ./scripts/build_layer.sh
+
+      - name: Build Lambda packages
+        working-directory: chat-api/backend
+        run: |
+          chmod +x scripts/build_lambdas.sh
+          ./scripts/build_lambdas.sh
+
+      - name: Upload Lambda packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-packages
+          path: chat-api/backend/build/*.zip
+          retention-days: 1
+
+  deploy-infrastructure:
+    name: Deploy Infrastructure with Terraform
+    runs-on: ubuntu-latest
+    needs: [build-backend]
+
+    outputs:
+      http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
+      websocket_api_endpoint: ${{ steps.terraform-output.outputs.websocket_api_endpoint }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Lambda packages
+        uses: actions/download-artifact@v4
+        with:
+          name: lambda-packages
+          path: chat-api/backend/build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Create/Update Secrets in AWS Secrets Manager
+        run: |
+          # Create or update Google OAuth secret
+          aws secretsmanager describe-secret --secret-id buffett-staging-google-oauth 2>/dev/null || \
+          aws secretsmanager create-secret \
+            --name buffett-staging-google-oauth \
+            --description "Google OAuth credentials for staging environment" \
+            --region ${{ env.AWS_REGION }}
+
+          aws secretsmanager put-secret-value \
+            --secret-id buffett-staging-google-oauth \
+            --secret-string "{\"client_id\":\"${{ secrets.GOOGLE_CLIENT_ID }}\",\"client_secret\":\"${{ secrets.GOOGLE_CLIENT_SECRET }}\"}" \
+            --region ${{ env.AWS_REGION }}
+
+          # Create or update JWT secret
+          aws secretsmanager describe-secret --secret-id buffett-staging-jwt-secret 2>/dev/null || \
+          aws secretsmanager create-secret \
+            --name buffett-staging-jwt-secret \
+            --description "JWT signing secret for staging environment" \
+            --region ${{ env.AWS_REGION }}
+
+          aws secretsmanager put-secret-value \
+            --secret-id buffett-staging-jwt-secret \
+            --secret-string "${{ secrets.JWT_SECRET }}" \
+            --region ${{ env.AWS_REGION }}
+
+          # Create or update Pinecone API key
+          aws secretsmanager describe-secret --secret-id buffett-staging-pinecone-api-key 2>/dev/null || \
+          aws secretsmanager create-secret \
+            --name buffett-staging-pinecone-api-key \
+            --description "Pinecone API key for staging environment" \
+            --region ${{ env.AWS_REGION }}
+
+          aws secretsmanager put-secret-value \
+            --secret-id buffett-staging-pinecone-api-key \
+            --secret-string "${{ secrets.PINECONE_API_KEY }}" \
+            --region ${{ env.AWS_REGION }}
+
+          echo "✅ AWS Secrets Manager secrets created/updated successfully"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+          terraform_wrapper: false  # Needed to capture outputs
+
+      - name: Terraform Init
+        working-directory: chat-api/terraform/environments/staging
+        run: terraform init -backend-config=backend.hcl
+
+      - name: Terraform Validate
+        working-directory: chat-api/terraform/environments/staging
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: chat-api/terraform/environments/staging
+        run: |
+          terraform plan -out=tfplan \
+            -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var="bedrock_agent_id=${{ secrets.BEDROCK_AGENT_ID }}" \
+            -var="bedrock_agent_alias=${{ secrets.BEDROCK_AGENT_ALIAS }}" \
+            -var="alert_email=${{ secrets.ALERT_EMAIL }}"
+
+      - name: Terraform Apply
+        working-directory: chat-api/terraform/environments/staging
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get Terraform Outputs
+        id: terraform-output
+        working-directory: chat-api/terraform/environments/staging
+        run: |
+          HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
+          WS_ENDPOINT=$(terraform output -raw websocket_api_endpoint)
+
+          echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "websocket_api_endpoint=$WS_ENDPOINT" >> $GITHUB_OUTPUT
+
+          echo "📡 API Endpoints:"
+          echo "  HTTP API: $HTTP_ENDPOINT"
+          echo "  WebSocket: $WS_ENDPOINT"
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Create staging environment file
+        working-directory: frontend
+        run: |
+          cat > .env.staging << EOF
+          VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
+          VITE_WEBSOCKET_URL=${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}
+          VITE_ENVIRONMENT=staging
+          VITE_ENABLE_DEBUG_LOGS=true
+          EOF
+
+          echo "✅ Created .env.staging with API endpoints"
+          cat .env.staging
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build -- --mode staging
+
+      - name: Upload frontend artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 1
+
+  # TODO: Add deploy-frontend job once S3 + CloudFront module is ready
+  # This will upload the frontend build to S3 and invalidate CloudFront cache
+
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, build-frontend]
+    if: always()
+
+    steps:
+      - name: Print deployment summary
+        run: |
+          echo "🚀 Staging Deployment Summary"
+          echo "=============================="
+          echo ""
+          echo "Environment: staging"
+          echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
+          echo "WebSocket: ${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}"
+          echo ""
+          echo "✅ Backend infrastructure deployed"
+          echo "✅ Lambda functions deployed"
+          echo "✅ Frontend built and ready"
+          echo ""
+          echo "📋 Next Steps:"
+          echo "1. Frontend will be deployed to CloudFront (coming soon)"
+          echo "2. Share CloudFront URL with friends and family"
+          echo "3. Monitor CloudWatch logs for any issues"
+          echo ""
+          echo "🔍 To check deployment:"
+          echo "   curl ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}/health"

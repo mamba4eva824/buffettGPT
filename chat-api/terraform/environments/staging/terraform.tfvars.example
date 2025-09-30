@@ -1,0 +1,26 @@
+# Staging Environment Variables
+# Copy this file to terraform.tfvars and fill in the values
+# DO NOT commit terraform.tfvars to git (it contains secrets)
+
+# Project Configuration
+project_name = "buffett"
+aws_region   = "us-east-1"
+
+# Bedrock Configuration (use values from dev environment)
+bedrock_agent_id    = "QTFYZ6BBSE"  # From dev environment
+bedrock_agent_alias = "WNW1OMPUEW"  # From dev environment
+bedrock_region      = "us-east-1"
+
+# Authentication Configuration
+enable_authentication = true
+google_client_id      = "YOUR_GOOGLE_CLIENT_ID"
+google_client_secret  = "YOUR_GOOGLE_CLIENT_SECRET"
+frontend_url          = ""  # Will be populated after CloudFront deployment
+jwt_secret            = "YOUR_JWT_SECRET"
+
+# Pinecone Configuration
+pinecone_api_key = "YOUR_PINECONE_API_KEY"
+
+# Monitoring Configuration
+enable_monitoring = true
+alert_email       = "your-email@example.com"
