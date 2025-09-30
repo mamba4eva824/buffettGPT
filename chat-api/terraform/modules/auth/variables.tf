@@ -52,3 +52,9 @@ variable "dependencies_layer_arn" {
   description = "ARN of the dependencies Lambda layer"
   type        = string
 }
+
+variable "lambda_package_path" {
+  description = "Path to Lambda deployment packages"
+  type        = string
+  default     = "../../backend/build"
+}

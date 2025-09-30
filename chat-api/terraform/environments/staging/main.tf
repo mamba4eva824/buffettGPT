@@ -179,6 +179,7 @@ module "auth" {
   lambda_role_arn           = module.core.lambda_role_arn
   api_gateway_execution_arn = module.api_gateway.http_api_execution_arn
   dependencies_layer_arn    = module.lambda.dependencies_layer_arn
+  lambda_package_path       = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build"
 
   common_tags = local.common_tags
 }

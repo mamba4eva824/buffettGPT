@@ -47,8 +47,8 @@ resource "aws_lambda_function" "auth_callback" {
   timeout       = 30
   memory_size   = 256
 
-  filename         = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_callback.zip"
-  source_code_hash = filebase64sha256("/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_callback.zip")
+  filename         = "${var.lambda_package_path}/auth_callback.zip"
+  source_code_hash = filebase64sha256("${var.lambda_package_path}/auth_callback.zip")
 
   # Use the dependencies layer
   layers = [var.dependencies_layer_arn]
@@ -81,8 +81,8 @@ resource "aws_lambda_function" "auth_verify" {
   timeout       = 30
   memory_size   = 256
 
-  filename         = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_verify.zip"
-  source_code_hash = filebase64sha256("/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_verify.zip")
+  filename         = "${var.lambda_package_path}/auth_verify.zip"
+  source_code_hash = filebase64sha256("${var.lambda_package_path}/auth_verify.zip")
 
   # Use the dependencies layer
   layers = [var.dependencies_layer_arn]
