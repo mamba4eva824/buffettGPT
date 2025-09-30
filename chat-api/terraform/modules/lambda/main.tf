@@ -44,6 +44,24 @@ locals {
 }
 
 # ================================================
+# Lambda Layer for Shared Dependencies
+# ================================================
+
+resource "aws_lambda_layer_version" "dependencies" {
+  filename         = "${var.lambda_package_path}/dependencies-layer.zip"
+  layer_name       = "${var.project_name}-${var.environment}-dependencies"
+  description      = "Shared Python dependencies for Lambda functions"
+
+  compatible_runtimes = [var.runtime]
+
+  source_code_hash = filebase64sha256("${var.lambda_package_path}/dependencies-layer.zip")
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# ================================================
 # Lambda Functions
 # ================================================
 
@@ -58,9 +76,12 @@ resource "aws_lambda_function" "functions" {
   timeout         = each.value.timeout
   memory_size     = each.value.memory_size
   description     = each.value.description
-  
+
   # Use source_code_hash for proper updates
   source_code_hash = filebase64sha256("${var.lambda_package_path}/${each.key}.zip")
+
+  # Use the dependencies layer
+  layers = [aws_lambda_layer_version.dependencies.arn]
 
   environment {
     variables = merge(

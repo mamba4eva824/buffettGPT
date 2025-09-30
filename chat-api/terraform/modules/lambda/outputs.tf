@@ -1,5 +1,11 @@
 # Lambda Module Outputs
 
+# Dependencies Layer ARN
+output "dependencies_layer_arn" {
+  description = "ARN of the dependencies Lambda layer"
+  value       = aws_lambda_layer_version.dependencies.arn
+}
+
 # Function ARNs
 output "function_arns" {
   description = "Map of Lambda function ARNs"

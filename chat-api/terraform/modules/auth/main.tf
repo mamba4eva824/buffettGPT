@@ -50,7 +50,8 @@ resource "aws_lambda_function" "auth_callback" {
   filename         = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_callback.zip"
   source_code_hash = filebase64sha256("/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_callback.zip")
 
-  # layers = [] # Removed - using AWS Lambda runtime dependencies
+  # Use the dependencies layer
+  layers = [var.dependencies_layer_arn]
 
   environment {
     variables = {
@@ -82,6 +83,9 @@ resource "aws_lambda_function" "auth_verify" {
 
   filename         = "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_verify.zip"
   source_code_hash = filebase64sha256("/Users/christopherweinreich/Documents/Projects/buffett_chat_api/chat-api/backend/build/auth_verify.zip")
+
+  # Use the dependencies layer
+  layers = [var.dependencies_layer_arn]
 
   environment {
     variables = {

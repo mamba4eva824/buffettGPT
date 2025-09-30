@@ -188,9 +188,10 @@ resource "aws_apigatewayv2_authorizer" "http_jwt_authorizer" {
   authorizer_type                   = "REQUEST"
   authorizer_uri                    = var.authorizer_function_arn
   name                              = "${local.resource_prefix}-http-jwt-authorizer"
-  authorizer_payload_format_version = "1.0"
+  authorizer_payload_format_version = "2.0"
   authorizer_credentials_arn        = aws_iam_role.authorizer_invocation_role[0].arn
   identity_sources                  = ["$request.header.Authorization"]
+  enable_simple_responses           = true
 }
 
 resource "aws_apigatewayv2_authorizer" "websocket_jwt_authorizer" {

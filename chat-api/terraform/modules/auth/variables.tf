@@ -47,3 +47,8 @@ variable "api_gateway_execution_arn" {
   description = "API Gateway execution ARN for Lambda permissions"
   type        = string
 }
+
+variable "dependencies_layer_arn" {
+  description = "ARN of the dependencies Lambda layer"
+  type        = string
+}
