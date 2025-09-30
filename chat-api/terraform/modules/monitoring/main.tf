@@ -96,7 +96,7 @@ resource "aws_cloudwatch_metric_alarm" "websocket_connect_errors" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[index(var.lambda_function_names, "websocket_connect")]
+    FunctionName = var.lambda_function_names["websocket_connect"]
   }
 
   tags = merge(
@@ -123,7 +123,7 @@ resource "aws_cloudwatch_metric_alarm" "websocket_connect_duration" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[index(var.lambda_function_names, "websocket_connect")]
+    FunctionName = var.lambda_function_names["websocket_connect"]
   }
 
   tags = merge(
@@ -152,7 +152,7 @@ resource "aws_cloudwatch_metric_alarm" "websocket_message_errors" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[index(var.lambda_function_names, "websocket_message")]
+    FunctionName = var.lambda_function_names["websocket_message"]
   }
 
   tags = merge(
@@ -181,7 +181,7 @@ resource "aws_cloudwatch_metric_alarm" "chat_processor_errors" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[index(var.lambda_function_names, "chat_processor")]
+    FunctionName = var.lambda_function_names["chat_processor"]
   }
 
   tags = merge(
@@ -208,7 +208,7 @@ resource "aws_cloudwatch_metric_alarm" "chat_processor_duration" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[index(var.lambda_function_names, "chat_processor")]
+    FunctionName = var.lambda_function_names["chat_processor"]
   }
 
   tags = merge(
@@ -235,7 +235,7 @@ resource "aws_cloudwatch_metric_alarm" "chat_processor_throttles" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[index(var.lambda_function_names, "chat_processor")]
+    FunctionName = var.lambda_function_names["chat_processor"]
   }
 
   tags = merge(
@@ -263,7 +263,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_init_duration_high" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[0]  # Monitor first function as representative
+    FunctionName = lookup(var.lambda_function_names, "chat_processor", values(var.lambda_function_names)[0])
   }
 
   tags = merge(
@@ -555,7 +555,7 @@ resource "aws_cloudwatch_metric_alarm" "provisioned_concurrency_utilization_high
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[0]  # Monitor first function as representative
+    FunctionName = lookup(var.lambda_function_names, "chat_processor", values(var.lambda_function_names)[0])
   }
 
   tags = merge(
@@ -582,7 +582,7 @@ resource "aws_cloudwatch_metric_alarm" "provisioned_concurrency_spillover_high" 
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = var.lambda_function_names[0]  # Monitor first function as representative
+    FunctionName = lookup(var.lambda_function_names, "chat_processor", values(var.lambda_function_names)[0])
   }
 
   tags = merge(

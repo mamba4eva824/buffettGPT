@@ -183,7 +183,7 @@ resource "aws_cloudwatch_log_group" "websocket_api_logs" {
 # ================================================
 
 resource "aws_apigatewayv2_authorizer" "http_jwt_authorizer" {
-  count                             = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
+  count                             = var.enable_authorization ? 1 : 0
   api_id                            = aws_apigatewayv2_api.http_api.id
   authorizer_type                   = "REQUEST"
   authorizer_uri                    = var.authorizer_function_arn
@@ -195,7 +195,7 @@ resource "aws_apigatewayv2_authorizer" "http_jwt_authorizer" {
 }
 
 resource "aws_apigatewayv2_authorizer" "websocket_jwt_authorizer" {
-  count                      = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
+  count                      = var.enable_authorization ? 1 : 0
   api_id                     = aws_apigatewayv2_api.websocket_api.id
   authorizer_type            = "REQUEST"
   authorizer_uri             = var.authorizer_function_arn
@@ -207,7 +207,7 @@ resource "aws_apigatewayv2_authorizer" "websocket_jwt_authorizer" {
 
 # IAM Role for Authorizer Invocation (WebSocket)
 resource "aws_iam_role" "authorizer_invocation_role" {
-  count = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
+  count = var.enable_authorization ? 1 : 0
   name  = "${local.resource_prefix}-authorizer-invocation-role"
 
   assume_role_policy = jsonencode({
@@ -234,7 +234,7 @@ resource "aws_iam_role" "authorizer_invocation_role" {
 }
 
 resource "aws_iam_role_policy" "authorizer_invocation_policy" {
-  count = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
+  count = var.enable_authorization ? 1 : 0
   name  = "${local.resource_prefix}-authorizer-invocation-policy"
   role  = aws_iam_role.authorizer_invocation_role[0].id
 
@@ -291,8 +291,8 @@ resource "aws_apigatewayv2_route" "chat_post_route" {
   route_key = "POST /chat"
   target    = "integrations/${aws_apigatewayv2_integration.chat_lambda_integration.id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 resource "aws_apigatewayv2_route" "health_get_route" {
@@ -308,8 +308,8 @@ resource "aws_apigatewayv2_route" "history_get_route" {
   route_key = "GET /api/v1/chat/history/{session_id}"
   target    = "integrations/${aws_apigatewayv2_integration.chat_lambda_integration.id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 resource "aws_apigatewayv2_route" "chat_options_route" {
@@ -331,8 +331,8 @@ resource "aws_apigatewayv2_route" "list_conversations" {
   route_key = "GET /conversations"
   target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 # POST /conversations - Create new conversation
@@ -342,8 +342,8 @@ resource "aws_apigatewayv2_route" "create_conversation" {
   route_key = "POST /conversations"
   target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 # GET /conversations/{conversation_id} - Get specific conversation
@@ -353,8 +353,8 @@ resource "aws_apigatewayv2_route" "get_conversation" {
   route_key = "GET /conversations/{conversation_id}"
   target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 # PUT /conversations/{conversation_id} - Update conversation
@@ -364,8 +364,8 @@ resource "aws_apigatewayv2_route" "update_conversation" {
   route_key = "PUT /conversations/{conversation_id}"
   target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 # DELETE /conversations/{conversation_id} - Delete conversation
@@ -375,8 +375,8 @@ resource "aws_apigatewayv2_route" "delete_conversation" {
   route_key = "DELETE /conversations/{conversation_id}"
   target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 # GET /conversations/{conversation_id}/messages - Get conversation messages
@@ -386,8 +386,8 @@ resource "aws_apigatewayv2_route" "get_conversation_messages" {
   route_key = "GET /conversations/{conversation_id}/messages"
   target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
 # OPTIONS /conversations - CORS preflight
@@ -492,8 +492,8 @@ resource "aws_apigatewayv2_route" "websocket_connect_route" {
   route_key = "$connect"
   target    = "integrations/${aws_apigatewayv2_integration.websocket_connect_integration.id}"
 
-  authorization_type = var.enable_authorization && var.authorizer_function_arn != null ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.websocket_jwt_authorizer[0].id : null
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.websocket_jwt_authorizer[0].id : null
 }
 
 resource "aws_apigatewayv2_route" "websocket_disconnect_route" {
@@ -568,7 +568,7 @@ resource "aws_lambda_permission" "websocket_message_permission" {
 
 # Authorizer permissions
 resource "aws_lambda_permission" "http_authorizer_permission" {
-  count         = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
+  count         = var.enable_authorization ? 1 : 0
   statement_id  = "AllowHTTPAuthorizerInvoke"
   action        = "lambda:InvokeFunction"
   function_name = var.authorizer_function_name
@@ -577,7 +577,7 @@ resource "aws_lambda_permission" "http_authorizer_permission" {
 }
 
 resource "aws_lambda_permission" "websocket_authorizer_permission" {
-  count         = var.enable_authorization && var.authorizer_function_arn != null ? 1 : 0
+  count         = var.enable_authorization ? 1 : 0
   statement_id  = "AllowWebSocketAuthorizerInvoke"
   action        = "lambda:InvokeFunction"
   function_name = var.authorizer_function_name
