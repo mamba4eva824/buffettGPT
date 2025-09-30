@@ -285,6 +285,12 @@ module "bedrock" {
 # CloudFront + S3 Frontend Module
 # ================================================
 
+# Import existing S3 bucket into Terraform state
+import {
+  to = module.cloudfront.aws_s3_bucket.frontend
+  id = "buffett-staging-frontend"
+}
+
 module "cloudfront" {
   source = "../../modules/cloudfront-static-site"
 
