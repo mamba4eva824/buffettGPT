@@ -17,9 +17,15 @@ echo "Build directory: ${BUILD_DIR}"
 # Create build directory if it doesn't exist
 mkdir -p "${BUILD_DIR}"
 
+# Build Lambda layer first
+echo ""
+echo "Building Lambda layer..."
+"${SCRIPT_DIR}/build_layer.sh"
+
 # List of Lambda functions to package
 FUNCTIONS=(
     "auth_callback"
+    "auth_verify"
     "chat_http_handler"
     "chat_processor"
     "conversations_handler"
@@ -44,32 +50,21 @@ for FUNCTION in "${FUNCTIONS[@]}"; do
     rm -rf "${TEMP_DIR}"
     mkdir -p "${TEMP_DIR}"
 
-    # Copy the handler file
+    # Copy only the handler file
     cp "${SRC_DIR}/${FUNCTION}.py" "${TEMP_DIR}/"
+
+    # Copy only specific utility directories (not all of src which contains dependencies)
+    # Copy handlers/utils directory (contains conversation_updater and other utilities)
+    if [ -d "${SRC_DIR}/utils" ]; then
+        cp -r "${SRC_DIR}/utils" "${TEMP_DIR}/"
+    fi
 
     # Copy any shared utilities if they exist
     if [ -d "${SRC_DIR}/shared" ]; then
         cp -r "${SRC_DIR}/shared" "${TEMP_DIR}/"
     fi
 
-    # Copy utils directory (contains rate_limiter and other utilities)
-    if [ -d "${BACKEND_DIR}/src/utils" ]; then
-        cp -r "${BACKEND_DIR}/src/utils" "${TEMP_DIR}/"
-    fi
-
-    # Copy handlers/utils directory (contains conversation_updater and other utilities)
-    if [ -d "${SRC_DIR}/utils" ]; then
-        cp -r "${SRC_DIR}/utils" "${TEMP_DIR}/"
-    fi
-
-    # Copy requirements if they exist (for Layer creation later)
-    if [ -f "${SRC_DIR}/requirements_${FUNCTION}.txt" ]; then
-        cp "${SRC_DIR}/requirements_${FUNCTION}.txt" "${TEMP_DIR}/requirements.txt"
-    elif [ -f "${BACKEND_DIR}/requirements.txt" ]; then
-        cp "${BACKEND_DIR}/requirements.txt" "${TEMP_DIR}/requirements.txt"
-    fi
-
-    # Create the zip file
+    # Create the zip file (excluding requirements.txt since dependencies are in Lambda Layer)
     cd "${TEMP_DIR}"
     zip -r "${BUILD_DIR}/${FUNCTION}.zip" . -x "*.pyc" -x "__pycache__/*" -x "requirements.txt"
 
