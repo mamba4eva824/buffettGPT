@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen } from "lucide-react";
-import { AuthProvider, AuthButton, useAuth } from "./auth.jsx";
+import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen, X, Menu, ChevronDown, User, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
+import { AuthProvider, AuthButton, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
 import { ConversationList } from "./components/ConversationList.jsx";
 import { loadConversationHistory } from "./api/conversationsApi.js";
+import { Avatar } from "./components/Avatar.jsx";
+import logger from "./utils/logger.js";
 
 /*************************
  * Environment Configuration *
@@ -11,7 +13,7 @@ import { loadConversationHistory } from "./api/conversationsApi.js";
 const ENV_CONFIG = {
   WEBSOCKET_URL: import.meta.env.VITE_WEBSOCKET_URL || "",
   REST_API_URL: import.meta.env.VITE_REST_API_URL || "",
-  APP_NAME: import.meta.env.VITE_APP_NAME || "Warren Buffett Chat AI",
+  APP_NAME: import.meta.env.VITE_APP_NAME || "BuffettGPT",
   ENVIRONMENT: import.meta.env.VITE_ENVIRONMENT || "development",
   ENABLE_DEBUG_LOGS: import.meta.env.VITE_ENABLE_DEBUG_LOGS === "true",
   ENABLE_DEMO_MODE: import.meta.env.VITE_ENABLE_DEMO_MODE === "true",
@@ -23,10 +25,13 @@ const ENV_CONFIG = {
  *************************/
 const LS_KEYS = {
   wsUrl: "chat.ai.wsUrl",
-  restUrl: "chat.ai.restUrl", 
+  restUrl: "chat.ai.restUrl",
   sessions: "chat.ai.sessions",
   userName: "chat.ai.userName",
-  manualConfig: "chat.ai.manualConfig" // Track if user overrode defaults
+  manualConfig: "chat.ai.manualConfig", // Track if user overrode defaults
+  darkMode: "chat.ai.darkMode",
+  dailyQueries: "chat.ai.dailyQueries",
+  queryDate: "chat.ai.queryDate"
 };
 
 const getLS = (k, def = "") => {
@@ -35,18 +40,56 @@ const getLS = (k, def = "") => {
 const setLS = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
 
 /*********************
+ * Rate Limiting     *
+ *********************/
+const DAILY_QUERY_LIMIT = 10;
+
+const getTodayString = () => new Date().toISOString().split('T')[0];
+
+const getDailyQueryCount = () => {
+  const today = getTodayString();
+  const savedDate = getLS(LS_KEYS.queryDate);
+  const savedCount = parseInt(getLS(LS_KEYS.dailyQueries, "0"));
+
+  // Reset count if it's a new day
+  if (savedDate !== today) {
+    setLS(LS_KEYS.queryDate, today);
+    setLS(LS_KEYS.dailyQueries, "0");
+    return 0;
+  }
+
+  return savedCount;
+};
+
+const incrementQueryCount = () => {
+  const currentCount = getDailyQueryCount();
+  const newCount = currentCount + 1;
+  setLS(LS_KEYS.dailyQueries, newCount.toString());
+  return newCount;
+};
+
+const getRemainingQueries = () => {
+  const currentCount = getDailyQueryCount();
+  return Math.max(0, DAILY_QUERY_LIMIT - currentCount);
+};
+
+/*********************
  * Helper utilities   *
  *********************/
 function classNames(...xs) { return xs.filter(Boolean).join(" "); }
 function uid8() { return Math.random().toString(36).slice(2, 10); }
 function nowIso() { return new Date().toISOString(); }
-function prettyTime(ts) { try { return new Date(ts).toLocaleTimeString(); } catch { return ""; } }
 
 /************************
  * useWebSocket hook     *
  ************************/
-function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversations }) {
+function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversations, setIsEvaluating }) {
   const socketRef = useRef(null);
+  const heartbeatIntervalRef = useRef(null);
+  const idleTimeoutRef = useRef(null);
+  const lastPongRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
+  const reconnectingRef = useRef(false); // Track reconnection state to prevent race conditions
   const [status, setStatus] = useState("disconnected");
   const [sessionId, setSessionId] = useState("");
   const [messages, setMessages] = useState([]); // {id,type:'user'|'assistant'|'system',content,timestamp,meta}
@@ -55,11 +98,16 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
   // Connect
   const connect = useCallback(() => {
     if (!wsUrl) {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('❌ No WebSocket URL provided');
-      }
+      logger.log('❌ No WebSocket URL provided');
       return;
     }
+
+    // Prevent concurrent connection attempts
+    if (reconnectingRef.current) {
+      logger.log('⏳ Reconnection already in progress, skipping');
+      return;
+    }
+
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) return;
 
     // Build URL with user_id (only for authenticated users) and token (for authentication)
@@ -85,42 +133,97 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
     if (params.toString()) {
       url += `${wsUrl.includes("?") ? "&" : "?"}${params.toString()}`;
     }
-    
-    if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-      console.log('🔌 Connecting to WebSocket:', url, token ? '(with auth token)' : '(no token)');
-    }
-    
+
+    logger.log('🔌 Connecting to WebSocket:', url, token ? '(with auth token)' : '(no token)');
+
+    reconnectingRef.current = true; // Set flag to prevent concurrent reconnections
     const ws = new WebSocket(url);
     socketRef.current = ws;
     setStatus("connecting");
 
     ws.onopen = () => {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('✅ WebSocket connected');
-      }
+      logger.log('✅ WebSocket connected');
+      reconnectingRef.current = false; // Clear flag on successful connection
       setStatus("connected");
+      lastActivityRef.current = Date.now();
+
+      // Start idle timeout (5 minutes)
+      const resetIdleTimeout = () => {
+        lastActivityRef.current = Date.now();
+        if (idleTimeoutRef.current) {
+          clearTimeout(idleTimeoutRef.current);
+        }
+        idleTimeoutRef.current = setTimeout(() => {
+          logger.log('🚫 Disconnecting due to 5 minutes of inactivity');
+          // Close the WebSocket directly instead of calling disconnect
+          if (socketRef.current) {
+            socketRef.current.close();
+          }
+        }, 5 * 60 * 1000); // 5 minutes
+      };
+      resetIdleTimeout();
+
+      // Store reset function for use in message handlers
+      ws.resetIdleTimeout = resetIdleTimeout;
+
+      // Start heartbeat mechanism
+      lastPongRef.current = Date.now();
+      heartbeatIntervalRef.current = setInterval(() => {
+        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+          // Check if we've received a pong recently (within 45 seconds)
+          const timeSinceLastPong = Date.now() - lastPongRef.current;
+          if (timeSinceLastPong > 45000) {
+            logger.warn('⚠️ No pong received in 45s, reconnecting...');
+            // Connection seems dead, close the socket
+            // The useEffect hooks will handle reconnection
+            if (socketRef.current) {
+              socketRef.current.close();
+            }
+            return;
+          }
+
+          // Send ping
+          logger.log('🏓 Sending ping');
+          socketRef.current.send(JSON.stringify({ action: "ping" }));
+        }
+      }, 30000); // Send ping every 30 seconds
     };
-    ws.onclose = () => { 
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('🔌 WebSocket disconnected');
+    ws.onclose = () => {
+      logger.log('🔌 WebSocket disconnected');
+      reconnectingRef.current = false; // Clear reconnection flag
+      setStatus("disconnected");
+      socketRef.current = null;
+
+      // Clear heartbeat and idle timeout
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
       }
-      setStatus("disconnected"); 
-      socketRef.current = null; 
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+        idleTimeoutRef.current = null;
+      }
     };
     ws.onerror = (error) => {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('❌ WebSocket error:', error);
-      }
+      logger.error('❌ WebSocket error:', error);
+      reconnectingRef.current = false; // Clear reconnection flag on error
       setStatus("error");
     };
 
     ws.onmessage = (evt) => {
       try {
         const data = JSON.parse(evt.data || "{}");
-        if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-          console.log('📨 Received WebSocket message:', data);
+
+        // Reset idle timeout on any message
+        if (ws.resetIdleTimeout) {
+          ws.resetIdleTimeout();
         }
-        if (data.type === "welcome") {
+        logger.log('📨 Received WebSocket message:', data);
+        if (data.type === "pong" || data.action === "pong") {
+          // Update last pong timestamp
+          lastPongRef.current = Date.now();
+          logger.log('🏓 Received pong');
+        } else if (data.type === "welcome") {
           // Use conversation_id as session_id if available, otherwise fall back to session_id
           const effectiveSessionId = data.conversation_id || data.session_id || "";
           setSessionId(effectiveSessionId);
@@ -130,17 +233,15 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
           ]);
         } else if (data.type === "messageReceived" || data.action === "message_received") {
           // Message acknowledgment - could show a checkmark or "sent" indicator
-          if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-            console.log('✅ Message acknowledged by server');
-          }
+          logger.log('✅ Message acknowledged by server');
         } else if (data.action === "typing") {
           // Typing indicator
-          if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-            console.log(`⌨️ ${data.is_typing ? 'Started' : 'Stopped'} typing`);
-          }
+          logger.log(`⌨️ ${data.is_typing ? 'Started' : 'Stopped'} typing`);
           // You could show a typing indicator in the UI here
         } else if (data.type === "chunk") {
           // live streaming chunk from backend (optional)
+          // Clear evaluating state when streaming starts
+          setIsEvaluating(false);
           setMessages((m) => {
             // append or create a temp assistant message
             if (!pendingAssistantId) {
@@ -177,6 +278,9 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
             ];
           });
 
+          // Clear evaluating state when response is received
+          setIsEvaluating(false);
+
           // Refresh conversations to update inbox ordering
           if (fetchConversations) {
             fetchConversations();
@@ -186,37 +290,70 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
         }
       } catch (e) { /* ignore */ }
     };
-  }, [wsUrl, userId, token, conversationId, pendingAssistantId, fetchConversations]);
+  }, [wsUrl, userId, token, conversationId, pendingAssistantId, fetchConversations, setIsEvaluating]);
 
   const disconnect = useCallback(() => {
     setPendingAssistantId(null);
-    if (socketRef.current) { try { socketRef.current.close(); } catch {} }
+    reconnectingRef.current = false; // Clear reconnection flag
+
+    // Clear heartbeat and idle timeout
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current);
+      idleTimeoutRef.current = null;
+    }
+
+    if (socketRef.current) {
+      try {
+        // Remove all event listeners before closing to prevent spurious error events
+        const socket = socketRef.current;
+        socket.onopen = null;
+        socket.onclose = null;
+        socket.onerror = null;
+        socket.onmessage = null;
+
+        // Close the socket
+        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+          socket.close();
+        }
+      } catch {}
+
+      // Clear the reference immediately
+      socketRef.current = null;
+    }
+
+    setStatus("disconnected");
   }, []);
 
-  const sendMessage = useCallback((text) => {
+  const sendMessage = useCallback((text, currentConversationId) => {
     if (!text?.trim()) return;
-    
-    if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-      console.log('🚀 Sending message:', text.trim());
-      console.log('📡 WebSocket status:', socketRef.current?.readyState);
-      console.log('🔗 Connection URL:', wsUrl);
-    }
-    
+
+    // Reset idle timeout on user activity
+    lastActivityRef.current = Date.now();
+
+    logger.log('🚀 Sending message:', text.trim());
+    logger.log('📡 WebSocket status:', socketRef.current?.readyState);
+    logger.log('🔗 Connection URL:', wsUrl);
+    logger.log('💬 Conversation ID:', currentConversationId || 'none');
+
     // Add user message immediately
     const userMsg = { id: `usr-${uid8()}`, type: "user", content: text.trim(), timestamp: nowIso() };
     setMessages((m) => [ ...m, userMsg ]);
-    
-    // If WebSocket is connected, send the message
+
+    // If WebSocket is connected, send the message with conversation_id
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      const msg = { action: "message", message: text.trim() };
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('📤 Sending WebSocket message:', msg);
-      }
+      const msg = {
+        action: "message",
+        message: text.trim(),
+        conversation_id: currentConversationId // Include conversation ID in payload
+      };
+      logger.log('📤 Sending WebSocket message:', msg);
       socketRef.current.send(JSON.stringify(msg));
     } else {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('⚠️ WebSocket not connected, using demo mode');
-      }
+      logger.log('⚠️ WebSocket not connected, using demo mode');
       // Demo mode: simulate AI response after a delay
       setTimeout(() => {
         const aiMsg = {
@@ -227,44 +364,29 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
           meta: { processingTime: 1500 }
         };
         setMessages((m) => [ ...m, aiMsg ]);
+        // Clear evaluating state
+        setIsEvaluating(false);
       }, 1500);
     }
-  }, [wsUrl]);
+  }, [wsUrl, setIsEvaluating]);
 
-  return { status, sessionId, messages, connect, disconnect, sendMessage, setMessages };
+  // Add switchConversation function for changing conversations without reconnecting
+  const switchConversation = useCallback((newConversationId) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      logger.log('📝 Switching to conversation:', newConversationId);
+      socketRef.current.send(JSON.stringify({
+        action: "switch_conversation",
+        conversation_id: newConversationId
+      }));
+    }
+  }, []);
+
+  return { status, sessionId, messages, connect, disconnect, sendMessage, setMessages, switchConversation };
 }
 
 /************************
  * REST helpers          *
  ************************/
-async function fetchHistory(restBaseUrl, sessionId, token, limit = 60) {
-  // Clean the base URL and build the history endpoint
-  const baseUrl = restBaseUrl.replace(/\/$/, "");
-  const url = `${baseUrl}/user/history${sessionId ? `?session_id=${encodeURIComponent(sessionId)}&limit=${limit}` : `?limit=${limit}`}`;
-  
-  console.log('Fetching history from:', url); // Debug log
-  
-  const headers = { 
-    "Content-Type": "application/json"
-  };
-  
-  // Add authorization header if token is available
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  
-  const res = await fetch(url, { 
-    method: "GET", 
-    headers 
-  });
-  
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`History fetch failed (${res.status}): ${errorText}`);
-  }
-  
-  return res.json();
-}
 
 async function sendChatMessage(restBaseUrl, message, sessionId, token) {
   // Send chat message via REST API
@@ -284,11 +406,9 @@ async function sendChatMessage(restBaseUrl, message, sessionId, token) {
     message: message,
     session_id: sessionId
   };
-  
-  if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-    console.log('📤 Sending REST API message:', url, body);
-  }
-  
+
+  logger.log('📤 Sending REST API message:', url, body);
+
   const res = await fetch(url, { 
     method: "POST", 
     headers,
@@ -306,30 +426,37 @@ async function sendChatMessage(restBaseUrl, message, sessionId, token) {
 /************************
  * Message bubble        *
  ************************/
-function MessageBubble({ msg }) {
+function MessageBubble({ msg, user, messageRef }) {
   const isUser = msg.type === "user";
   const isSystem = msg.type === "system";
   return (
-    <div className={classNames("flex gap-3", isUser ? "justify-end" : "justify-start") }>
+    <div ref={messageRef} className={classNames("flex gap-3", isUser ? "justify-end" : "justify-start") }>
       {!isUser && (
-        <div className="h-8 w-8 shrink-0 rounded-full bg-indigo-600/10 text-indigo-700 grid place-items-center text-xs font-bold">AI</div>
-      )}
-      <div className={classNames("max-w-[80%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 text-amber-900" : isUser ? "bg-indigo-600 text-white" : "bg-slate-50 text-slate-800")}>
-        <div className="whitespace-pre-wrap">{msg.content}</div>
-        <div className={classNames("mt-2 flex items-center gap-2 text-[11px]", isUser?"text-indigo-100":"text-slate-400") }>
-          <span>{prettyTime(msg.timestamp)}</span>
-          {!isUser && !isSystem && (
-            <>
-              <span>•</span>
-              <button className="inline-flex items-center gap-1 hover:opacity-70"><ThumbsUp className="h-3 w-3"/> Like</button>
-              <button className="inline-flex items-center gap-1 hover:opacity-70"><ThumbsDown className="h-3 w-3"/> Dislike</button>
-              <button className="inline-flex items-center gap-1 hover:opacity-70"><RefreshCcw className="h-3 w-3"/> Regenerate</button>
-            </>
-          )}
+        <div className="h-8 w-8 shrink-0">
+          <img
+            src="/buffett-memoji.png"
+            alt="Warren Buffett AI"
+            className="w-8 h-8 rounded-full"
+          />
         </div>
+      )}
+      <div className={classNames("max-w-[80%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100")}>
+        <div className="whitespace-pre-wrap">{msg.content}</div>
+        {!isUser && !isSystem && (
+          <div className={classNames("mt-2 flex items-center gap-2 text-[11px] text-slate-400")}>
+            <button className="inline-flex items-center hover:opacity-70" title="Like"><ThumbsUp className="h-3 w-3"/></button>
+            <button className="inline-flex items-center hover:opacity-70" title="Dislike"><ThumbsDown className="h-3 w-3"/></button>
+            <button className="inline-flex items-center gap-1 hover:opacity-70"><RefreshCcw className="h-3 w-3"/> Retry</button>
+          </div>
+        )}
       </div>
       {isUser && (
-        <div className="h-8 w-8 shrink-0 rounded-full bg-slate-900 text-white grid place-items-center text-xs font-bold">U</div>
+        <Avatar
+          src={user?.picture || ''}
+          alt={user?.name || user?.email || "User"}
+          size="h-8 w-8"
+          className="shrink-0"
+        />
       )}
     </div>
   );
@@ -349,6 +476,59 @@ function ChatApp() {
   // Get authentication state
   const { user, isAuthenticated, token } = useAuth();
 
+  // Extract first name for personalized greeting
+  const userFirstName = user?.name?.split(' ')[0];
+
+  // Refs for auto-scroll functionality
+  const messagesEndRef = useRef(null);
+  const lastUserMessageRef = useRef(null);
+
+  // Log environment config only once on component mount
+  useEffect(() => {
+    logger.log('🌍 Environment Config:', ENV_CONFIG);
+  }, []);
+  
+  // Use environment variables directly - no user override needed
+  const wsUrl = ENV_CONFIG.WEBSOCKET_URL;
+  const restUrl = ENV_CONFIG.REST_API_URL;
+  const [userName, setUserName] = useState(() => {
+    const saved = getLS(LS_KEYS.userName);
+    return saved || `${ENV_CONFIG.DEFAULT_USER_NAME}_${uid8()}`;
+  });
+  
+  // Use authenticated user's Google sub ID if available, otherwise let backend generate anonymous ID
+  const userId = useMemo(() => {
+    if (isAuthenticated && user?.id) {
+      logger.log('🔑 Using authenticated user ID:', user.id);
+      return user.id; // This is the Google sub ID
+    }
+    // For anonymous users, return null to let backend generate device fingerprint-based ID
+    logger.log('👤 Anonymous user - letting backend generate user ID');
+    return null;
+  }, [isAuthenticated, user?.id]);
+
+  // Local sidebar state (simple client-side sessions list for now)
+  const [sessions, setSessions] = useState(() => {
+    try { return JSON.parse(getLS(LS_KEYS.sessions, "[]")); } catch { return []; }
+  });
+
+  // UI state
+  const [search, setSearch] = useState("");
+  const [input, setInput] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(isAuthenticated);
+  const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    const saved = getLS(LS_KEYS.darkMode);
+    return saved === "true";
+  });
+  const [showRateLimitBanner, setShowRateLimitBanner] = useState(false);
+  const [remainingQueries, setRemainingQueries] = useState(() => getRemainingQueries());
+  const [hasStartedQuerying, setHasStartedQuerying] = useState(false);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+
   // Use conversations hook for managing chat history
   const {
     conversations,
@@ -360,91 +540,65 @@ function ChatApp() {
     archiveConversation,
     deleteConversation,
     fetchConversations
-  } = useConversations({ token, userId: user?.id });
-  
-  // Log environment config only once on component mount
-  useEffect(() => {
-    if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-      console.log('🌍 Environment Config:', ENV_CONFIG);
-    }
-  }, []);
-  
-  // Settings - Use environment variables as defaults, allow localStorage override
-  const [wsUrl, setWsUrl] = useState(() => {
-    const saved = getLS(LS_KEYS.wsUrl);
-    // Migration: Clear old URLs that don't match current environment
-    if (saved && saved !== ENV_CONFIG.WEBSOCKET_URL) {
-      localStorage.removeItem(LS_KEYS.wsUrl);
-      localStorage.removeItem(LS_KEYS.restUrl); // Also clear REST URL for consistency
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('🧹 Cleared old URLs from localStorage for migration');
-      }
-      return ENV_CONFIG.WEBSOCKET_URL;
-    }
-    const url = saved || ENV_CONFIG.WEBSOCKET_URL;
-    if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-      console.log('🔗 WebSocket URL:', url, saved ? '(from localStorage)' : '(from env)');
-    }
-    return url;
-  });
-  const [restUrl, setRestUrl] = useState(() => {
-    const saved = getLS(LS_KEYS.restUrl);
-    return saved || ENV_CONFIG.REST_API_URL;
-  });
-  const [userName, setUserName] = useState(() => {
-    const saved = getLS(LS_KEYS.userName);
-    return saved || `${ENV_CONFIG.DEFAULT_USER_NAME}_${uid8()}`;
-  });
-  
-  // Use authenticated user's Google sub ID if available, otherwise let backend generate anonymous ID
-  const userId = useMemo(() => {
-    if (isAuthenticated && user?.id) {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('🔑 Using authenticated user ID:', user.id);
-      }
-      return user.id; // This is the Google sub ID
-    }
-    // For anonymous users, return null to let backend generate device fingerprint-based ID
-    if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-      console.log('👤 Anonymous user - letting backend generate user ID');
-    }
-    return null;
-  }, [isAuthenticated, user?.id]);
+  } = useConversations({ token, userId: user?.id, includeArchived: isAuthenticated ? showArchived : false });
 
-  const { status, sessionId, messages, connect, disconnect, sendMessage, setMessages } = useAwsWebSocket({
+  const { status, sessionId, messages, connect, disconnect, sendMessage, setMessages, switchConversation } = useAwsWebSocket({
     wsUrl,
     userId,
     token,
     conversationId: selectedConversation?.conversation_id,
-    fetchConversations
+    fetchConversations,
+    setIsEvaluating
   });
-
-  // Local sidebar state (simple client-side sessions list for now)
-  const [sessions, setSessions] = useState(() => {
-    try { return JSON.parse(getLS(LS_KEYS.sessions, "[]")); } catch { return []; }
-  });
-
-  // UI state
-  const [search, setSearch] = useState("");
-  const [input, setInput] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [historyLoadId, setHistoryLoadId] = useState("");
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
-  const [activeTab, setActiveTab] = useState('conversations'); // 'conversations' or 'local'
-  const [isConnecting, setIsConnecting] = useState(false);
 
   // Persist settings
-  useEffect(() => { setLS(LS_KEYS.wsUrl, wsUrl); }, [wsUrl]);
-  useEffect(() => { setLS(LS_KEYS.restUrl, restUrl); }, [restUrl]);
   useEffect(() => { setLS(LS_KEYS.userName, userName); }, [userName]);
+
+  // Dark mode toggle and persistence
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode(prev => {
+      const newValue = !prev;
+      setLS(LS_KEYS.darkMode, newValue.toString());
+      return newValue;
+    });
+  }, []);
+
+  // Apply dark mode class to document
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  // Auto-scroll behavior: center on user message when evaluating, scroll to bottom when complete
+  useEffect(() => {
+    // Small delay to ensure DOM is updated
+    const scrollTimeout = setTimeout(() => {
+      if (isEvaluating && lastUserMessageRef.current) {
+        // When evaluating, scroll to center the last user message so user can see previous context
+        lastUserMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (messagesEndRef.current && !isEvaluating && messages.length > 0) {
+        // When response is complete, scroll to bottom to show full response
+        messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
+    }, 100);
+
+    return () => clearTimeout(scrollTimeout);
+  }, [messages, isEvaluating]);
+
+  // Auto-open sidebar when user authenticates
+  useEffect(() => {
+    if (isAuthenticated) {
+      setSidebarOpen(true);
+    }
+  }, [isAuthenticated]);
 
   // Auto connect when WS URL is present
   useEffect(() => {
     if (wsUrl) {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('🔄 Auto-connecting to WebSocket...');
-      }
+      logger.log('🔄 Auto-connecting to WebSocket...');
       connect();
     }
   }, [wsUrl, connect]);
@@ -452,25 +606,20 @@ function ChatApp() {
   // Reconnect WebSocket when authentication state changes
   useEffect(() => {
     if (wsUrl && isAuthenticated && token) {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('🔐 Reconnecting WebSocket after authentication...');
-      }
+      logger.log('🔐 Reconnecting WebSocket after authentication...');
       disconnect();
-      // Short delay to ensure clean reconnection
-      setTimeout(() => connect(), 200);
+      // Longer delay to ensure clean disconnection before reconnecting
+      // This prevents race conditions where the old connection triggers errors
+      setTimeout(() => connect(), 500);
     }
   }, [isAuthenticated, token, wsUrl, connect, disconnect]);
 
-  // Reconnect WebSocket when selected conversation changes
+  // Switch conversation context when conversation changes (without reconnecting)
   useEffect(() => {
-    if (wsUrl && selectedConversation) {
-      if (ENV_CONFIG.ENABLE_DEBUG_LOGS) {
-        console.log('🔄 Reconnecting WebSocket for conversation:', selectedConversation.conversation_id);
-      }
-      disconnect();
-      setTimeout(() => connect(), 100);
+    if (wsUrl && selectedConversation && status === "connected") {
+      switchConversation(selectedConversation.conversation_id);
     }
-  }, [selectedConversation?.conversation_id, wsUrl, connect, disconnect]);
+  }, [selectedConversation?.conversation_id, wsUrl, status, switchConversation]);
 
   // Track sessions list and update conversation if authenticated
   useEffect(() => {
@@ -494,17 +643,32 @@ function ChatApp() {
         updateConversation(selectedConversation.conversation_id, {
           title,
           message_count: messages.length,
-          updated_at: Math.floor(Date.now() / 1000)
+          updated_at: new Date().toISOString()
         });
       }
     }
   }, [sessionId, messages, isAuthenticated, selectedConversation, updateConversation]);
 
-  const doSend = useCallback(async () => {
-    if (!input.trim()) return;
+  const doSend = useCallback(async (overrideText = null) => {
+    const textToSend = overrideText || input;
+    if (!textToSend?.trim()) return;
 
-    const messageText = input.trim();
-    setInput("");
+    // Check rate limit for unauthorized users
+    if (!isAuthenticated) {
+      const currentRemaining = getRemainingQueries();
+      if (currentRemaining === 0) {
+        setShowRateLimitBanner(true);
+        return;
+      }
+    }
+
+    const messageText = textToSend.trim();
+    if (!overrideText) {
+      setInput("");
+    }
+
+    // Set evaluating state when sending message
+    setIsEvaluating(true);
 
     // Create conversation if needed (for authenticated users)
     if (isAuthenticated && !selectedConversation && messages.length === 0) {
@@ -513,21 +677,27 @@ function ChatApp() {
       if (newConv) {
         setSelectedConversation(newConv);
         // useEffect will handle WebSocket reconnection with the new conversation_id
-        // Wait a moment for the WebSocket to reconnect before sending
-        await new Promise(resolve => setTimeout(resolve, 300));
+        // Wait for the WebSocket to reconnect before sending
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
     // For authenticated users, wait for WebSocket connection if it's in progress
-    if (isAuthenticated && token && status === "connecting") {
+    if (isAuthenticated && token && (status === "connecting" || status === "disconnected")) {
       setIsConnecting(true);
-      // Wait up to 3 seconds for connection
+      // Wait up to 5 seconds for connection
       let attempts = 0;
-      while (status === "connecting" && attempts < 15) {
+      const maxAttempts = 25;
+      while ((status === "connecting" || status === "disconnected") && attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 200));
         attempts++;
       }
       setIsConnecting(false);
+
+      // If still not connected after waiting, log warning
+      if (status !== "connected") {
+        logger.warn('⚠️ WebSocket failed to connect after waiting, status:', status);
+      }
     }
 
     // Check if we should use REST API (authenticated and has REST URL)
@@ -556,13 +726,16 @@ function ChatApp() {
         };
         setMessages((m) => [...m, aiMsg]);
 
+        // Clear evaluating state
+        setIsEvaluating(false);
+
         // Refresh conversations to update inbox ordering
         if (fetchConversations) {
           fetchConversations();
         }
 
       } catch (error) {
-        console.error('REST API error:', error);
+        logger.error('REST API error:', error);
         // Add error message
         const errorMsg = {
           id: `err-${uid8()}`,
@@ -571,10 +744,31 @@ function ChatApp() {
           timestamp: nowIso()
         };
         setMessages((m) => [...m, errorMsg]);
+
+        // Clear evaluating state on error
+        setIsEvaluating(false);
       }
     } else {
-      // Use WebSocket or demo mode
-      sendMessage(messageText);
+      // Use WebSocket or demo mode - pass conversation_id
+      sendMessage(messageText, selectedConversation?.conversation_id);
+    }
+
+    // For unauthorized users, increment query count and show banner
+    if (!isAuthenticated) {
+      const newCount = incrementQueryCount();
+      const newRemaining = DAILY_QUERY_LIMIT - newCount;
+      setRemainingQueries(newRemaining);
+      setHasStartedQuerying(true);
+
+      // Only show banner after first query and with delay for animation
+      setTimeout(() => {
+        setShowRateLimitBanner(true);
+      }, 500);
+
+      // Auto-hide banner after 8 seconds
+      setTimeout(() => {
+        setShowRateLimitBanner(false);
+      }, 8000);
     }
   }, [input, sendMessage, isAuthenticated, token, restUrl, status, sessionId, setMessages, selectedConversation, createConversation, fetchConversations]);
 
@@ -613,69 +807,51 @@ function ChatApp() {
     if (!token || !conversationId) return;
 
     try {
-      setLoadingHistory(true);
       const { messages } = await loadConversationHistory(conversationId, token);
 
       // Format messages for display
-      const formattedMessages = messages.map((m) => ({
-        id: m.message_id || uid8(),
-        type: m.message_type || "user",
-        content: m.content || "",
-        timestamp: m.timestamp || nowIso(),
-        meta: {
-          tokens_used: m.tokens_used,
-          model: m.model,
-          processingTime: m.processing_time_ms
-        }
-      }));
+      const formattedMessages = messages
+        .map((m) => {
+          // Prioritize timestamp_iso (UTC ISO string) from backend, then Unix timestamp
+          let timestamp = m.timestamp_iso || nowIso();
 
-      setMessages(formattedMessages);
-    } catch (error) {
-      console.error('Error loading conversation messages:', error);
-      // Don't alert on error, just log it
-    } finally {
-      setLoadingHistory(false);
-    }
-  }, [token, setMessages]);
+          // If no timestamp_iso but we have Unix timestamp, convert it
+          if (!m.timestamp_iso && m.timestamp) {
+            if (typeof m.timestamp === 'number') {
+              // Unix timestamp - convert to ISO string (UTC)
+              timestamp = new Date(m.timestamp * 1000).toISOString();
+            } else {
+              // Assume it's already a string timestamp
+              timestamp = m.timestamp;
+            }
+          }
 
-  const loadHistory = useCallback(async () => {
-    if (!restUrl) return;
-    if (!isAuthenticated) {
-      alert("Please sign in to load your chat history");
-      return;
-    }
-    try {
-      setLoadingHistory(true);
-      const data = await fetchHistory(restUrl, historyLoadId, token, 200);
-
-      // Handle different response formats from your user-history lambda
-      let items = [];
-      if (historyLoadId && data?.messages) {
-        // Specific session format
-        items = data.messages.map((m) => ({
-          id: m.message_id || uid8(),
-          type: m.message_type || "user",
-          content: m.content || "",
-          timestamp: m.timestamp || nowIso(),
-        }));
-      } else if (data?.conversations) {
-        // All conversations format - show first conversation's messages if available
-        const firstConv = data.conversations[0];
-        if (firstConv?.recent_messages) {
-          items = firstConv.recent_messages.map((m) => ({
+          return {
             id: m.message_id || uid8(),
             type: m.message_type || "user",
             content: m.content || "",
-            timestamp: m.timestamp || nowIso(),
-          }));
-        }
-      }
+            timestamp: timestamp,
+            meta: {
+              tokens_used: m.tokens_used,
+              model: m.model,
+              processingTime: m.processing_time_ms
+            }
+          };
+        })
+        .sort((a, b) => {
+          // Ensure proper chronological order (oldest to newest)
+          const timeA = new Date(a.timestamp).getTime();
+          const timeB = new Date(b.timestamp).getTime();
+          return timeA - timeB;
+        });
 
-      setMessages(items);
-    } catch (e) {
-      alert(e.message || "Failed to load history");
-    } finally { setLoadingHistory(false); }
-  }, [restUrl, historyLoadId, token, isAuthenticated, setMessages]);
+      setMessages(formattedMessages);
+    } catch (error) {
+      logger.error('Error loading conversation messages:', error);
+      // Don't alert on error, just log it
+    }
+  }, [token, setMessages]);
+
 
   const connectionBadge = status === "connected" ? (
     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-1 text-xs"><Wifi className="h-3 w-3"/> Connected</span>
@@ -688,20 +864,85 @@ function ChatApp() {
   );
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#e6eef9] text-slate-800">
+    <div className="h-screen w-screen overflow-hidden bg-[#e6eef9] dark:bg-slate-900 text-slate-800 dark:text-slate-100">
       {/* App shell */}
       <div className="mx-auto h-full max-w-[1400px] px-4 py-6">
-        <div className="flex h-full rounded-3xl bg-white shadow-xl ring-1 ring-black/5">
-          {/* Sidebar */}
-          <aside className="w-[280px] shrink-0 border-r border-slate-100 p-4">
-            <div className="mb-6">
-              <div className="text-xs tracking-[0.35em] text-slate-400">{ENV_CONFIG.APP_NAME.toUpperCase()}</div>
-            </div>
+        <div className="flex h-full rounded-3xl bg-white dark:bg-slate-800 shadow-xl ring-1 ring-black/5 dark:ring-slate-700/50">
+          {/* Sidebar - Only show for authenticated users */}
+          {isAuthenticated && (
+            <aside className={classNames(
+              "shrink-0 border-r border-slate-100 dark:border-slate-700 transition-all duration-300 ease-in-out",
+              sidebarOpen ? "w-[280px] p-4" : "w-16 p-2"
+            )}>
+            {sidebarOpen ? (
+              <>
+                <div className="mb-6 flex items-center justify-between">
+                  <button
+                    onClick={newChat}
+                    className="text-xs tracking-[0.35em] text-slate-600 dark:text-slate-300 font-semibold hover:text-indigo-600 transition-colors cursor-pointer"
+                    title="Start new chat"
+                  >
+                    {ENV_CONFIG.APP_NAME.toUpperCase()}
+                  </button>
+                  <button
+                    onClick={() => setSidebarOpen(false)}
+                    className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    title="Collapse sidebar"
+                  >
+                    <PanelLeftClose className="h-4 w-4" />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Collapsed sidebar content */}
+                <div className="flex flex-col items-center gap-3">
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    title="Open sidebar"
+                  >
+                    <Menu className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={newChat}
+                    className="rounded-md p-2 bg-indigo-600 text-white hover:bg-indigo-700"
+                    title="New chat"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSidebarOpen(true);
+                      // Focus search input after sidebar opens
+                      setTimeout(() => {
+                        const searchInput = document.querySelector('input[placeholder="Search"]');
+                        if (searchInput) searchInput.focus();
+                      }, 300);
+                    }}
+                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    title="Search chats"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setSettingsOpen(true)}
+                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    title="Settings"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                </div>
+              </>
+            )}
+
+            {sidebarOpen && (
+              <>
             <div className="flex items-center gap-2">
               <button onClick={newChat} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700">
                 <Plus className="h-4 w-4"/> New chat
               </button>
-              <button onClick={() => setSettingsOpen(true)} className="ml-auto rounded-xl border border-slate-200 p-2 hover:bg-slate-50" title="Settings">
+              <button onClick={() => setSettingsOpen(true)} className="ml-auto rounded-xl border border-slate-200 dark:border-slate-600 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" title="Settings">
                 <Settings className="h-4 w-4"/>
               </button>
             </div>
@@ -711,43 +952,16 @@ function ChatApp() {
               <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"/>
             </div>
 
-            {/* Conversation Tabs */}
-            {isAuthenticated && (
-              <div className="mt-4 flex gap-1 rounded-lg bg-slate-100 p-1">
-                <button
-                  onClick={() => setActiveTab('conversations')}
-                  className={classNames(
-                    "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-                    activeTab === 'conversations'
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  Cloud
-                </button>
-                <button
-                  onClick={() => setActiveTab('local')}
-                  className={classNames(
-                    "flex-1 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-                    activeTab === 'local'
-                      ? "bg-white text-slate-900 shadow-sm"
-                      : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  Local
-                </button>
-              </div>
-            )}
 
-            <div className="mt-6 flex items-center justify-between">
+            <div className="mt-6 relative flex items-center">
               <div className="text-xs uppercase tracking-wide text-slate-400">
-                {activeTab === 'conversations' && isAuthenticated ? 'Cloud Conversations' : 'Local Sessions'}
+                {isAuthenticated ? 'Financial Advice' : 'Local Sessions'}
               </div>
-              {activeTab === 'conversations' && isAuthenticated && (
+              {isAuthenticated && (
                 <button
                   onClick={() => setShowArchived(!showArchived)}
                   className={classNames(
-                    "rounded-md p-1 text-xs",
+                    "absolute right-0 rounded-md p-1 text-xs",
                     showArchived
                       ? "text-indigo-600 hover:bg-indigo-50"
                       : "text-slate-400 hover:bg-slate-50"
@@ -759,9 +973,9 @@ function ChatApp() {
               )}
             </div>
 
-            <div className="mt-2 space-y-1 overflow-y-auto pr-1" style={{maxHeight: "calc(100vh - 320px)"}}>
+            <div className="mt-2 space-y-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600" style={{maxHeight: "calc(100vh - 320px)"}}>
               {/* Show conversation list for authenticated users */}
-              {activeTab === 'conversations' && isAuthenticated ? (
+              {isAuthenticated ? (
                 <ConversationList
                   conversations={conversations.filter(c =>
                     c.title?.toLowerCase().includes(search.toLowerCase())
@@ -807,15 +1021,24 @@ function ChatApp() {
               )}
             </div>
 
-            <div className="mt-4 text-xs text-right text-slate-400">Last 7 days</div>
+            <div className="mt-4 text-xs text-center text-slate-400">Last 7 days</div>
+              </>
+            )}
           </aside>
+          )}
 
           {/* Main panel */}
           <main className="relative flex min-w-0 flex-1 flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 px-6 py-4">
               <div className="flex items-center gap-3">
-                <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700">{ENV_CONFIG.APP_NAME}</div>
+                <button
+                  onClick={newChat}
+                  className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer"
+                  title="Start new chat"
+                >
+                  {ENV_CONFIG.APP_NAME}
+                </button>
                 {connectionBadge}
                 {selectedConversation ? (
                   <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs text-indigo-600">
@@ -829,132 +1052,136 @@ function ChatApp() {
                 {!wsUrl && (
                   <div className="rounded-lg bg-amber-50 px-3 py-1 text-xs text-amber-700">Add your WebSocket URL in Settings →</div>
                 )}
-                <button onClick={() => setSettingsOpen(true)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm hover:bg-slate-50">
-                  Settings
-                </button>
-                <AuthButton />
-              </div>
-            </div>
-
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              <div className="mx-auto max-w-3xl space-y-4">
-                {messages.length === 0 && (
-                  <div className="text-center py-12">
-                    <div className="text-slate-400 text-lg mb-2">Welcome to {ENV_CONFIG.APP_NAME}</div>
-                    <div className="text-slate-500 text-sm">
-                      {ENV_CONFIG.WEBSOCKET_URL ? 
-                        "Ready to chat! Your API is pre-configured." : 
-                        "Configure your API URLs in Settings to get started."
-                      }
-                    </div>
-                    {ENV_CONFIG.ENABLE_DEBUG_LOGS && (
-                      <div className="mt-2 text-xs text-amber-600">Debug mode enabled ({ENV_CONFIG.ENVIRONMENT})</div>
-                    )}
-                  </div>
-                )}
-                {messages.map((m) => (
-                  <MessageBubble key={m.id} msg={m} />
-                ))}
-              </div>
-            </div>
-
-            {/* Composer */}
-            <div className="border-t border-slate-100 p-4">
-              <div className="mx-auto flex max-w-3xl items-end gap-2">
-                <textarea
-                  rows={1}
-                  placeholder={isConnecting ? "Connecting..." : status!=="connected"?"Try demo mode! Ask anything, or connect in Settings for real AI…":"Ask Warren Buffett about investing and business..."}
-                  value={input}
-                  onChange={(e)=>setInput(e.target.value)}
-                  onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); doSend(); } }}
-                  className="min-h-[44px] max-h-40 flex-1 resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
-                  disabled={isConnecting}
+                <AccountDropdown
+                  isOpen={accountDropdownOpen}
+                  onToggle={setAccountDropdownOpen}
+                  onSettingsClick={() => setSettingsOpen(true)}
+                  darkMode={darkMode}
+                  onDarkModeToggle={toggleDarkMode}
                 />
-                <button onClick={doSend} disabled={!input.trim() || isConnecting} className={classNames("inline-flex h-[44px] items-center gap-2 rounded-2xl px-4 text-sm font-medium shadow-sm", (!input.trim() || isConnecting)?"bg-slate-200 text-slate-500":"bg-indigo-600 text-white hover:bg-indigo-700") }>
-                  {isConnecting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Send className="h-4 w-4"/>}
-                </button>
-              </div>
-              <div className="mx-auto mt-2 flex max-w-3xl items-center justify-between text-xs text-slate-400">
-                <div className="flex items-center gap-2">
-                  <button onClick={newChat} className="rounded-md px-2 py-1 hover:bg-slate-50">New chat</button>
-                  <span>•</span>
-                  <button onClick={()=>setSettingsOpen(true)} className="rounded-md px-2 py-1 hover:bg-slate-50">Load history…</button>
-                </div>
-                <div className="flex items-center gap-1 text-indigo-600"><Zap className="h-3 w-3"/> Powered by Bedrock</div>
               </div>
             </div>
 
-            {/* Sticky Upgrade chip (decorative) */}
-            <div className="pointer-events-auto absolute right-2 top-1/2 hidden -translate-y-1/2 md:block">
-              <div className="rotate-90 rounded-b-lg rounded-t-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white shadow">Upgrade to Pro</div>
-            </div>
+            {/* Dynamic Layout Based on Message State */}
+            {messages.length === 0 ? (
+              /* CENTERED LAYOUT - No messages (landing, auth, new chat) */
+              <div className="flex-1 flex flex-col items-center justify-center px-6 transition-all duration-300 ease-in-out">
+                <div className="text-center mb-8">
+                  <div className="text-slate-400 dark:text-white text-3xl font-medium">
+                    Welcome{isAuthenticated && userFirstName ? `, ${userFirstName}` : ''} to {ENV_CONFIG.APP_NAME}
+                  </div>
+                </div>
+
+                <div className="w-full max-w-3xl">
+                  <SearchComposer
+                    input={input}
+                    setInput={setInput}
+                    doSend={doSend}
+                    isConnecting={isConnecting}
+                    status={status}
+                    newChat={newChat}
+                    setSettingsOpen={setSettingsOpen}
+                    showTopicButtons={true}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </div>
+              </div>
+            ) : (
+              /* SPLIT LAYOUT - Messages exist (active conversation) */
+              <>
+                {/* Messages Area */}
+                <div className="flex-1 overflow-y-auto px-6 py-4 transition-all duration-300 ease-in-out">
+                  <div className="mx-auto max-w-3xl space-y-4">
+                    {messages.map((m, index) => {
+                      // Find the last user message in the entire array
+                      const userMessages = messages.filter(msg => msg.type === 'user');
+                      const lastUserMsg = userMessages[userMessages.length - 1];
+                      const isLastUserMessage = m.type === 'user' && m.id === lastUserMsg?.id;
+
+                      return (
+                        <MessageBubble
+                          key={m.id}
+                          msg={m}
+                          user={user}
+                          messageRef={isLastUserMessage ? lastUserMessageRef : null}
+                        />
+                      );
+                    })}
+                    {/* Evaluating indicator */}
+                    {isEvaluating && (
+                      <div className="flex justify-start">
+                        <div className="ml-11 text-slate-400 dark:text-white text-base fade-pulse-evaluating">
+                          Evaluating...
+                        </div>
+                      </div>
+                    )}
+                    {/* Invisible element at the end for auto-scrolling */}
+                    <div ref={messagesEndRef} />
+                  </div>
+                </div>
+
+                {/* Bottom Composer */}
+                <div className="border-t border-slate-100 dark:border-slate-700 p-4 transition-all duration-300 ease-in-out">
+                  {/* Rate Limit Banner */}
+                  {showRateLimitBanner && !isAuthenticated && hasStartedQuerying && (
+                    <RateLimitBanner
+                      remainingQueries={remainingQueries}
+                      onClose={() => setShowRateLimitBanner(false)}
+                      onSignUp={() => setAccountDropdownOpen(true)}
+                      isVisible={showRateLimitBanner}
+                    />
+                  )}
+                  <SearchComposer
+                    input={input}
+                    setInput={setInput}
+                    doSend={doSend}
+                    isConnecting={isConnecting}
+                    status={status}
+                    newChat={newChat}
+                    setSettingsOpen={setSettingsOpen}
+                    showTopicButtons={false}
+                    isAuthenticated={isAuthenticated}
+                  />
+                </div>
+              </>
+            )}
+
           </main>
         </div>
       </div>
 
+
       {/* Settings Panel */}
       {settingsOpen && (
         <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>setSettingsOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-white shadow-xl" onClick={(e)=>e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <div className="text-sm font-semibold">Settings</div>
-              <button onClick={()=>setSettingsOpen(false)} className="rounded-md border border-slate-200 px-2 py-1 text-sm hover:bg-slate-50">Close</button>
+          <div className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-white dark:bg-slate-800 shadow-xl" onClick={(e)=>e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 px-6 py-4">
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Settings</div>
+              <button onClick={()=>setSettingsOpen(false)} className="rounded-md border border-slate-200 dark:border-slate-600 px-2 py-1 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Close</button>
             </div>
             <div className="space-y-6 p-6">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">User ID</label>
+                <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">User ID</label>
                 {isAuthenticated ? (
-                  <div className="w-full rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+                  <div className="w-full rounded-lg border border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 py-2 text-sm text-green-800 dark:text-green-300">
                     {user?.id} (Google ID)
                   </div>
                 ) : (
-                  <input value={userName} onChange={(e)=>setUserName(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"/>
+                  <input value={userName} onChange={(e)=>setUserName(e.target.value)} className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"/>
                 )}
-                <div className="mt-1 text-[11px] text-slate-400">
-                  {isAuthenticated ? 
+                <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                  {isAuthenticated ?
                     "Using your authenticated Google ID for consistent message tracking." :
                     "Sign in to use your Google ID, or use a custom name for demo mode."
                   }
                 </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">API Gateway WebSocket URL</label>
-                <input value={wsUrl} onChange={(e)=>setWsUrl(e.target.value)} placeholder={ENV_CONFIG.WEBSOCKET_URL || "wss://abc123.execute-api.us-east-1.amazonaws.com/dev"} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"/>
-                {ENV_CONFIG.WEBSOCKET_URL && (
-                  <div className="mt-1 text-[11px] text-green-600">✓ Default configured for {ENV_CONFIG.ENVIRONMENT}</div>
-                )}
-                <div className="mt-2 flex items-center gap-2">
-                  <button onClick={connect} className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700">Connect</button>
-                  <button onClick={disconnect} className="rounded-lg border border-slate-200 px-3 py-2 text-xs hover:bg-slate-50">Disconnect</button>
-                  <div>{connectionBadge}</div>
-                </div>
-              </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">REST Base URL (for chat history)</label>
-                <input value={restUrl} onChange={(e)=>setRestUrl(e.target.value)} placeholder={ENV_CONFIG.REST_API_URL || "https://xyz.execute-api.us-east-1.amazonaws.com/dev"} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"/>
-                {ENV_CONFIG.REST_API_URL && (
-                  <div className="mt-1 text-[11px] text-green-600">✓ Default configured for {ENV_CONFIG.ENVIRONMENT}</div>
-                )}
-                <div className="mt-3 rounded-lg border border-slate-200 p-3">
-                  <div className="text-xs font-medium text-slate-500">Load history by Session ID</div>
-                  <div className="mt-2 flex items-end gap-2">
-                    <input value={historyLoadId} onChange={(e)=>setHistoryLoadId(e.target.value)} placeholder="paste session_id…" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"/>
-                    <button disabled={!restUrl || !historyLoadId || loadingHistory} onClick={loadHistory} className={classNames("inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium", (!restUrl||!historyLoadId||loadingHistory)?"bg-slate-200 text-slate-500":"bg-slate-900 text-white hover:bg-slate-800")}>{loadingHistory?<Loader2 className="h-3 w-3 animate-spin"/>:<RefreshCcw className="h-3 w-3"/>} Load</button>
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-400">Endpoint: GET {restUrl || "https://your-api-id.execute-api.region.amazonaws.com/dev"}/api/v1/chat/history/{"{"}"session_id"{"}"}</div>
-                </div>
-              </div>
 
-              <div className="rounded-lg bg-slate-50 p-3 text-[11px] text-slate-500">
-                <div className="font-medium">Tips</div>
-                <ul className="list-disc pl-4">
-                  <li>New chat creates a fresh WebSocket connection so your connect Lambda issues a new session_id.</li>
-                  <li>If your backend streams Bedrock tokens, emit {"{"}type:"chunk", text:"…"{"}"} events for smooth typing.</li>
-                  <li>To expose this demo, host the static build on CloudFront; route <code>/api/*</code> to your API Gateway and everything else to the site.</li>
-                </ul>
+              <div className="rounded-lg bg-slate-50 dark:bg-slate-700 p-3 text-sm text-slate-600 dark:text-slate-300">
+                <div className="font-medium text-slate-800 dark:text-slate-200 mb-2">About BuffettGPT</div>
+                <p>Your personal AI assistant trained on Warren Buffett's investing wisdom and business philosophy. All connections are automatically configured and ready to use.</p>
               </div>
             </div>
           </div>
@@ -964,7 +1191,376 @@ function ChatApp() {
   );
 }
 
+// Rate Limit Banner Component
+function RateLimitBanner({ remainingQueries, onClose, onSignUp, isVisible }) {
+  const getMessage = () => {
+    if (remainingQueries === 0) {
+      return (
+        <>
+          Daily limit reached. Please{" "}
+          <button onClick={onSignUp} className="underline hover:no-underline font-medium">
+            sign up
+          </button>{" "}
+          to continue
+        </>
+      );
+    }
+    const questionsText = remainingQueries === 1 ? "question" : "questions";
+    return (
+      <>
+        {remainingQueries} more {questionsText} can be asked today.{" "}
+        <button onClick={onSignUp} className="underline hover:no-underline font-medium">
+          Sign up
+        </button>{" "}
+        for more access
+      </>
+    );
+  };
+
+  return (
+    <div className={`mx-auto max-w-3xl mb-4 px-4 transform transition-all duration-1000 ease-in-out ${
+      isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+    }`}>
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-700 rounded-lg text-white text-sm shadow-sm">
+        <div className="flex items-center gap-2">
+          {getMessage()}
+        </div>
+        <button
+          onClick={onClose}
+          className="text-slate-300 hover:text-white ml-4"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Main App component wrapped with AuthProvider
+// Topic Buttons Component
+function TopicButtons({ onPromptSelect }) {
+  const [openDropdown, setOpenDropdown] = useState(null);
+  const dropdownRef = useRef(null);
+
+  const topics = {
+    budgeting: {
+      label: "Budgeting",
+      prompts: [
+        "How can I create a budget that follows the 50/30/20 rule?",
+        "What's the best way to track my monthly expenses?",
+        "How do I budget for irregular income?",
+        "What are effective strategies to reduce my monthly spending?"
+      ]
+    },
+    saving: {
+      label: "Saving",
+      prompts: [
+        "How much should I have in my emergency fund?",
+        "What's the difference between a high-yield savings account and regular savings?",
+        "How can I automate my savings to build wealth?",
+        "What percentage of my income should I be saving?"
+      ]
+    },
+    investing: {
+      label: "Investing",
+      prompts: [
+        "What's the best way to start investing with $1,000?",
+        "How do index funds work and why does Buffett recommend them?",
+        "What's the difference between stocks, bonds, and ETFs?",
+        "How should I diversify my investment portfolio?"
+      ]
+    }
+  };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpenDropdown(null);
+      }
+    }
+
+    if (openDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [openDropdown]);
+
+  const handlePromptClick = (prompt) => {
+    onPromptSelect(prompt);
+    setOpenDropdown(null);
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl mt-6">
+      <div className="flex justify-center gap-4" ref={dropdownRef}>
+        {Object.entries(topics).map(([key, topic]) => (
+          <div key={key} className="relative">
+            <button
+              onClick={() => setOpenDropdown(openDropdown === key ? null : key)}
+              className="px-4 py-2 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 dark:hover:bg-indigo-600 hover:text-white dark:hover:text-white hover:shadow-lg hover:shadow-indigo-200 dark:hover:shadow-indigo-900/50 transition-all duration-200 border border-indigo-200 dark:border-indigo-700"
+            >
+              {topic.label}
+            </button>
+
+            {openDropdown === key && (
+              <div className="absolute top-full mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200">
+                <div className="py-2">
+                  {topic.prompts.map((prompt, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handlePromptClick(prompt)}
+                      className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-b-0"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Search Composer Component
+function SearchComposer({
+  input,
+  setInput,
+  doSend,
+  isConnecting,
+  status,
+  newChat,
+  setSettingsOpen,
+  showTopicButtons = false,
+  isAuthenticated
+}) {
+  const textareaRef = useRef(null);
+
+  // Auto-resize function - only expand when content needs multiple lines
+  const autoResize = (textarea) => {
+    if (textarea) {
+      // Reset height to minimum to get accurate scrollHeight
+      textarea.style.height = '44px';
+
+      // Only expand if content actually needs more height
+      if (textarea.scrollHeight > 44) {
+        textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
+      }
+    }
+  };
+
+  // Reset height when input is cleared
+  useEffect(() => {
+    if (textareaRef.current) {
+      if (input === '') {
+        textareaRef.current.style.height = '44px';
+      } else {
+        autoResize(textareaRef.current);
+      }
+    }
+  }, [input]);
+
+  const handlePromptSelect = async (prompt) => {
+    // Use the main doSend function with the prompt text as override
+    doSend(prompt);
+
+    // Clear the input after sending
+    setInput('');
+
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '44px';
+    }
+  };
+
+  return (
+    <>
+      <div className="mx-auto max-w-3xl relative">
+        <textarea
+          ref={textareaRef}
+          placeholder={isConnecting ? "Connecting..." : status!=="connected"?"Try demo mode! Ask anything, or connect in Settings for real AI…":"Ask Warren Buffett about investing and business..."}
+          value={input}
+          onChange={(e)=>{
+            setInput(e.target.value);
+            autoResize(e.target);
+          }}
+          onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); doSend(); } }}
+          className="min-h-[44px] max-h-40 w-full resize-none rounded-2xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 pr-12 text-sm outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:text-slate-100 overflow-hidden"
+          disabled={isConnecting}
+          style={{height: '44px'}}
+        />
+        <button
+          onClick={doSend}
+          disabled={!input.trim() || isConnecting}
+          className={classNames(
+            "absolute right-[3px] top-1/2 -translate-y-1/2 h-[38px] inline-flex items-center justify-center rounded-xl px-3 text-sm font-medium shadow-sm transition-colors text-white",
+            (!input.trim() || isConnecting)
+              ? "bg-indigo-400 cursor-not-allowed"
+              : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+          )}
+        >
+          {isConnecting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Send className="h-4 w-4"/>}
+        </button>
+      </div>
+
+      {showTopicButtons && isAuthenticated && (
+        <TopicButtons onPromptSelect={handlePromptSelect} />
+      )}
+    </>
+  );
+}
+
+// Dark Mode Toggle Component
+function DarkModeToggle({ darkMode, onToggle }) {
+  return (
+    <div className="flex items-center gap-3 px-4 py-2">
+      <div className="flex items-center gap-2 flex-1">
+        <div className="text-slate-400 dark:text-slate-500">
+          <Sun className="h-4 w-4" />
+        </div>
+        <button
+          onClick={onToggle}
+          className={classNames(
+            "relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2",
+            darkMode ? "bg-indigo-600" : "bg-slate-200"
+          )}
+          role="switch"
+          aria-checked={darkMode}
+        >
+          <span
+            aria-hidden="true"
+            className={classNames(
+              "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out",
+              darkMode ? "translate-x-5" : "translate-x-0"
+            )}
+          />
+        </button>
+        <div className="text-slate-400 dark:text-slate-500">
+          <Moon className="h-4 w-4" />
+        </div>
+      </div>
+      <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+        Dark Mode
+      </span>
+    </div>
+  );
+}
+
+// Account Dropdown Component
+function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle }) {
+  const { user, isAuthenticated, logout } = useAuth();
+  const dropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        onToggle(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen, onToggle]);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      {/* Dropdown Trigger */}
+      <button
+        onClick={() => onToggle(!isOpen)}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+      >
+        {isAuthenticated && user ? (
+          <>
+            <Avatar
+              src={user?.picture || ''}
+              alt={user?.name || user?.email || 'User'}
+              size="w-6 h-6"
+            />
+            <span className="text-sm font-medium text-slate-700 dark:text-white">{user?.name || user?.email || 'User'}</span>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-slate-700 dark:text-white">Log In</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">/ Sign up for free</span>
+            </div>
+          </>
+        )}
+        <ChevronDown className={classNames(
+          "h-4 w-4 text-slate-400 transition-transform",
+          isOpen ? "rotate-180" : ""
+        )} />
+      </button>
+
+      {/* Dropdown Menu */}
+      {isOpen && (
+        <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200">
+          {isAuthenticated && user ? (
+            <>
+              {/* User Info Header */}
+              <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700">
+                <div className="flex items-center gap-3">
+                  <Avatar
+                    src={user?.picture || ''}
+                    alt={user?.name || user?.email || 'User'}
+                    size="w-8 h-8"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-slate-900 dark:text-slate-100 truncate">{user?.name || user?.email || 'User'}</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{user?.email || ''}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dark Mode Toggle */}
+              <DarkModeToggle darkMode={darkMode} onToggle={onDarkModeToggle} />
+
+              {/* Menu Items */}
+              <div className="py-1">
+                <button
+                  onClick={() => {
+                    onSettingsClick();
+                    onToggle(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <Settings className="h-4 w-4" />
+                  Settings
+                </button>
+                <button
+                  onClick={() => {
+                    logout();
+                    onToggle(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign out
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Not authenticated menu */}
+              <div className="py-1">
+                <div className="px-4 py-3">
+                  <GoogleLoginButton />
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>

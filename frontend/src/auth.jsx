@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { LogIn, LogOut, User } from 'lucide-react';
+import logger from './utils/logger';
 
 // Auth Context
 const AuthContext = createContext();
@@ -43,7 +44,7 @@ export function AuthProvider({ children }) {
         }
       }
     } catch (error) {
-      console.error('Error loading auth state:', error);
+      logger.error('Error loading auth state:', error);
       clearAuthStorage();
     } finally {
       setLoading(false);

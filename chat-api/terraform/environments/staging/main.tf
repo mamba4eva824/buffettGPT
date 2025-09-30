@@ -274,6 +274,10 @@ module "bedrock" {
   enable_topic_policy                 = true
   enable_word_policy                  = true
   enable_contextual_grounding         = true
+
+  # Agent versioning - set to true to use versioned routing (not DRAFT)
+  # This allows the alias to point to numbered versions (1, 2, 3, etc.)
+  create_agent_version = true
 }
 
 # ================================================

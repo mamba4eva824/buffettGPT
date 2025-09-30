@@ -3,6 +3,8 @@
  * Handles all CRUD operations for conversations
  */
 
+import logger from '../utils/logger';
+
 const API_BASE_URL = import.meta.env.VITE_REST_API_URL || '';
 
 /**
@@ -83,6 +85,7 @@ export const conversationsApi = {
    */
   create: async (data, token) => {
     return apiCall(CONVERSATION_ENDPOINTS.CREATE, {
+      
       method: 'POST',
       body: JSON.stringify(data)
     }, token);
@@ -136,7 +139,7 @@ export async function loadConversationHistory(conversationId, token) {
       messages: messages.messages || []
     };
   } catch (error) {
-    console.error('Error loading conversation history:', error);
+    logger.error('Error loading conversation history:', error);
     throw error;
   }
 }

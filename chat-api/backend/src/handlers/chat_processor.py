@@ -37,12 +37,7 @@ WEBSOCKET_API_ENDPOINT = os.environ.get('WEBSOCKET_API_ENDPOINT', '')
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 PROJECT_NAME = os.environ.get('PROJECT_NAME', 'buffett-chat-api')
 
-# Optimization settings
-KNOWLEDGE_BASE_ID = os.environ.get('KNOWLEDGE_BASE_ID', 'D1ZVQ1VWHU')  # Your Pinecone KB
-ENABLE_SEMANTIC_OPTIMIZATION = os.environ.get('ENABLE_SEMANTIC_OPTIMIZATION', 'true').lower() == 'true'
-RELEVANCE_THRESHOLD = float(os.environ.get('RELEVANCE_THRESHOLD', '0.7'))
-MAX_CHUNKS_PER_QUERY = int(os.environ.get('MAX_CHUNKS_PER_QUERY', '3'))
-MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0'  # Same model as your agent
+MODEL_ID = 'anthropic.claude-3-haiku-20240307-v1:0'  # Model ID for agent
 
 # DynamoDB tables
 connections_table = dynamodb.Table(CONNECTIONS_TABLE)
@@ -222,7 +217,7 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
         # Store AI response in DynamoDB with token tracking
         current_time = datetime.utcnow()
         ai_message_record = {
-            'session_id': session_id,
+            'conversation_id': session_id,
             'timestamp': int(current_time.timestamp()),  # Store as number for DynamoDB
             'timestamp_iso': current_time.isoformat(),  # Keep ISO format for readability
             'message_id': ai_message_id,
@@ -234,7 +229,6 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
             'processing_time_ms': bedrock_result.get('processing_time_ms'),
             'tokens_used': bedrock_result.get('tokens_used', 0),
             'model': MODEL_ID,
-            'conversation_id': session_id,  # Using session_id as conversation_id for now
             'environment': ENVIRONMENT,
             'project': PROJECT_NAME
         }
@@ -249,8 +243,8 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
         
         messages_table.put_item(Item=convert_floats_to_decimals(ai_message_record))
 
-        # Update conversation timestamp for inbox sorting
-        update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+        # Update conversation timestamp for inbox sorting (creates if doesn't exist)
+        update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()), user_id)
 
         # Send response via WebSocket if connection is active
         if connection_active:
@@ -264,7 +258,7 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
                 "parent_message_id": message_id,
                 "session_id": session_id,
                 "content": ai_response,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow().isoformat() + 'Z',
                 "processing_time_ms": bedrock_result.get('processing_time_ms')
             }
             
@@ -332,192 +326,9 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
             'processing_time_ms': processing_time
         }
 
-def call_bedrock_optimized(user_message: str, session_id: str) -> Dict[str, Any]:
+def call_bedrock_agent(user_message: str, session_id: str) -> Dict[str, Any]:
     """
-    Optimized Bedrock call using semantic retrieval + direct model invocation with token tracking
-
-    Provides 60-70% token cost reduction by:
-    1. Retrieving only top relevant chunks from Pinecone Knowledge Base
-    2. Building focused prompt with limited context
-    3. Calling Claude directly instead of full agent pipeline
-    4. Tracks actual token usage from model response
-
-    Args:
-        user_message: User's message
-        session_id: Chat session ID
-
-    Returns:
-        Dictionary with success status, response, processing time, and token usage
-    """
-    
-    start_time = time.time()
-    
-    try:
-        logger.info(f"🔍 Starting optimized semantic retrieval for session {session_id}")
-        
-        # STEP 1: Semantic Retrieval from Pinecone Knowledge Base
-        retrieve_response = bedrock_client.retrieve(
-            knowledgeBaseId=KNOWLEDGE_BASE_ID,
-            retrievalQuery={
-                'text': user_message
-            },
-            retrievalConfiguration={
-                'vectorSearchConfiguration': {
-                    'numberOfResults': MAX_CHUNKS_PER_QUERY,  # Only top N chunks
-                    'overrideSearchType': 'SEMANTIC'  # Pinecone default
-                }
-            }
-        )
-        
-        # STEP 2: Extract and filter relevant content
-        relevant_chunks = []
-        for result in retrieve_response.get('retrievalResults', []):
-            content = result.get('content', {}).get('text', '')
-            score = result.get('score', 0)
-            metadata = result.get('metadata', {})
-            
-            # Only use high-confidence chunks
-            if score >= RELEVANCE_THRESHOLD and content.strip():
-                relevant_chunks.append({
-                    'content': content[:800],  # Limit chunk size to control tokens
-                    'score': score,
-                    'source': metadata.get('x-amz-bedrock-kb-source-uri', 'unknown')
-                })
-        
-        avg_score = sum(c['score'] for c in relevant_chunks) / len(relevant_chunks) if relevant_chunks else 0
-        logger.info(f"📊 Retrieved {len(relevant_chunks)} relevant chunks (avg score: {avg_score:.3f})")
-        
-        # STEP 3: Build focused prompt (much smaller than full agent context)
-        if relevant_chunks:
-            context_sections = []
-            for i, chunk in enumerate(relevant_chunks, 1):
-                context_sections.append(f"--- Source {i} (Relevance: {chunk['score']:.2f}) ---\n{chunk['content']}")
-            
-            context = "\n\n".join(context_sections)
-            
-            prompt = f"""You are Warren Buffett. Answer this investment question based on the specific excerpts from my shareholder letters below.
-
-RELEVANT EXCERPTS FROM MY LETTERS:
-{context}
-
-QUESTION: {user_message}
-
-INSTRUCTIONS:
-- Answer as Warren Buffett in first person
-- Reference specific content from the excerpts above
-- Include my characteristic wit and folksy wisdom
-- If the excerpts don't address the question, say "I haven't specifically written about that in the letters you're referencing"
-- Keep the response focused and practical
-
-My response:"""
-
-        else:
-            # Fallback for questions with no relevant content
-            prompt = f"""You are Warren Buffett. The question "{user_message}" doesn't match well with content from my shareholder letters.
-
-Please provide a brief response explaining that this specific question isn't covered in my letters, but offer a general investment principle if relevant. Keep it short and direct."""
-
-        # STEP 4: Direct Claude invocation with streaming for token tracking
-        model_response = bedrock_runtime.invoke_model_with_response_stream(
-            modelId=MODEL_ID,
-            body=json.dumps({
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 800,  # Controlled response length
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "temperature": 0.1,
-                "system": "You are Warren Buffett providing investment wisdom based on your shareholder letters."
-            })
-        )
-
-        # Process the streaming response
-        ai_response = ""
-        input_tokens = 0
-        output_tokens = 0
-
-        stream = model_response.get('body', [])
-        for event in stream:
-            chunk = json.loads(event['chunk']['bytes'].decode('utf-8'))
-
-            if chunk['type'] == 'message_start':
-                # Extract usage metrics from message_start
-                if 'message' in chunk and 'usage' in chunk['message']:
-                    input_tokens = chunk['message']['usage'].get('input_tokens', 0)
-
-            elif chunk['type'] == 'content_block_delta':
-                # Accumulate response text
-                if 'delta' in chunk and 'text' in chunk['delta']:
-                    ai_response += chunk['delta']['text']
-
-            elif chunk['type'] == 'message_delta':
-                # Extract final token counts
-                if 'usage' in chunk:
-                    output_tokens = chunk['usage'].get('output_tokens', 0)
-
-            elif chunk['type'] == 'message_stop':
-                # Final metrics might be here
-                if 'amazon-bedrock-invocationMetrics' in chunk:
-                    metrics = chunk['amazon-bedrock-invocationMetrics']
-                    if 'inputTokenCount' in metrics:
-                        input_tokens = metrics['inputTokenCount']
-                    if 'outputTokenCount' in metrics:
-                        output_tokens = metrics['outputTokenCount']
-
-        total_tokens = input_tokens + output_tokens
-        
-        processing_time = (time.time() - start_time) * 1000
-
-        # Calculate token savings using actual metrics
-        estimated_original_tokens = 2500  # Typical agent call with full context
-        actual_tokens_used = total_tokens
-        token_savings_percent = ((estimated_original_tokens - actual_tokens_used) / estimated_original_tokens) * 100 if actual_tokens_used > 0 else 0
-
-        logger.info(f"✅ Optimized call completed in {processing_time:.0f}ms, {token_savings_percent:.1f}% token savings", extra={
-            'input_tokens': input_tokens,
-            'output_tokens': output_tokens,
-            'total_tokens': total_tokens
-        })
-
-        return {
-            'success': True,
-            'response': ai_response,
-            'processing_time_ms': processing_time,
-            'tokens_used': total_tokens,
-            'metadata': {
-                'method': 'optimized_retrieval',
-                'chunks_used': len(relevant_chunks),
-                'relevance_scores': [c['score'] for c in relevant_chunks],
-                'token_savings_percent': round(token_savings_percent, 1),
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'total_tokens': total_tokens,
-                'sources': [c['source'] for c in relevant_chunks]
-            }
-        }
-        
-    except Exception as e:
-        error_msg = str(e)
-        processing_time = (time.time() - start_time) * 1000
-        
-        logger.error(f"❌ Optimized Bedrock call failed: {error_msg}", extra={
-            'session_id': session_id,
-            'error': error_msg,
-            'processing_time_ms': processing_time
-        }, exc_info=True)
-        
-        return {
-            'success': False,
-            'error': error_msg,
-            'processing_time_ms': processing_time
-        }
-
-def call_bedrock_original(user_message: str, session_id: str) -> Dict[str, Any]:
-    """
-    Original approach using full agent pipeline with token tracking
+    Call Bedrock agent to get response to user message
     """
 
     start_time = time.time()
@@ -605,37 +416,24 @@ def call_bedrock_original(user_message: str, session_id: str) -> Dict[str, Any]:
             'processing_time_ms': processing_time
         }
 
-def call_bedrock_agent(user_message: str, session_id: str) -> Dict[str, Any]:
-    """
-    Call Bedrock agent to get response to user message
-    
-    Args:
-        user_message: User's message
-        session_id: Chat session ID
-    
-    Returns:
-        Dictionary with success status, response, and processing time
-    """
-    
-    logger.info(f"🤖 Calling Bedrock agent for session {session_id}")
-    return call_bedrock_original(user_message, session_id)
 
 def format_buffett_response(response: str) -> str:
     """
-    Add Warren Buffett branding to the response.
-    
+    Format Warren Buffett response (signature removed).
+
     Args:
         response: Raw AI response
-    
+
     Returns:
-        Formatted response with branding
+        Formatted response without signature
     """
-    
-    # Simple branding - in production you might want more sophisticated formatting
+
+    # Ensure response ends with proper punctuation
     if not response.strip().endswith(('.', '!', '?')):
         response = response.strip() + '.'
-    
-    return f"{response}\n\n*Warren Buffett's AI Investment Advisor*"
+
+    # Return response without signature
+    return response
 
 def check_connection_active(connection_id: str) -> bool:
     """

@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
+import logger from '../utils/logger';
 
 const API_BASE_URL = import.meta.env.VITE_REST_API_URL || '';
 
 /**
  * Custom hook for managing conversations with the conversations API
  */
-export function useConversations({ token, userId }) {
+export function useConversations({ token, userId, includeArchived = false }) {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -14,7 +15,7 @@ export function useConversations({ token, userId }) {
   // Fetch conversations from API
   const fetchConversations = useCallback(async () => {
     if (!token || !userId || !API_BASE_URL) {
-      console.log('Skipping conversation fetch - missing requirements', { hasToken: !!token, hasUserId: !!userId, hasUrl: !!API_BASE_URL });
+      logger.log('Skipping conversation fetch - missing requirements', { hasToken: !!token, hasUserId: !!userId, hasUrl: !!API_BASE_URL });
       return;
     }
 
@@ -22,7 +23,12 @@ export function useConversations({ token, userId }) {
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/conversations`, {
+      const url = new URL(`${API_BASE_URL}/conversations`);
+      if (includeArchived) {
+        url.searchParams.set('include_archived', 'true');
+      }
+
+      const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -37,22 +43,26 @@ export function useConversations({ token, userId }) {
       const data = await response.json();
       const conversationsList = data.conversations || [];
 
-      // Sort by updated_at (most recent first)
-      conversationsList.sort((a, b) => b.updated_at - a.updated_at);
+      // Sort by updated_at (most recent first) - ISO strings
+      conversationsList.sort((a, b) => {
+        const dateA = new Date(a.updated_at || 0);
+        const dateB = new Date(b.updated_at || 0);
+        return dateB - dateA;
+      });
 
       setConversations(conversationsList);
     } catch (err) {
-      console.error('Error fetching conversations:', err);
+      logger.error('Error fetching conversations:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [token, userId]);
+  }, [token, userId, includeArchived]);
 
   // Create a new conversation
   const createConversation = useCallback(async (title = 'New Conversation') => {
     if (!token || !userId || !API_BASE_URL) {
-      console.error('Cannot create conversation - missing auth or API URL');
+      logger.error('Cannot create conversation - missing auth or API URL');
       return null;
     }
 
@@ -81,7 +91,7 @@ export function useConversations({ token, userId }) {
 
       return newConversation;
     } catch (err) {
-      console.error('Error creating conversation:', err);
+      logger.error('Error creating conversation:', err);
       setError(err.message);
       return null;
     }
@@ -90,7 +100,7 @@ export function useConversations({ token, userId }) {
   // Update conversation (title, archive status, etc.)
   const updateConversation = useCallback(async (conversationId, updates) => {
     if (!token || !API_BASE_URL) {
-      console.error('Cannot update conversation - missing auth or API URL');
+      logger.error('Cannot update conversation - missing auth or API URL');
       return false;
     }
 
@@ -124,7 +134,7 @@ export function useConversations({ token, userId }) {
 
       return true;
     } catch (err) {
-      console.error('Error updating conversation:', err);
+      logger.error('Error updating conversation:', err);
       setError(err.message);
       return false;
     }
@@ -138,7 +148,7 @@ export function useConversations({ token, userId }) {
   // Delete a conversation
   const deleteConversation = useCallback(async (conversationId) => {
     if (!token || !API_BASE_URL) {
-      console.error('Cannot delete conversation - missing auth or API URL');
+      logger.error('Cannot delete conversation - missing auth or API URL');
       return false;
     }
 
@@ -165,13 +175,13 @@ export function useConversations({ token, userId }) {
 
       return true;
     } catch (err) {
-      console.error('Error deleting conversation:', err);
+      logger.error('Error deleting conversation:', err);
       setError(err.message);
       return false;
     }
   }, [token, selectedConversation]);
 
-  // Auto-fetch conversations when auth changes
+  // Auto-fetch conversations when auth changes or includeArchived changes
   useEffect(() => {
     if (token && userId) {
       fetchConversations();
@@ -180,7 +190,7 @@ export function useConversations({ token, userId }) {
       setConversations([]);
       setSelectedConversation(null);
     }
-  }, [token, userId, fetchConversations]);
+  }, [token, userId, includeArchived, fetchConversations]);
 
   return {
     conversations,

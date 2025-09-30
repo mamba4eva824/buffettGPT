@@ -1,6 +1,6 @@
-# Warren Buffett Chat AI Frontend
+# BuffettGPT Frontend
 
-A React + Tailwind CSS frontend for the Warren Buffett Chat API, designed to connect to your AWS infrastructure.
+A React + Tailwind CSS frontend for the BuffettGPT API, designed to connect to your AWS infrastructure.
 
 ## Features
 

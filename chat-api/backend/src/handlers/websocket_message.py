@@ -71,16 +71,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Handle different message types
         action = message_data.get('action', route_key)
-        
+
         if action == 'ping':
             return handle_ping(connection_id, message_data)
         elif action == 'message':
             return handle_chat_message(connection_id, message_data, context)
+        elif action == 'switch_conversation':
+            return handle_switch_conversation(connection_id, message_data)
         else:
             logger.warning(f"Unknown message action", extra={
                 'connection_id': connection_id,
                 'action': action,
-                'available_actions': ['ping', 'message']
+                'available_actions': ['ping', 'message', 'switch_conversation']
             })
             return await_send_error_and_return(connection_id, f"Unknown action: {action}", 400)
         
@@ -144,7 +146,7 @@ def handle_ping(connection_id: str, message_data: Dict[str, Any]) -> Dict[str, A
         # Send pong response
         pong_message = {
             "action": "pong",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.utcnow().isoformat() + 'Z',
             "message_id": message_data.get('message_id', str(uuid.uuid4()))
         }
         
@@ -163,6 +165,83 @@ def handle_ping(connection_id: str, message_data: Dict[str, Any]) -> Dict[str, A
             'error': str(e)
         })
         return create_response(500)
+
+def handle_switch_conversation(connection_id: str, message_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle switching to a different conversation.
+    Updates the connection's session_id to point to the new conversation.
+
+    Args:
+        connection_id: WebSocket connection ID
+        message_data: Parsed message data with conversation_id
+
+    Returns:
+        API Gateway response
+    """
+
+    try:
+        # Validate conversation_id is provided
+        conversation_id = message_data.get('conversation_id')
+        if not conversation_id:
+            return await_send_error_and_return(
+                connection_id,
+                "Missing required field: conversation_id",
+                400
+            )
+
+        # Get current connection data
+        connection_data = get_connection_data(connection_id)
+        if not connection_data:
+            return await_send_error_and_return(
+                connection_id,
+                "Connection not found",
+                404
+            )
+
+        user_id = connection_data['user_id']
+        old_session_id = connection_data.get('session_id')
+
+        # Update connection record with new session_id
+        connections_table.update_item(
+            Key={'connection_id': connection_id},
+            UpdateExpression='SET session_id = :session_id, last_activity = :timestamp',
+            ExpressionAttributeValues={
+                ':session_id': conversation_id,
+                ':timestamp': datetime.utcnow().isoformat() + 'Z'
+            }
+        )
+
+        # Send confirmation to client
+        confirmation_message = {
+            "action": "conversation_switched",
+            "conversation_id": conversation_id,
+            "previous_conversation_id": old_session_id,
+            "timestamp": datetime.utcnow().isoformat() + 'Z'
+        }
+
+        send_message_to_connection(connection_id, confirmation_message)
+
+        logger.info(f"Conversation switched successfully", extra={
+            'connection_id': connection_id,
+            'user_id': user_id,
+            'old_conversation_id': old_session_id,
+            'new_conversation_id': conversation_id
+        })
+
+        return create_response(200)
+
+    except Exception as e:
+        logger.error(f"Error switching conversation", extra={
+            'connection_id': connection_id,
+            'error': str(e),
+            'error_type': type(e).__name__
+        }, exc_info=True)
+
+        return await_send_error_and_return(
+            connection_id,
+            "Failed to switch conversation",
+            500
+        )
 
 def handle_chat_message(connection_id: str, message_data: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -204,9 +283,8 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
 
         # Store user message in DynamoDB
         message_record = {
-            'session_id': session_id,
-            'timestamp': int(current_time.timestamp()),  # Store as number for DynamoDB
-            'timestamp_iso': current_time.isoformat(),  # Keep ISO format for readability
+            'conversation_id': session_id,
+            'timestamp': int(current_time.timestamp()),  # Store as Unix timestamp for DynamoDB LSI
             'message_id': message_id,
             'user_id': user_id,
             'connection_id': connection_id,
@@ -219,8 +297,8 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
         
         messages_table.put_item(Item=message_record)
 
-        # Update conversation timestamp for inbox sorting
-        update_conversation_timestamp(session_id, int(datetime.utcnow().timestamp()))
+        # Update conversation timestamp for inbox sorting (creates if doesn't exist)
+        update_conversation_timestamp(session_id, datetime.utcnow().isoformat() + 'Z', user_id)
 
         # Queue message for processing
         queue_message = {
@@ -229,7 +307,7 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
             'user_id': user_id,
             'connection_id': connection_id,
             'user_message': user_message,
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
             'request_id': context.aws_request_id
         }
         
@@ -258,7 +336,7 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
             "action": "message_received",
             "message_id": message_id,
             "session_id": session_id,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.utcnow().isoformat() + 'Z',
             "status": "queued_for_processing"
         }
         
@@ -454,7 +532,7 @@ def await_send_error_and_return(connection_id: str, error_message: str, status_c
     error_response = {
         "action": "error",
         "error": error_message,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat() + 'Z'
     }
     
     send_message_to_connection(connection_id, error_response)

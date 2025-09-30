@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import uuid
+from botocore.exceptions import ClientError
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -40,9 +41,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Returns:
         API Gateway response
     """
-    # Use print to ensure output
-    print(f"CONVERSATIONS HANDLER INVOKED")
-    print(f"Event keys: {list(event.keys())}")
 
     try:
         # Log the entire event for debugging
@@ -112,32 +110,53 @@ def get_user_id(event: Dict[str, Any]) -> Optional[str]:
         User ID or None
     """
 
-    # Debug logging to understand the event structure
-    if 'requestContext' in event:
-        logger.debug(f"RequestContext structure: {str(event.get('requestContext', {}))}")
+    # Simplified logging to avoid truncation
+    logger.info(f"get_user_id called for route: {event.get('routeKey', 'unknown')}")
 
     # Try to get from authorizer (authenticated users)
     if 'requestContext' in event and 'authorizer' in event['requestContext']:
         authorizer = event['requestContext']['authorizer']
-        logger.debug(f"Authorizer data: {str(authorizer)}")
+        # Log just the keys to avoid truncation
+        logger.info(f"Authorizer keys: {list(authorizer.keys()) if isinstance(authorizer, dict) else 'not a dict'}")
 
         # For Lambda authorizer with API Gateway HTTP v2 (payload format 1.0)
-        # The context from auth_verify is passed under 'lambda' key
+        # Check all possible locations where user_id might be
         if isinstance(authorizer, dict):
-            # Try lambda.user_id (for Lambda authorizers with context)
+            # 1. Check lambda.user_id FIRST (this is where it actually is based on logs)
             if 'lambda' in authorizer and isinstance(authorizer['lambda'], dict):
+                logger.info(f"Lambda context found with keys: {list(authorizer['lambda'].keys())}")
                 user_id = authorizer['lambda'].get('user_id')
                 if user_id:
-                    logger.info(f"Found user_id in authorizer.lambda: {user_id}")
-                    return user_id
+                    user_id_str = str(user_id)  # Ensure it's a string
+                    logger.info(f"Successfully found user_id in authorizer.lambda: {user_id_str}")
+                    return user_id_str
+                else:
+                    logger.warning(f"Lambda context exists but no user_id found")
 
-            # Try direct user_id (fallback)
+            # 2. Check for user_id directly in authorizer
             user_id = authorizer.get('user_id')
             if user_id:
                 logger.info(f"Found user_id directly in authorizer: {user_id}")
                 return user_id
 
-    # Try to decode JWT from Authorization header (temporary solution)
+            # 3. Check if context is nested (some API Gateway versions)
+            if 'context' in authorizer and isinstance(authorizer['context'], dict):
+                user_id = authorizer['context'].get('user_id')
+                if user_id:
+                    logger.info(f"Found user_id in authorizer.context: {user_id}")
+                    return user_id
+
+            # 4. Check for principalId which is set by the authorizer policy
+            principal_id = authorizer.get('principalId')
+            if principal_id and principal_id != 'anonymous':
+                logger.info(f"Found principalId in authorizer: {principal_id}")
+                return principal_id
+
+            # 5. Log all keys to understand structure if nothing found
+            logger.warning(f"Could not find user_id in authorizer. Available keys: {list(authorizer.keys())}")
+
+    # Try to decode JWT from Authorization header (fallback)
+    logger.info("Falling back to JWT extraction from Authorization header")
     headers = event.get('headers', {})
     auth_header = headers.get('authorization', headers.get('Authorization', ''))
 
@@ -162,8 +181,9 @@ def get_user_id(event: Dict[str, Any]) -> Optional[str]:
                 # Get user_id from JWT claims
                 user_id = claims.get('sub') or claims.get('user_id') or claims.get('id')
                 if user_id:
-                    logger.info(f"Extracted user_id from JWT: {user_id}")
-                    return user_id
+                    user_id_str = str(user_id)
+                    logger.info(f"Successfully extracted user_id from JWT: {user_id_str}")
+                    return user_id_str
         except Exception as e:
             logger.warning(f"Failed to decode JWT: {e}")
 
@@ -206,18 +226,22 @@ def list_conversations(event: Dict[str, Any]) -> Dict[str, Any]:
 
         conversations = response.get('Items', [])
 
+        # Migrate any existing Unix timestamps to ISO format for backward compatibility
+        for conv in conversations:
+            # Check if updated_at is a Unix timestamp (number) and convert it
+            if 'updated_at' in conv and isinstance(conv['updated_at'], (int, float)):
+                conv['updated_at'] = datetime.utcfromtimestamp(conv['updated_at']).isoformat() + 'Z'
+
+            # Same for created_at
+            if 'created_at' in conv and isinstance(conv['created_at'], (int, float)):
+                conv['created_at'] = datetime.utcfromtimestamp(conv['created_at']).isoformat() + 'Z'
+
         # Filter out archived unless requested
         query_params = event.get('queryStringParameters', {}) or {}
         include_archived = query_params.get('include_archived', 'false').lower() == 'true'
 
         if not include_archived:
             conversations = [c for c in conversations if not c.get('is_archived', False)]
-
-        # Add summary statistics for each conversation
-        for conv in conversations:
-            # Convert numeric timestamp to ISO format for response
-            if 'updated_at' in conv and isinstance(conv['updated_at'], (int, float)):
-                conv['updated_at_iso'] = datetime.fromtimestamp(conv['updated_at']).isoformat()
 
         logger.info(f"Found {len(conversations)} conversations for user {user_id}")
 
@@ -264,12 +288,20 @@ def get_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
             return create_response(404, {'error': 'Conversation not found'})
 
         # Verify ownership
-        if conversation['user_id'] != user_id:
+        conv_user_id = str(conversation.get('user_id', ''))
+        request_user_id = str(user_id)
+
+        logger.info(f"Ownership check - Conversation owner: '{conv_user_id}', Request user: '{request_user_id}', Match: {conv_user_id == request_user_id}")
+
+        if conv_user_id != request_user_id:
+            logger.warning(f"Access denied - user_id mismatch. Conversation owner: '{conv_user_id}', Request user: '{request_user_id}'")
             return create_response(403, {'error': 'Access denied'})
 
-        # Add ISO timestamp for numeric timestamps
+        # Migrate any existing Unix timestamps to ISO format
         if 'updated_at' in conversation and isinstance(conversation['updated_at'], (int, float)):
-            conversation['updated_at_iso'] = datetime.fromtimestamp(conversation['updated_at']).isoformat()
+            conversation['updated_at'] = datetime.utcfromtimestamp(conversation['updated_at']).isoformat() + 'Z'
+        if 'created_at' in conversation and isinstance(conversation['created_at'], (int, float)):
+            conversation['created_at'] = datetime.utcfromtimestamp(conversation['created_at']).isoformat() + 'Z'
 
         return create_response(200, conversation)
 
@@ -311,19 +343,19 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
             return create_response(403, {'error': 'Access denied'})
 
         # Get messages for this conversation
-        # Note: Currently using session_id as conversation_id
         response = messages_table.query(
-            KeyConditionExpression='session_id = :session_id',
-            ExpressionAttributeValues={':session_id': conversation_id},
+            KeyConditionExpression='conversation_id = :conversation_id',
+            ExpressionAttributeValues={':conversation_id': conversation_id},
             ScanIndexForward=True  # Oldest first (chronological order)
         )
 
         messages = response.get('Items', [])
 
-        # Format timestamps
+        # Convert Unix timestamps to ISO format for frontend display
         for msg in messages:
             if 'timestamp' in msg and isinstance(msg['timestamp'], (int, float)):
-                msg['timestamp_iso'] = datetime.fromtimestamp(msg['timestamp']).isoformat()
+                # Keep original Unix timestamp, add ISO version for frontend
+                msg['timestamp_iso'] = datetime.utcfromtimestamp(msg['timestamp']).isoformat() + 'Z'
 
         return create_response(200, {
             'conversation_id': conversation_id,
@@ -364,7 +396,7 @@ def create_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
         'conversation_id': conversation_id,
         'user_id': user_id,
         'title': body.get('title', 'New conversation'),
-        'created_at': datetime.utcnow().isoformat(),
+        'created_at': datetime.utcnow().isoformat() + 'Z',
         'updated_at': int(datetime.utcnow().timestamp()),
         'message_count': 0,
         'is_archived': False,
@@ -502,14 +534,25 @@ def archive_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
             'conversation_id': conversation_id
         })
 
-    except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
-        return create_response(403, {'error': 'Access denied or conversation not found'})
+    except ClientError as e:
+        # Check if it's a conditional check failure
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            logger.warning(f"Access denied or conversation not found", extra={
+                'conversation_id': conversation_id,
+                'user_id': user_id,
+                'error_code': e.response['Error']['Code']
+            })
+            return create_response(403, {'error': 'Access denied or conversation not found'})
+        else:
+            # Re-raise for generic exception handler
+            raise
 
     except Exception as e:
         logger.error(f"Error archiving conversation", extra={
             'conversation_id': conversation_id,
-            'error': str(e)
-        })
+            'error': str(e),
+            'error_type': type(e).__name__
+        }, exc_info=True)
 
         return create_response(500, {'error': 'Failed to archive conversation'})
 
@@ -529,9 +572,6 @@ def create_response(status_code: int, body: Any = None) -> Dict[str, Any]:
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',  # Allow all origins for development
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-            'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
             'X-Environment': ENVIRONMENT,
             'X-Project': PROJECT_NAME
         }
