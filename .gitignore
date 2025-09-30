@@ -271,6 +271,12 @@ state-backup-*.json
 terraform.tfstate.backup
 *.tfstate.backup
 
+# Backend config with infrastructure details
+**/backend-config.json
+
+# Terraform outputs (may contain sensitive data)
+**/terraform-output*.json
+
 # Documentation that might contain sensitive info
 docs/
 documentation/
