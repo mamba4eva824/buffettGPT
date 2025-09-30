@@ -135,7 +135,8 @@ jobs:
             -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
             -var="bedrock_agent_id=${{ secrets.BEDROCK_AGENT_ID }}" \
             -var="bedrock_agent_alias=${{ secrets.BEDROCK_AGENT_ALIAS }}" \
-            -var="alert_email=${{ secrets.ALERT_EMAIL }}"
+            -var='alert_email=${{ secrets.ALERT_EMAIL || "" }}' \
+            -detailed-exitcode || [ $? -eq 2 ]
 
       - name: Terraform Apply
         working-directory: chat-api/terraform/environments/staging
