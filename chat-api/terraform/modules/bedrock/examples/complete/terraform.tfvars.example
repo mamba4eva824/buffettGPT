@@ -1,0 +1,11 @@
+# Example terraform.tfvars file
+# Copy this to terraform.tfvars and update with your actual values
+
+# Required: Your Pinecone API key
+pinecone_api_key = "csk_73bKWg_DpDkZdBjzsf58vwoRk44tJyW8HeJQCRNZxftGk4vTCQ6EPeoj77fsYFR7RCBUiB"
+
+# Optional: Override default configuration
+# pinecone_connection_string = "https://your-pinecone-index.svc.region.pinecone.io"
+# source_bucket_arn = "arn:aws:s3:::your-source-bucket"
+# knowledge_base_name = "your-kb-name"
+# agent_name = "your-agent-name"
