@@ -154,7 +154,7 @@ module "api_gateway" {
   authorizer_function_name        = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
   auth_callback_function_arn      = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
-  cloudfront_url                  = "https://d2bmcia2ei4z1i.cloudfront.net"
+  cloudfront_url                  = module.cloudfront.cloudfront_url
 
   common_tags = local.common_tags
 }
@@ -173,7 +173,7 @@ module "auth" {
   # OAuth Configuration
   google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
-  frontend_url         = "https://d2bmcia2ei4z1i.cloudfront.net"
+  frontend_url         = module.cloudfront.cloudfront_url
   jwt_secret           = var.jwt_secret
 
   # Dependencies
@@ -284,9 +284,16 @@ module "bedrock" {
 # ================================================
 # CloudFront + S3 Frontend Module
 # ================================================
-# Note: CloudFront distribution (E9XUZCDMBX6Z) and S3 bucket (buffett-staging-frontend)
-# are manually managed and deployed via GitHub Actions CI/CD pipeline.
-# The deploy-frontend job in .github/workflows/deploy-staging.yml handles deployment.
+
+module "cloudfront" {
+  source = "../../modules/cloudfront-static-site"
+
+  project_name = local.project_name
+  environment  = local.environment
+  price_class  = "PriceClass_100" # US, Canada, Europe
+
+  common_tags = local.common_tags
+}
 
 # ================================================
 # Post-Deployment Configuration
