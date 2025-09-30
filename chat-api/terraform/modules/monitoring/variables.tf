@@ -16,8 +16,8 @@ variable "alert_email" {
 }
 
 variable "lambda_function_names" {
-  description = "List of Lambda function names to monitor"
-  type        = list(string)
+  description = "Map of Lambda function names to monitor"
+  type        = map(string)
 }
 
 variable "api_gateway_id" {

@@ -41,16 +41,16 @@ locals {
 
   # Lambda environment variables
   lambda_common_env_vars = {
-    ENVIRONMENT                = local.environment
-    PROJECT_NAME              = local.project_name
-    LOG_LEVEL                 = "INFO"  # Less verbose than dev
-    CHAT_SESSIONS_TABLE       = module.dynamodb.chat_sessions_table_name
-    CHAT_MESSAGES_TABLE       = module.dynamodb.chat_messages_table_name
-    CONVERSATIONS_TABLE       = module.dynamodb.conversations_table_name
+    ENVIRONMENT                 = local.environment
+    PROJECT_NAME                = local.project_name
+    LOG_LEVEL                   = "INFO" # Less verbose than dev
+    CHAT_SESSIONS_TABLE         = module.dynamodb.chat_sessions_table_name
+    CHAT_MESSAGES_TABLE         = module.dynamodb.chat_messages_table_name
+    CONVERSATIONS_TABLE         = module.dynamodb.conversations_table_name
     WEBSOCKET_CONNECTIONS_TABLE = module.dynamodb.websocket_connections_table_name
-    ENHANCED_RATE_LIMITS_TABLE = module.dynamodb.enhanced_rate_limits_table_name
-    KMS_KEY_ID                = module.core.kms_key_id
-    CHAT_PROCESSING_QUEUE_URL = module.core.chat_processing_queue_url
+    ENHANCED_RATE_LIMITS_TABLE  = module.dynamodb.enhanced_rate_limits_table_name
+    KMS_KEY_ID                  = module.core.kms_key_id
+    CHAT_PROCESSING_QUEUE_URL   = module.core.chat_processing_queue_url
 
     # Bedrock Configuration - Use module outputs when available
     BEDROCK_AGENT_ID    = try(module.bedrock.agent_id, var.bedrock_agent_id)
@@ -66,8 +66,8 @@ locals {
   lambda_function_env_vars = {
     websocket_connect = {
       ANONYMOUS_SESSIONS_TABLE = module.dynamodb.anonymous_sessions_table_name
-      USERS_TABLE             = ""  # Not using users table for now
-      RATE_LIMITS_TABLE       = module.dynamodb.enhanced_rate_limits_table_name
+      USERS_TABLE              = "" # Not using users table for now
+      RATE_LIMITS_TABLE        = module.dynamodb.enhanced_rate_limits_table_name
     }
     chat_processor = {
       # Additional environment variables can be added here if needed
@@ -86,8 +86,8 @@ module "core" {
   environment         = local.environment
   aws_region          = var.aws_region
   common_tags         = local.common_tags
-  kms_deletion_window = 14  # Longer than dev for safety
-  enable_vpc          = false  # No VPC for staging
+  kms_deletion_window = 14    # Longer than dev for safety
+  enable_vpc          = false # No VPC for staging
 }
 
 # ================================================
@@ -99,12 +99,12 @@ module "dynamodb" {
 
   project_name               = local.project_name
   environment                = local.environment
-  billing_mode               = "PAY_PER_REQUEST"  # On-demand for cost control
-  kms_key_arn               = module.core.kms_key_arn
-  enable_pitr               = true  # Enable point-in-time recovery for staging
-  enable_deletion_protection = false  # Allow deletion in staging
-  enable_anonymous_sessions  = true   # Support anonymous testing
-  common_tags               = local.common_tags
+  billing_mode               = "PAY_PER_REQUEST" # On-demand for cost control
+  kms_key_arn                = module.core.kms_key_arn
+  enable_pitr                = true  # Enable point-in-time recovery for staging
+  enable_deletion_protection = false # Allow deletion in staging
+  enable_anonymous_sessions  = true  # Support anonymous testing
+  common_tags                = local.common_tags
 }
 
 # ================================================
@@ -123,10 +123,10 @@ module "lambda" {
   function_env_vars         = local.lambda_function_env_vars
   dlq_arn                   = module.core.chat_dlq_arn
   chat_processing_queue_arn = module.core.chat_processing_queue_arn
-  log_retention_days        = 14  # 2 week retention for staging
+  log_retention_days        = 14 # 2 week retention for staging
 
   reserved_concurrency = {
-    chat_processor = 5  # Higher than dev for multiple testers
+    chat_processor = 5 # Higher than dev for multiple testers
   }
 
   sqs_batch_window    = 10
@@ -148,12 +148,12 @@ module "api_gateway" {
   lambda_arns = module.lambda.function_arns
 
   # API configuration
-  enable_cors           = true
-  enable_authorization  = var.enable_authentication
-  authorizer_function_arn = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
-  authorizer_function_name = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
+  enable_cors                     = true
+  enable_authorization            = var.enable_authentication
+  authorizer_function_arn         = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
+  authorizer_function_name        = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
-  auth_callback_function_arn = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
+  auth_callback_function_arn      = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
 
   common_tags = local.common_tags
 }
@@ -212,11 +212,11 @@ module "monitoring" {
 
   # Resources to monitor
   lambda_function_names = module.lambda.function_names
-  api_gateway_id       = module.api_gateway.http_api_id
-  websocket_api_id     = module.api_gateway.websocket_api_id
+  api_gateway_id        = module.api_gateway.http_api_id
+  websocket_api_id      = module.api_gateway.websocket_api_id
 
   # Alert configuration
-  alert_email      = var.alert_email
+  alert_email = var.alert_email
 
   common_tags = local.common_tags
 }
@@ -244,26 +244,33 @@ module "bedrock" {
   create_data_source         = true
 
   # Pinecone Configuration
-  pinecone_api_key          = var.pinecone_api_key
+  pinecone_api_key           = var.pinecone_api_key
+  pinecone_connection_string = "https://buffett-embeddings-staging-34d0bay.svc.aped-4627-b74a.pinecone.io"
+
+  # S3 Data Source Configuration
+  source_bucket_arn = "arn:aws:s3:::buffet-training-data"
+
+  # Embedding Model Configuration - AWS Titan Embeddings V2 (1024 dimensions)
+  embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
 
   # Data Source and Chunking Configuration
   enable_chunking_configuration = true
-  chunking_strategy            = "SEMANTIC"
-  max_tokens_per_chunk         = 300
+  chunking_strategy             = "SEMANTIC"
+  max_tokens_per_chunk          = 300
 
   # Disable prompt override to use AWS defaults
   enable_prompt_override = false
 
   # Guardrails Configuration
   enable_guardrails         = true
-  guardrail_name           = var.bedrock_guardrail_name
-  guardrail_description    = var.bedrock_guardrail_description
-  blocked_input_messaging  = "I can only provide financial advice and investment guidance. Please ask questions related to investment planning, retirement, tax strategies, insurance, estate planning, or financial goal setting."
+  guardrail_name            = var.bedrock_guardrail_name
+  guardrail_description     = var.bedrock_guardrail_description
+  blocked_input_messaging   = "I can only provide financial advice and investment guidance. Please ask questions related to investment planning, retirement, tax strategies, insurance, estate planning, or financial goal setting."
   blocked_outputs_messaging = "I cannot provide that type of advice. I'm designed to help with financial planning, investment strategies, retirement planning, tax planning, insurance analysis, estate planning basics, and financial goal setting. Please ask a finance-related question."
 
   # Enable policies for comprehensive guardrails
-  enable_content_policy                = true
-  enable_sensitive_information_policy  = false
+  enable_content_policy               = true
+  enable_sensitive_information_policy = false
   enable_topic_policy                 = true
   enable_word_policy                  = true
   enable_contextual_grounding         = true
