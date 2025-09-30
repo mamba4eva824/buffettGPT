@@ -1,0 +1,9 @@
+{
+  "bedrock_agent_id": "M9GEXYBRDW",
+  "bedrock_agent_alias": "buffett-advisor-alias", 
+  "bedrock_region": "us-east-1",
+  "knowledge_base_id": "D1ZVQ1VWHU",
+  "model_id": "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  "max_tokens": 4000,
+  "temperature": 0.1
+}

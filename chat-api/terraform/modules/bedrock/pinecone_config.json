@@ -1,0 +1,9 @@
+{
+  "index_name": "buffett-knowledge-base",
+  "dimension": 1536,
+  "metric": "cosine",
+  "pod_type": "p1.x1",
+  "replicas": 1,
+  "shards": 1,
+  "region": "us-east-1"
+}
