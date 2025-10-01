@@ -1277,31 +1277,34 @@ function TopicButtons({ onPromptSelect }) {
   const dropdownRef = useRef(null);
 
   const topics = {
-    budgeting: {
-      label: "Budgeting",
+    buffett_wisdom: {
+      label: "Buffett Wisdom",
       prompts: [
-        "How can I create a budget that follows the 50/30/20 rule?",
-        "What's the best way to track my monthly expenses?",
-        "How do I budget for irregular income?",
-        "What are effective strategies to reduce my monthly spending?"
+        "What does \"be fearful when others are greedy\" mean?",
+        "What is an \"economic moat\"?",
+        "Does Buffett recommend diversification or concentration?",
+        "What does Buffett look for in company management?",
+        "How should investors react to market crashes?"
       ]
     },
-    saving: {
-      label: "Saving",
+    wealth_planning: {
+      label: "Wealth Planning",
       prompts: [
-        "How much should I have in my emergency fund?",
-        "What's the difference between a high-yield savings account and regular savings?",
-        "How can I automate my savings to build wealth?",
-        "What percentage of my income should I be saving?"
+        "How much should I save for retirement at age 30?",
+        "Pay off mortgage early or invest the money?",
+        "Roth IRA vs. Traditional IRA - which is better?",
+        "Should I pay off debt before investing?",
+        "How much do I need in an emergency fund?"
       ]
     },
-    investing: {
-      label: "Investing",
+    learn_investing: {
+      label: "Learn Investing",
       prompts: [
-        "What's the best way to start investing with $1,000?",
-        "How do index funds work and why does Buffett recommend them?",
-        "What's the difference between stocks, bonds, and ETFs?",
-        "How should I diversify my investment portfolio?"
+        "What is intrinsic value?",
+        "What's the difference between growth and value investing?",
+        "How does compound interest work?",
+        "What financial metrics should I analyze?",
+        "How do I know if a stock is overvalued?"
       ]
     }
   };
@@ -1415,7 +1418,7 @@ function SearchComposer({
       <div className="mx-auto max-w-3xl relative px-2 md:px-0">
         <textarea
           ref={textareaRef}
-          placeholder={isConnecting ? "Connecting..." : status!=="connected"?"Try demo mode! Ask anything, or connect in Settings for real AI…":"Ask Warren Buffett about investing and business..."}
+          placeholder={isConnecting ? "Connecting..." : "Ask Warren Buffett about investing and business..."}
           value={input}
           onChange={(e)=>{
             setInput(e.target.value);
