@@ -120,7 +120,7 @@ export function ConversationList({
         cancelText="Cancel"
       />
 
-      <div className="space-y-1">
+      <div className="space-y-2 md:space-y-1">
         {visibleConversations.map((conv) => {
         const isSelected = selectedConversation?.conversation_id === conv.conversation_id;
         const isEditing = editingId === conv.conversation_id;
@@ -129,7 +129,7 @@ export function ConversationList({
           <div
             key={conv.conversation_id}
             className={classNames(
-              'group relative flex items-center rounded-lg px-3 py-2 transition-colors',
+              'group relative flex items-center rounded-lg px-3 py-3 md:py-2 transition-colors',
               isSelected
                 ? 'bg-indigo-50 text-indigo-700'
                 : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'

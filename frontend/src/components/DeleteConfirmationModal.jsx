@@ -1,9 +1,11 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, X } from 'lucide-react';
 
 /**
  * Delete Confirmation Modal Component
  * A reusable modal for confirming destructive actions
+ * Uses React Portal to render at document root for proper layering
  */
 export function DeleteConfirmationModal({
   isOpen,
@@ -27,14 +29,16 @@ export function DeleteConfirmationModal({
     onClose();
   };
 
-  return (
+  const modalContent = (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm transition-opacity duration-200"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm transition-opacity duration-200"
       onClick={handleBackdropClick}
+      style={{ pointerEvents: 'auto' }}
     >
       <div
-        className="relative w-full max-w-md mx-4 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl transform transition-all duration-200 animate-in fade-in zoom-in-95"
+        className="relative w-full max-w-md mx-4 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl transform transition-all duration-200"
         onClick={(e) => e.stopPropagation()}
+        style={{ pointerEvents: 'auto' }}
       >
         {/* Close button */}
         <button
@@ -81,6 +85,9 @@ export function DeleteConfirmationModal({
       </div>
     </div>
   );
+
+  // Render modal at document root using portal
+  return createPortal(modalContent, document.body);
 }
 
 export default DeleteConfirmationModal;
