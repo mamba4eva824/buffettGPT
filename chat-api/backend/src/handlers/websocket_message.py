@@ -285,6 +285,7 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
         message_record = {
             'conversation_id': session_id,
             'timestamp': int(current_time.timestamp()),  # Store as Unix timestamp for DynamoDB LSI
+            'timestamp_iso': current_time.isoformat() + 'Z',  # ISO format for readability and frontend
             'message_id': message_id,
             'user_id': user_id,
             'connection_id': connection_id,
