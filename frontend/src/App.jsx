@@ -1341,7 +1341,7 @@ function TopicButtons({ onPromptSelect }) {
             </button>
 
             {openDropdown === key && (
-              <div className="fixed md:absolute left-1/2 -translate-x-1/2 md:left-0 md:translate-x-0 w-[calc(100vw-2rem)] md:w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200 top-[calc(100%+0.5rem)] md:top-full md:mt-2">
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 md:left-0 md:translate-x-0 w-[calc(100vw-2rem)] md:w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200">
                 <div className="py-2">
                   {topic.prompts.map((prompt, index) => (
                     <button
