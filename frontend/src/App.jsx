@@ -430,23 +430,23 @@ function MessageBubble({ msg, user, messageRef }) {
   const isUser = msg.type === "user";
   const isSystem = msg.type === "system";
   return (
-    <div ref={messageRef} className={classNames("flex gap-3", isUser ? "justify-end" : "justify-start") }>
+    <div ref={messageRef} className={classNames("flex gap-2 md:gap-3", isUser ? "justify-end" : "justify-start") }>
       {!isUser && (
-        <div className="h-8 w-8 shrink-0">
+        <div className="h-7 w-7 md:h-8 md:w-8 shrink-0">
           <img
             src="/buffett-memoji.png"
             alt="Warren Buffett AI"
-            className="w-8 h-8 rounded-full"
+            className="w-full h-full rounded-full"
           />
         </div>
       )}
-      <div className={classNames("max-w-[80%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100")}>
-        <div className="whitespace-pre-wrap">{msg.content}</div>
+      <div className={classNames("max-w-[85%] md:max-w-[80%] rounded-2xl px-3 md:px-4 py-2.5 md:py-3 text-sm md:text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100")}>
+        <div className="whitespace-pre-wrap break-words">{msg.content}</div>
         {!isUser && !isSystem && (
-          <div className={classNames("mt-2 flex items-center gap-2 text-[11px] text-slate-400")}>
-            <button className="inline-flex items-center hover:opacity-70" title="Like"><ThumbsUp className="h-3 w-3"/></button>
-            <button className="inline-flex items-center hover:opacity-70" title="Dislike"><ThumbsDown className="h-3 w-3"/></button>
-            <button className="inline-flex items-center gap-1 hover:opacity-70"><RefreshCcw className="h-3 w-3"/> Retry</button>
+          <div className={classNames("mt-2 flex items-center gap-3 md:gap-2 text-[11px] text-slate-400")}>
+            <button className="inline-flex items-center hover:opacity-70 active:opacity-50 min-h-[44px] md:min-h-0 -my-2 md:my-0" title="Like"><ThumbsUp className="h-3.5 w-3.5 md:h-3 md:w-3"/></button>
+            <button className="inline-flex items-center hover:opacity-70 active:opacity-50 min-h-[44px] md:min-h-0 -my-2 md:my-0" title="Dislike"><ThumbsDown className="h-3.5 w-3.5 md:h-3 md:w-3"/></button>
+            <button className="inline-flex items-center gap-1 hover:opacity-70 active:opacity-50 min-h-[44px] md:min-h-0 -my-2 md:my-0"><RefreshCcw className="h-3.5 w-3.5 md:h-3 md:w-3"/> Retry</button>
           </div>
         )}
       </div>
@@ -454,7 +454,7 @@ function MessageBubble({ msg, user, messageRef }) {
         <Avatar
           src={user?.picture || ''}
           alt={user?.name || user?.email || "User"}
-          size="h-8 w-8"
+          size="h-7 w-7 md:h-8 md:w-8"
           className="shrink-0"
         />
       )}
@@ -866,17 +866,32 @@ function ChatApp() {
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#e6eef9] dark:bg-slate-900 text-slate-800 dark:text-slate-100">
       {/* App shell */}
-      <div className="mx-auto h-full max-w-[1400px] px-4 py-6">
-        <div className="flex h-full rounded-3xl bg-white dark:bg-slate-800 shadow-xl ring-1 ring-black/5 dark:ring-slate-700/50">
+      <div className="mx-auto h-full max-w-[1400px] md:px-4 md:py-6">
+        <div className="flex h-full md:rounded-3xl bg-white dark:bg-slate-800 md:shadow-xl md:ring-1 md:ring-black/5 md:ring-slate-700/50">
+          {/* Mobile backdrop overlay - only visible when sidebar open on mobile */}
+          {isAuthenticated && sidebarOpen && (
+            <div
+              className="fixed inset-0 bg-black/50 z-40 md:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+          )}
+
           {/* Sidebar - Only show for authenticated users */}
           {isAuthenticated && (
             <aside className={classNames(
               "shrink-0 border-r border-slate-100 dark:border-slate-700 transition-all duration-300 ease-in-out",
-              sidebarOpen ? "w-[280px] p-4" : "w-16 p-2"
+              // Mobile: fixed overlay that slides in from left
+              "fixed inset-y-0 left-0 z-50 bg-white dark:bg-slate-800",
+              // Desktop: relative positioning (normal flow)
+              "md:relative md:z-0",
+              // Width and padding
+              sidebarOpen ? "w-[280px] p-6 md:p-4" : "w-0 p-0 md:w-16 md:p-2",
+              // Visibility
+              sidebarOpen ? "block" : "hidden md:block"
             )}>
             {sidebarOpen ? (
               <>
-                <div className="mb-6 flex items-center justify-between">
+                <div className="mb-8 md:mb-6 flex items-center justify-between">
                   <button
                     onClick={newChat}
                     className="text-xs tracking-[0.35em] text-slate-600 dark:text-slate-300 font-semibold hover:text-indigo-600 transition-colors cursor-pointer"
@@ -1030,22 +1045,35 @@ function ChatApp() {
           {/* Main panel */}
           <main className="relative flex min-w-0 flex-1 flex-col">
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 px-6 py-4">
-              <div className="flex items-center gap-3">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 px-4 md:px-6 py-4">
+              <div className="flex items-center gap-2 md:gap-3">
+                {/* Mobile hamburger menu - only show on mobile when authenticated */}
+                {isAuthenticated && (
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="md:hidden rounded-md p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                    title="Open menu"
+                  >
+                    <Menu className="h-5 w-5" />
+                  </button>
+                )}
                 <button
                   onClick={newChat}
-                  className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer"
+                  className="rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer"
                   title="Start new chat"
                 >
                   {ENV_CONFIG.APP_NAME}
                 </button>
-                {connectionBadge}
+                {/* Hide connection badge and session info on small mobile screens */}
+                <div className="hidden sm:block">
+                  {connectionBadge}
+                </div>
                 {selectedConversation ? (
-                  <div className="rounded-full bg-indigo-50 px-3 py-1 text-xs text-indigo-600">
+                  <div className="hidden sm:block rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 text-xs text-indigo-600 dark:text-indigo-300">
                     {selectedConversation.title}
                   </div>
                 ) : sessionId ? (
-                  <div className="rounded-full bg-slate-50 px-3 py-1 text-xs text-slate-500">Session: {sessionId.slice(0,8)}…</div>
+                  <div className="hidden sm:block rounded-full bg-slate-50 dark:bg-slate-700 px-3 py-1 text-xs text-slate-500 dark:text-slate-400">Session: {sessionId.slice(0,8)}…</div>
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
@@ -1065,7 +1093,7 @@ function ChatApp() {
             {/* Dynamic Layout Based on Message State */}
             {messages.length === 0 ? (
               /* CENTERED LAYOUT - No messages (landing, auth, new chat) */
-              <div className="flex-1 flex flex-col items-center justify-center px-6 transition-all duration-300 ease-in-out">
+              <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 transition-all duration-300 ease-in-out">
                 <div className="text-center mb-8">
                   <div className="text-slate-400 dark:text-white text-3xl font-medium">
                     Welcome{isAuthenticated && userFirstName ? `, ${userFirstName}` : ''} to {ENV_CONFIG.APP_NAME}
@@ -1090,7 +1118,7 @@ function ChatApp() {
               /* SPLIT LAYOUT - Messages exist (active conversation) */
               <>
                 {/* Messages Area */}
-                <div className="flex-1 overflow-y-auto px-6 py-4 transition-all duration-300 ease-in-out">
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out">
                   <div className="mx-auto max-w-3xl space-y-4">
                     {messages.map((m, index) => {
                       // Find the last user message in the entire array
@@ -1121,7 +1149,7 @@ function ChatApp() {
                 </div>
 
                 {/* Bottom Composer */}
-                <div className="border-t border-slate-100 dark:border-slate-700 p-4 transition-all duration-300 ease-in-out">
+                <div className="border-t border-slate-100 dark:border-slate-700 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out">
                   {/* Rate Limit Banner */}
                   {showRateLimitBanner && !isAuthenticated && hasStartedQuerying && (
                     <RateLimitBanner
@@ -1154,12 +1182,12 @@ function ChatApp() {
       {/* Settings Panel */}
       {settingsOpen && (
         <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>setSettingsOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-full max-w-xl overflow-y-auto bg-white dark:bg-slate-800 shadow-xl" onClick={(e)=>e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 px-6 py-4">
+          <div className="absolute right-0 top-0 h-full w-full md:max-w-xl overflow-y-auto bg-white dark:bg-slate-800 shadow-xl" onClick={(e)=>e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 px-4 md:px-6 py-4">
               <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">Settings</div>
-              <button onClick={()=>setSettingsOpen(false)} className="rounded-md border border-slate-200 dark:border-slate-600 px-2 py-1 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Close</button>
+              <button onClick={()=>setSettingsOpen(false)} className="rounded-md border border-slate-200 dark:border-slate-600 px-3 py-2 md:px-2 md:py-1 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-slate-100 dark:active:bg-slate-600">Close</button>
             </div>
-            <div className="space-y-6 p-6">
+            <div className="space-y-6 p-4 md:p-6">
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">User ID</label>
                 {isAuthenticated ? (
@@ -1292,19 +1320,19 @@ function TopicButtons({ onPromptSelect }) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl mt-6">
-      <div className="flex justify-center gap-4" ref={dropdownRef}>
+    <div className="mx-auto max-w-3xl mt-8 md:mt-6 mb-2 md:mb-0">
+      <div className="flex justify-center gap-3 md:gap-4" ref={dropdownRef}>
         {Object.entries(topics).map(([key, topic]) => (
           <div key={key} className="relative">
             <button
               onClick={() => setOpenDropdown(openDropdown === key ? null : key)}
-              className="px-4 py-2 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 dark:hover:bg-indigo-600 hover:text-white dark:hover:text-white hover:shadow-lg hover:shadow-indigo-200 dark:hover:shadow-indigo-900/50 transition-all duration-200 border border-indigo-200 dark:border-indigo-700"
+              className="px-4 md:px-4 py-2.5 md:py-2 text-sm md:text-base rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 dark:hover:bg-indigo-600 hover:text-white dark:hover:text-white hover:shadow-lg hover:shadow-indigo-200 dark:hover:shadow-indigo-900/50 transition-all duration-200 border border-indigo-200 dark:border-indigo-700"
             >
               {topic.label}
             </button>
 
             {openDropdown === key && (
-              <div className="absolute top-full mt-2 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200">
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 md:left-0 md:translate-x-0 w-screen max-w-[calc(100vw-2rem)] md:w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200">
                 <div className="py-2">
                   {topic.prompts.map((prompt, index) => (
                     <button
@@ -1378,7 +1406,7 @@ function SearchComposer({
 
   return (
     <>
-      <div className="mx-auto max-w-3xl relative">
+      <div className="mx-auto max-w-3xl relative px-2 md:px-0">
         <textarea
           ref={textareaRef}
           placeholder={isConnecting ? "Connecting..." : status!=="connected"?"Try demo mode! Ask anything, or connect in Settings for real AI…":"Ask Warren Buffett about investing and business..."}
@@ -1388,18 +1416,23 @@ function SearchComposer({
             autoResize(e.target);
           }}
           onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); doSend(); } }}
-          className="min-h-[44px] max-h-40 w-full resize-none rounded-2xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 pr-12 text-sm outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:text-slate-100 overflow-hidden"
+          className="min-h-[48px] md:min-h-[44px] max-h-40 w-full resize-none rounded-2xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-[14px] md:py-3 pr-14 md:pr-12 text-sm md:text-sm text-center md:text-left outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:text-slate-100 overflow-hidden leading-tight"
           disabled={isConnecting}
-          style={{height: '44px'}}
+          style={{height: '48px'}}
         />
         <button
-          onClick={doSend}
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!input.trim() || isConnecting) return;
+            doSend();
+          }}
           disabled={!input.trim() || isConnecting}
           className={classNames(
-            "absolute right-[3px] top-1/2 -translate-y-1/2 h-[38px] inline-flex items-center justify-center rounded-xl px-3 text-sm font-medium shadow-sm transition-colors text-white",
+            "absolute right-[3px] top-1/2 -translate-y-1/2 h-[42px] md:h-[38px] w-[42px] md:w-auto md:px-3 inline-flex items-center justify-center rounded-xl text-sm font-medium shadow-sm transition-colors text-white z-10 touch-manipulation",
             (!input.trim() || isConnecting)
               ? "bg-indigo-400 cursor-not-allowed"
-              : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
+              : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer active:bg-indigo-800"
           )}
         >
           {isConnecting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Send className="h-4 w-4"/>}
