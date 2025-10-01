@@ -219,7 +219,7 @@ def process_chat_message(message_data: Dict[str, Any], context: Any) -> Dict[str
         ai_message_record = {
             'conversation_id': session_id,
             'timestamp': int(current_time.timestamp()),  # Store as number for DynamoDB
-            'timestamp_iso': current_time.isoformat(),  # Keep ISO format for readability
+            'timestamp_iso': current_time.isoformat() + 'Z',  # ISO format for readability and frontend
             'message_id': ai_message_id,
             'user_id': user_id,
             'message_type': 'assistant',
