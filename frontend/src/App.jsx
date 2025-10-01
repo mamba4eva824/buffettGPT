@@ -842,6 +842,12 @@ function ChatApp() {
           // Ensure proper chronological order (oldest to newest)
           const timeA = new Date(a.timestamp).getTime();
           const timeB = new Date(b.timestamp).getTime();
+
+          // Handle invalid timestamps - if either is NaN, maintain array order
+          if (isNaN(timeA) && isNaN(timeB)) return 0;
+          if (isNaN(timeA)) return 1;  // Put invalid timestamps at end
+          if (isNaN(timeB)) return -1;
+
           return timeA - timeB;
         });
 
