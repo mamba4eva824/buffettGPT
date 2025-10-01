@@ -190,6 +190,7 @@ jobs:
           VITE_WEBSOCKET_URL=${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}
           VITE_ENVIRONMENT=staging
           VITE_ENABLE_DEBUG_LOGS=true
+          VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           EOF
 
           echo "✅ Created .env.staging with API endpoints"
