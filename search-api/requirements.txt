@@ -1,0 +1,2 @@
+perplexityai
+python-dotenv

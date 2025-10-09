@@ -40,6 +40,12 @@ locals {
       memory_size = 256
       description = "Conversations management API handler"
     }
+    search_handler = {
+      handler     = "search_handler.lambda_handler"
+      timeout     = 60
+      memory_size = 256
+      description = "AI search handler with streaming support"
+    }
   }
 }
 
