@@ -54,7 +54,7 @@ locals {
     ENHANCED_RATE_LIMITS_TABLE = module.dynamodb.enhanced_rate_limits_table_name
     KMS_KEY_ID                = module.core.kms_key_id
     CHAT_PROCESSING_QUEUE_URL = module.core.chat_processing_queue_url
-    
+
     # Bedrock Configuration - Use module outputs when available
     BEDROCK_AGENT_ID    = try(module.bedrock.agent_id, var.bedrock_agent_id)
     BEDROCK_AGENT_ALIAS = try(module.bedrock.agent_alias_id, var.bedrock_agent_alias)
@@ -64,7 +64,7 @@ locals {
     # Format: {api-id}.execute-api.{region}.amazonaws.com/{stage}
     WEBSOCKET_API_ENDPOINT = try("${module.api_gateway.websocket_api_id}.execute-api.us-east-1.amazonaws.com/${local.environment}", "")
   }
-  
+
   # Function-specific environment variables
   lambda_function_env_vars = {
     websocket_connect = {
@@ -74,6 +74,9 @@ locals {
     }
     chat_processor = {
       # Additional environment variables can be added here if needed
+    }
+    search_handler = {
+      SEARCH_API_KEY_ARN = module.lambda.search_api_key_arn
     }
   }
 }
@@ -151,8 +154,9 @@ module "api_gateway" {
   lambda_arns = module.lambda.function_arns
 
   # API configuration
-  enable_cors           = true
-  enable_authorization  = var.enable_authentication
+  enable_cors          = true
+  enable_authorization = var.enable_authentication
+  enable_search        = true  # Enable AI search for dev environment only
   authorizer_function_arn = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
   authorizer_function_name = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
@@ -180,6 +184,7 @@ module "auth" {
 
   # Dependencies
   lambda_role_arn           = module.core.lambda_role_arn
+  lambda_package_path       = "${path.root}/../../../backend/build"
   api_gateway_execution_arn = module.api_gateway.http_api_execution_arn
   dependencies_layer_arn    = module.lambda.dependencies_layer_arn
 
@@ -257,13 +262,12 @@ module "bedrock" {
   chunking_strategy            = "SEMANTIC"
   max_tokens_per_chunk         = 300
 
-  # Disable prompt override to use AWS defaults (fixes JSON formatting issues)
-  enable_prompt_override = false
+  # Enable prompt override to customize temperature and instructions
+  enable_prompt_override = true
 
-  #Create agent version after deployment
-  # Set to false to prevent automatic version creation on every apply
-  # Use the deployment script or manual process to create versions
-  #create_agent_version = false
+  # Create agent version after deployment
+  # Set to true to use versioned routing (prevents DRAFT routing issues)
+  create_agent_version = true
 
   # Guardrails Configuration - Enabled for financial advisor safety
   enable_guardrails         = true
