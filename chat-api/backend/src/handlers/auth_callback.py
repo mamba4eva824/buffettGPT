@@ -69,10 +69,24 @@ def get_google_credentials() -> Dict[str, str]:
 def get_jwt_secret() -> str:
     """Get JWT secret from Secrets Manager"""
     if JWT_SECRET_ARN:
-        return get_secret(JWT_SECRET_ARN)
+        try:
+            secret = get_secret(JWT_SECRET_ARN)
+            if not secret or len(secret) < 32:
+                raise ValueError("JWT secret must be at least 32 characters long")
+            return secret
+        except Exception as e:
+            logger.error("Failed to fetch JWT secret from Secrets Manager")
+            raise Exception("JWT_SECRET not properly configured in Secrets Manager") from e
     else:
-        # Fallback to environment variable for backward compatibility
-        return os.environ.get('JWT_SECRET', 'your-jwt-secret-key')
+        # Require JWT_SECRET environment variable - no default fallback for security
+        jwt_secret = os.environ.get('JWT_SECRET')
+        if not jwt_secret:
+            logger.error("JWT_SECRET environment variable not set")
+            raise ValueError("JWT_SECRET must be set via environment variable or JWT_SECRET_ARN must be configured")
+        if len(jwt_secret) < 32:
+            logger.error("JWT_SECRET is too short")
+            raise ValueError("JWT_SECRET must be at least 32 characters long for security")
+        return jwt_secret
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
@@ -95,7 +109,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     # Handle OPTIONS request for CORS preflight
     if event.get('requestContext', {}).get('http', {}).get('method') == 'OPTIONS':
-        return create_response(200, {'message': 'OK'})
+        return create_response(200, {'message': 'OK'}, event)
 
     try:
         # Parse request body
@@ -106,7 +120,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return create_response(400, {
                 'error': 'Missing credential',
                 'message': 'Google ID token is required'
-            })
+            }, event)
 
         # Get Google credentials
         google_creds = get_google_credentials()
@@ -141,14 +155,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return create_response(401, {
                 'error': 'Invalid token',
                 'message': 'Failed to verify Google credentials'
-            })
+            }, event)
 
         # Check if email is verified
         if not email_verified:
             return create_response(403, {
                 'error': 'Email not verified',
                 'message': 'Please verify your Google account email'
-            })
+            }, event)
 
         # Store or update user in DynamoDB
         current_time = datetime.utcnow()
@@ -232,7 +246,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'email': email
         })
 
-        return create_response(200, response_data)
+        return create_response(200, response_data, event)
 
     except Exception as e:
         logger.error(f"Authentication error", extra={
@@ -243,29 +257,64 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return create_response(500, {
             'error': 'Internal server error',
             'message': 'Failed to process authentication'
-        })
+        }, event)
 
-def create_response(status_code: int, body: Any) -> Dict[str, Any]:
+def create_response(status_code: int, body: Any, event: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Create API Gateway response with CORS headers
 
     Args:
         status_code: HTTP status code
         body: Response body
+        event: Optional event object to extract origin from
 
     Returns:
         API Gateway response
     """
 
+    # Whitelist of allowed origins - configure based on environment
+    allowed_origins = []
+
+    if ENVIRONMENT == 'prod':
+        allowed_origins = [
+            'https://buffettgpt.com',
+            'https://www.buffettgpt.com',
+            'https://app.buffettgpt.com'
+        ]
+    elif ENVIRONMENT == 'staging':
+        allowed_origins = [
+            'https://staging.buffettgpt.com',
+            'https://staging-app.buffettgpt.com'
+        ]
+    else:  # dev environment
+        allowed_origins = [
+            'http://localhost:3000',
+            'http://localhost:5173',
+            'http://127.0.0.1:3000',
+            'http://127.0.0.1:5173'
+        ]
+
+    # Extract origin from request headers
+    origin = None
+    if event:
+        headers = event.get('headers', {})
+        origin = headers.get('origin') or headers.get('Origin', '')
+
+    # Only set CORS header if origin is in allowlist
+    cors_headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+        'Access-Control-Allow-Methods': 'POST,OPTIONS',
+        'Access-Control-Max-Age': '3600'
+    }
+
+    # Add origin header only if it's in the allowlist
+    if origin and origin in allowed_origins:
+        cors_headers['Access-Control-Allow-Origin'] = origin
+        cors_headers['Vary'] = 'Origin'
+
     return {
         'statusCode': status_code,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',  # In production, specify your domain
-            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-            'Access-Control-Allow-Methods': 'POST,OPTIONS',
-            'X-Environment': ENVIRONMENT,
-            'X-Project': PROJECT_NAME
-        },
+        'headers': cors_headers,
         'body': json.dumps(body)
     }
