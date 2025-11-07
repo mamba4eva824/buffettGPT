@@ -1,8 +1,9 @@
 # Example terraform.tfvars file
 # Copy this to terraform.tfvars and update with your actual values
 
-# Required: Your Pinecone API key
-pinecone_api_key = "csk_73bKWg_DpDkZdBjzsf58vwoRk44tJyW8HeJQCRNZxftGk4vTCQ6EPeoj77fsYFR7RCBUiB"
+# Required: Your Pinecone API key (NEVER commit real keys to version control!)
+# Get your API key from: https://app.pinecone.io/organizations/-/projects/-/keys
+pinecone_api_key = "YOUR_PINECONE_API_KEY_HERE"
 
 # Optional: Override default configuration
 # pinecone_connection_string = "https://your-pinecone-index.svc.region.pinecone.io"
