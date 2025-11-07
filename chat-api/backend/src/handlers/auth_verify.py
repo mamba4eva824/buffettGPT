@@ -29,16 +29,26 @@ def get_jwt_secret() -> str:
     if JWT_SECRET_ARN:
         try:
             response = secrets_client.get_secret_value(SecretId=JWT_SECRET_ARN)
-            return response['SecretString']
+            secret = response['SecretString']
+            if not secret or len(secret) < 32:
+                raise ValueError("JWT secret must be at least 32 characters long")
+            return secret
         except Exception as e:
             logger.error(f"Failed to fetch JWT secret from Secrets Manager", extra={
                 'secret_arn': JWT_SECRET_ARN,
                 'error': str(e)
             })
-            raise
+            raise Exception("JWT_SECRET not properly configured in Secrets Manager") from e
     else:
-        # Fallback to environment variable for backward compatibility
-        return os.environ.get('JWT_SECRET', 'your-jwt-secret-key')
+        # Require JWT_SECRET environment variable - no default fallback for security
+        jwt_secret = os.environ.get('JWT_SECRET')
+        if not jwt_secret:
+            logger.error("JWT_SECRET environment variable not set")
+            raise ValueError("JWT_SECRET must be set via environment variable or JWT_SECRET_ARN must be configured")
+        if len(jwt_secret) < 32:
+            logger.error("JWT_SECRET is too short")
+            raise ValueError("JWT_SECRET must be at least 32 characters long for security")
+        return jwt_secret
 
 def extract_token(event: Dict[str, Any]) -> Optional[str]:
     """

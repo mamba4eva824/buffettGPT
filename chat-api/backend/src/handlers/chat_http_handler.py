@@ -60,6 +60,58 @@ RATE_LIMIT_GRACE_PERIOD_HOURS = os.environ.get('RATE_LIMIT_GRACE_PERIOD_HOURS', 
 sessions_table = dynamodb.Table(CHAT_SESSIONS_TABLE)
 messages_table = dynamodb.Table(CHAT_MESSAGES_TABLE)
 
+def get_cors_headers(event: Dict[str, Any] = None) -> Dict[str, str]:
+    """
+    Get CORS headers based on environment and request origin
+
+    Args:
+        event: Optional event object to extract origin from
+
+    Returns:
+        Dictionary of CORS headers with proper origin restriction
+    """
+    # Whitelist of allowed origins - configure based on environment
+    allowed_origins = []
+
+    if ENVIRONMENT == 'prod':
+        allowed_origins = [
+            'https://buffettgpt.com',
+            'https://www.buffettgpt.com',
+            'https://app.buffettgpt.com'
+        ]
+    elif ENVIRONMENT == 'staging':
+        allowed_origins = [
+            'https://staging.buffettgpt.com',
+            'https://staging-app.buffettgpt.com'
+        ]
+    else:  # dev environment
+        allowed_origins = [
+            'http://localhost:3000',
+            'http://localhost:5173',
+            'http://127.0.0.1:3000',
+            'http://127.0.0.1:5173'
+        ]
+
+    # Extract origin from request headers
+    origin = None
+    if event:
+        headers = event.get('headers', {})
+        origin = headers.get('origin') or headers.get('Origin', '')
+
+    # Build CORS headers
+    cors_headers = {
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Session-ID',
+        'Access-Control-Max-Age': '3600'
+    }
+
+    # Add origin header only if it's in the allowlist
+    if origin and origin in allowed_origins:
+        cors_headers['Access-Control-Allow-Origin'] = origin
+        cors_headers['Vary'] = 'Origin'
+
+    return cors_headers
+
 def convert_floats_to_decimals(item):
     """Convert all float values to Decimal for DynamoDB compatibility"""
     if isinstance(item, dict):
@@ -102,11 +154,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         elif route_key.startswith("GET /api/v1/chat/history/"):
             return handle_chat_history(event, context)
         else:
-            return create_error_response(404, "Route not found", f"Unknown route: {route_key}")
-            
+            return create_error_response(404, "Route not found", f"Unknown route: {route_key}", event)
+
     except Exception as e:
         logger.error(f"Unhandled error in lambda_handler: {str(e)}", exc_info=True)
-        return create_error_response(500, "Internal server error", "An unexpected error occurred")
+        return create_error_response(500, "Internal server error", "An unexpected error occurred", event)
 
 def handle_health_check(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Handle GET /health requests"""
@@ -127,23 +179,18 @@ def handle_health_check(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Overall health status
         all_healthy = all(health_data["checks"].values())
         health_data["status"] = "healthy" if all_healthy else "degraded"
-        
-        return create_success_response(health_data)
-        
+
+        return create_success_response(health_data, 200, event)
+
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
-        return create_error_response(503, "Service unhealthy", str(e))
+        return create_error_response(503, "Service unhealthy", str(e), event)
 
 def handle_cors_preflight(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Handle OPTIONS requests for CORS preflight"""
     return {
         "statusCode": 200,
-        "headers": {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Session-ID",
-            "Access-Control-Max-Age": "86400"
-        },
+        "headers": get_cors_headers(event),
         "body": ""
     }
 
@@ -153,12 +200,12 @@ def handle_chat_request(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Parse request body
         body = parse_request_body(event)
         if not body:
-            return create_error_response(400, "Invalid request", "Request body is required")
-        
+            return create_error_response(400, "Invalid request", "Request body is required", event)
+
         # Validate required fields
         user_message = body.get('message', '').strip()
         if not user_message:
-            return create_error_response(400, "Invalid request", "Message field is required and cannot be empty")
+            return create_error_response(400, "Invalid request", "Message field is required and cannot be empty", event)
         
         # Extract user_id from JWT token if available
         user_id = extract_user_id_from_token(event)
@@ -171,19 +218,19 @@ def handle_chat_request(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Validate message length
         if len(user_message) > 4000:  # Reasonable limit
-            return create_error_response(400, "Message too long", "Message must be less than 4000 characters")
-        
+            return create_error_response(400, "Message too long", "Message must be less than 4000 characters", event)
+
         # Process the chat message
         response_data = process_chat_message(session_id, user_id, user_message)
-        
-        return create_success_response(response_data)
-        
+
+        return create_success_response(response_data, 200, event)
+
     except ValueError as e:
         logger.warning(f"Validation error: {str(e)}")
-        return create_error_response(400, "Validation error", str(e))
+        return create_error_response(400, "Validation error", str(e), event)
     except Exception as e:
         logger.error(f"Error processing chat request: {str(e)}", exc_info=True)
-        return create_error_response(500, "Processing failed", "Failed to process your message. Please try again.")
+        return create_error_response(500, "Processing failed", "Failed to process your message. Please try again.", event)
 
 def process_chat_message(session_id: str, user_id: str, user_message: str) -> Dict[str, Any]:
     """Process chat message and return response"""
@@ -459,17 +506,18 @@ def check_bedrock_health() -> bool:
         logger.warning(f"Bedrock health check failed: {str(e)}")
         return False
 
-def create_success_response(data: Any, status_code: int = 200) -> Dict[str, Any]:
+def create_success_response(data: Any, status_code: int = 200, event: Dict[str, Any] = None) -> Dict[str, Any]:
     """Create successful HTTP response"""
+    headers = {
+        "Content-Type": "application/json",
+        "X-Request-ID": str(uuid.uuid4())
+    }
+    # Merge CORS headers
+    headers.update(get_cors_headers(event))
+
     return {
         "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Session-ID",
-            "X-Request-ID": str(uuid.uuid4())
-        },
+        "headers": headers,
         "body": json.dumps(data, default=str)
     }
 
@@ -514,7 +562,7 @@ def extract_user_id_from_token(event: Dict[str, Any]) -> Optional[str]:
         logger.warning(f"Failed to extract user_id from token: {str(e)}")
         return None
 
-def create_error_response(status_code: int, error: str, message: str) -> Dict[str, Any]:
+def create_error_response(status_code: int, error: str, message: str, event: Dict[str, Any] = None) -> Dict[str, Any]:
     """Create error HTTP response"""
     error_data = {
         "error": error,
@@ -522,16 +570,17 @@ def create_error_response(status_code: int, error: str, message: str) -> Dict[st
         "timestamp": datetime.utcnow().isoformat() + 'Z',
         "status_code": status_code
     }
-    
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Request-ID": str(uuid.uuid4())
+    }
+    # Merge CORS headers
+    headers.update(get_cors_headers(event))
+
     return {
         "statusCode": status_code,
-        "headers": {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, OPTIONS", 
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Session-ID",
-            "X-Request-ID": str(uuid.uuid4())
-        },
+        "headers": headers,
         "body": json.dumps(error_data)
     }
 
@@ -546,7 +595,7 @@ def handle_chat_history(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         session_id = path_parameters.get('session_id')
         
         if not session_id:
-            return create_error_response(400, "Missing session_id", "session_id is required in path")
+            return create_error_response(400, "Missing session_id", "session_id is required in path", event)
         
         # Extract query parameters
         query_params = event.get('queryStringParameters') or {}
@@ -586,25 +635,15 @@ def handle_chat_history(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             })
         
         logger.info(f"Retrieved {len(messages)} messages for session {session_id}")
-        
-        return {
-            "statusCode": 200,
-            "headers": {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Session-ID",
-                "X-Request-ID": str(uuid.uuid4())
-            },
-            "body": json.dumps({
-                "status": "success",
-                "session_id": session_id,
-                "message_count": len(messages),
-                "messages": messages
-            })
-        }
-        
+
+        return create_success_response({
+            "status": "success",
+            "session_id": session_id,
+            "message_count": len(messages),
+            "messages": messages
+        }, 200, event)
+
     except Exception as e:
         logger.error(f"Error fetching chat history: {str(e)}", exc_info=True)
-        return create_error_response(500, "Failed to fetch chat history", str(e))
+        return create_error_response(500, "Failed to fetch chat history", str(e), event)
 
