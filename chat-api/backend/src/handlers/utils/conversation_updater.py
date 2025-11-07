@@ -95,7 +95,6 @@ def update_conversation_timestamp(conversation_id: str, timestamp: Optional[int]
             try:
                 conversation_item = {
                     'conversation_id': conversation_id,
-                    'user_id': user_id,
                     'created_at': datetime.utcnow().isoformat() + 'Z',
                     'updated_at': timestamp,  # Already an int timestamp
                     'message_count': 1,

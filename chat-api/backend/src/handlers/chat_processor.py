@@ -540,17 +540,21 @@ def send_message_to_connection(connection_id: str, message: Dict[str, Any]) -> b
             'message_action': message.get('action'),
             'message_size': len(json.dumps(message))
         })
-        
+
         return True
-        
-    except apigateway_client.exceptions.GoneException:
-        logger.warning(f"Connection is gone", extra={
-            'connection_id': connection_id
-        })
-        # Clean up stale connection
-        cleanup_stale_connection(connection_id)
-        return False
-        
+
+    except ClientError as e:
+        # Handle GoneException (connection closed)
+        if e.response['Error']['Code'] == 'GoneException':
+            logger.warning(f"Connection is gone", extra={
+                'connection_id': connection_id
+            })
+            # Clean up stale connection
+            cleanup_stale_connection(connection_id)
+            return False
+        # Re-raise other ClientErrors to be caught by the generic exception handler
+        raise
+
     except Exception as e:
         logger.error(f"Error sending message to connection", extra={
             'connection_id': connection_id,
