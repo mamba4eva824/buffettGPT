@@ -148,7 +148,22 @@ jobs:
 
       - name: Terraform Apply
         working-directory: chat-api/terraform/environments/dev
-        run: terraform apply -auto-approve tfplan
+        run: |
+          # First attempt
+          if terraform apply -auto-approve tfplan; then
+            echo "Terraform apply succeeded on first attempt"
+          else
+            echo "First attempt failed, regenerating plan and retrying..."
+            # Regenerate plan for retry (state may have changed)
+            terraform plan -out=tfplan \
+              -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
+              -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
+              -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+              -var="alert_email=${{ secrets.ALERT_EMAIL }}"
+            # Second attempt
+            terraform apply -auto-approve tfplan
+          fi
 
       - name: Get Terraform Outputs
         id: terraform-output
