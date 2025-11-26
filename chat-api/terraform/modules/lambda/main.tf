@@ -46,6 +46,12 @@ locals {
       memory_size = 256
       description = "AI search handler with streaming support"
     }
+    debt_analysis_agent_handler = {
+      handler     = "debt_analysis_agent_handler.lambda_handler"
+      timeout     = 120
+      memory_size = 512
+      description = "Debt analysis agent handler with streaming support"
+    }
   }
 }
 

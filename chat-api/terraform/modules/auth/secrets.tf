@@ -5,10 +5,6 @@ resource "aws_secretsmanager_secret" "google_oauth" {
   name        = "${var.project_name}-${var.environment}-google-oauth-v2"
   description = "Google OAuth credentials for ${var.project_name}"
 
-  lifecycle {
-    prevent_destroy = true
-  }
-
   tags = merge(
     var.common_tags,
     {
@@ -34,10 +30,6 @@ resource "aws_secretsmanager_secret_version" "google_oauth" {
 resource "aws_secretsmanager_secret" "jwt_secret" {
   name        = "${var.project_name}-${var.environment}-jwt-secret-v2"
   description = "JWT signing secret for ${var.project_name}"
-
-  lifecycle {
-    prevent_destroy = true
-  }
 
   tags = merge(
     var.common_tags,
