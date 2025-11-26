@@ -1,0 +1,45 @@
+Company: Chevron Corporation (CVX)
+Years: 2019-2024
+Extraction Date: 2025-10-12T22:37:25.436134
+============================================================
+
+Below is a comprehensive table of **Chevron Corporation (CVX) debt-related metrics** extracted and calculated from the annual 10-K SEC filings for fiscal years **ending December 31, 2019 through December 31, 2024**. All values are in **millions USD**, except ratios.
+
+Some metrics (like Cash Flows, CapEx, Interest Expense, Marketable Securities, and split of Long-term/Short-term Debt) were **not directly available in the summarized tables** within these SEC filings. Where possible, results are computed; otherwise, fields are marked “n/a” (not available in excerpted SEC data).
+
+| Fiscal Year End | Total Assets | Total Debt | Long-Term Debt | Short-Term Debt | Shareholders' Equity | Cash & Equiv. | Marketable Sec. | Total Revenue | EBIT (Operating Inc) | Interest Expense | Net Income | Op. Cash Flow | CapEx | Free Cash Flow | Debt/Equity Ratio | Interest Coverage | Net Debt (Total Debt - Cash) | Return on Equity | Return on Assets |
+|------------------|-------------|------------|----------------|-----------------|---------------------|---------------|------------------|--------------|----------------------|------------------|-----------|--------------|-------|----------------|--------------------|-------------------|-----------------------------|------------------|------------------|
+| 2024-12-31[1]    | n/a         | 8,917      | n/a            | n/a             | 153,157             | n/a           | n/a              | 193,414      | 18,128               | n/a              | 17,661    | n/a          | n/a   | n/a           | 0.06               | n/a              | n/a                        | 0.12             | n/a             |
+| 2023-12-31[2]    | n/a         | 9,740      | n/a            | n/a             | 161,929             | n/a           | n/a              | 196,913      | 25,548               | n/a              | 21,369    | n/a          | n/a   | n/a           | 0.06               | n/a              | n/a                        | 0.13             | n/a             |
+| 2022-12-31[3]    | n/a         | 10,800     | n/a            | n/a             | 160,242             | n/a           | n/a              | 235,717      | 39,139               | n/a              | 35,465    | n/a          | n/a   | n/a           | 0.07               | n/a              | n/a                        | 0.22             | n/a             |
+| 2021-12-31[3][4] | n/a         | 11,693     | n/a            | n/a             | 139,940             | n/a           | n/a              | 155,606      | 14,780               | n/a              | 15,625    | n/a          | n/a   | n/a           | 0.08               | n/a              | n/a                        | 0.11             | n/a             |
+| 2020-12-31[3][4] | n/a         | 7,133      | n/a            | n/a             | 132,726             | n/a           | n/a              | 94,471       | (7,674)              | n/a              | (5,543)   | n/a          | n/a   | n/a           | 0.05               | n/a              | n/a                        | (0.04)           | n/a             |
+| 2019-12-31[3][4] | n/a         | n/a        | n/a            | n/a             | 145,208             | n/a           | n/a              | 139,865      | (1,115)              | n/a              | 2,924     | n/a          | n/a   | n/a           | n/a                | n/a              | n/a                        | 0.02             | n/a             |
+
+#### Key Notes
+
+**Context & Supporting Details**
+- **Fiscal year end**: All data is per fiscal year ended December 31.
+- **Total Debt**: Sourced directly from 10-K subsidiary summary tables, includes long-term and short-term debt combined[1][2][3][4].
+- **Shareholders' Equity**: Sourced directly as "total CUSA net equity"[1][2][3][4].
+- **Total Revenue**: "Sales and other operating revenues" from summary tables[1][2][3][4].
+- **EBIT (Operating Income)**: Calculated as "Sales and other operating revenues" minus "Total costs and other deductions" from summary tables[1][2][3][4]. (Strict EBIT may differ slightly from US GAAP operating income if "other deductions" include non-operating items.)
+- **Net Income**: "Net income attributable to Chevron Corporation" from summary tables[1][2][3][4].
+- **Debt/Equity Ratio**: Calculated as Total Debt / Shareholders' Equity.
+- **Return on Equity**: Calculated as Net Income / Shareholders' Equity.
+- **Other metrics** were not extractable from these high-level subsidiary tables and would require deeper dives into full consolidated financial statements and cash flow notes not captured in these summary tables.
+
+**Unavailable Metrics**
+- Cash, Marketable Securities, split debt: Not available in the summary tables; typically reported elsewhere in full 10-Ks.
+- Interest Expense, Cash Flow, CapEx, and interest coverage: Not in summary—would require full statement details; thus "n/a."
+- Total Assets: Summary tables do not disclose consolidated assets; would require consolidated balance sheet section.
+
+---
+
+**Sources:**  
+[1] 2024 SEC 10-K filing subsidiary summary and income data  
+[2] 2023 SEC 10-K filing subsidiary summary and income data  
+[3] 2022 SEC 10-K filing subsidiary summary and income data  
+[4] 2021 and prior: SEC filings; subsidiary summary tables, EPS reconciliation  
+
+If you need the most granular breakdowns (Cash, Marketable Securities, detailed Cash Flow Statement, Long/Short-term debt breakdown, Interest Expense, etc.), please request specific sections from the consolidated balance sheet, income statement, or cash flow statement in the 10-K filings for full extraction.

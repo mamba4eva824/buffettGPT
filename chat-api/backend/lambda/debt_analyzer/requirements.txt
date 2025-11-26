@@ -1,0 +1,45 @@
+# Debt Analyzer Lambda Dependencies
+# Optimized for AWS Lambda container deployment
+
+# ============================================================================
+# ML/Data Science
+# ============================================================================
+
+scikit-learn==1.3.2     # Gradient boosting model
+pandas==2.1.3           # Data manipulation
+numpy==1.26.2           # Numerical operations
+joblib==1.3.2           # Model serialization (used by sklearn)
+
+# ============================================================================
+# AWS SDK
+# ============================================================================
+
+# Note: boto3/botocore are included in Lambda Python runtime
+# But we specify them for local testing with Docker
+boto3==1.34.34
+botocore==1.34.34
+
+# ============================================================================
+# HTTP Client
+# ============================================================================
+
+httpx==0.25.2           # Modern HTTP client with timeout support
+                        # Replaces requests (better async, connection pooling)
+
+# ============================================================================
+# Retry Logic
+# ============================================================================
+
+tenacity==8.2.3         # Robust retry/backoff for Perplexity API
+
+# ============================================================================
+# Logging
+# ============================================================================
+
+python-json-logger==2.0.7  # Structured JSON logging for CloudWatch
+
+# ============================================================================
+# Utilities
+# ============================================================================
+
+python-dateutil==2.8.2  # Date parsing

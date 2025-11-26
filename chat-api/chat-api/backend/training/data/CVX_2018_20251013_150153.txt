@@ -1,0 +1,30 @@
+Company: Chevron Corporation (CVX)
+Year: 2018
+Extraction Date: 2025-10-13T15:01:53.324619
+============================================================
+
+From Chevron Corporation's 2018 10-K SEC filing, the requested financial metrics (in millions USD) are as follows:
+
+**Consolidated Balance Sheet (December 31, 2018):**
+
+- **Total assets:** **$253,779**
+- **Short-term debt:** **$2,789**
+- **Long-term debt:** **$32,400**
+- **Total debt (short-term + long-term):** **$35,189**
+- **Total stockholders' equity:** **$146,084**
+- **Cash and cash equivalents:** **$9,350**
+
+**Consolidated Income Statement (Year ended December 31, 2018):**
+
+- **Total revenues and other income:** **$166,339**
+- **Total costs and other deductions:** **$143,406**
+- **Income before income tax expense (operating income):** **$22,933**
+- **Interest and debt expense:** **$1,211**
+- **Net income attributable to Chevron Corporation:** **$14,824**
+
+**Consolidated Cash Flow (Year ended December 31, 2018):**
+
+- **Net cash provided by operating activities:** **$30,575**
+- **Capital expenditures:** **$16,296**
+
+These values are extracted directly from the Consolidated Financial Statements sections of Chevron's 2018 Form 10-K filing as reported to the SEC.

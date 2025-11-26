@@ -1,0 +1,45 @@
+# Shared ML Dependencies
+# Used by both training and deployment to ensure compatibility
+# These are the EXACT versions that should be used everywhere
+
+# ============================================================================
+# Core ML Stack (LOCKED VERSIONS)
+# ============================================================================
+
+scikit-learn==1.3.2     # Gradient boosting classifier
+pandas==2.1.3           # Data manipulation
+numpy==1.26.2           # Numerical operations
+joblib==1.3.2           # Model serialization (recommended for sklearn)
+
+# scipy is a dependency of scikit-learn, but we lock it for safety
+scipy==1.11.4
+
+# ============================================================================
+# AWS SDK
+# ============================================================================
+
+boto3==1.34.34
+botocore==1.34.34
+
+# ============================================================================
+# Utilities
+# ============================================================================
+
+python-dateutil==2.8.2  # Date parsing
+
+# ============================================================================
+# IMPORTANT: When retraining models
+# ============================================================================
+#
+# 1. Always use this exact file for training:
+#    pip install -r ml-requirements.txt
+#
+# 2. Before training, verify versions:
+#    pip freeze | grep -E "(scikit|numpy|pandas|joblib)"
+#
+# 3. After training, the model will be compatible with Lambda deployment
+#    because Lambda uses the same versions from this file
+#
+# 4. NEVER train with different versions than deployment!
+#    Model files are version-specific and will fail to load otherwise
+#

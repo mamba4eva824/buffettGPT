@@ -1,0 +1,147 @@
+{
+  "extraction_date": "2025-10-12T23:07:19.828693",
+  "total_records": 37,
+  "companies": {
+    "CVX": {
+      "years": [
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "records": 6,
+      "metrics_coverage": {
+        "total_assets": 0,
+        "total_debt": 5,
+        "shareholders_equity": 6,
+        "revenue": 6,
+        "operating_income": 6,
+        "net_income": 6,
+        "cash_and_equivalents": 0,
+        "interest_expense": 0,
+        "operating_cash_flow": 0,
+        "capital_expenditures": 0
+      }
+    },
+    "KHC": {
+      "years": [
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "records": 10,
+      "metrics_coverage": {
+        "total_assets": 10,
+        "total_debt": 10,
+        "shareholders_equity": 10,
+        "revenue": 10,
+        "operating_income": 10,
+        "net_income": 10,
+        "cash_and_equivalents": 10,
+        "interest_expense": 10,
+        "operating_cash_flow": 0,
+        "capital_expenditures": 0
+      }
+    },
+    "KO": {
+      "years": [
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "records": 5,
+      "metrics_coverage": {
+        "total_assets": 5,
+        "total_debt": 5,
+        "shareholders_equity": 5,
+        "revenue": 5,
+        "operating_income": 5,
+        "net_income": 5,
+        "cash_and_equivalents": 5,
+        "interest_expense": 5,
+        "operating_cash_flow": 5,
+        "capital_expenditures": 5
+      }
+    },
+    "MA": {
+      "years": [
+        2015,
+        2016,
+        2017,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024
+      ],
+      "records": 10,
+      "metrics_coverage": {
+        "total_assets": 10,
+        "total_debt": 10,
+        "shareholders_equity": 10,
+        "revenue": 10,
+        "operating_income": 10,
+        "net_income": 10,
+        "cash_and_equivalents": 10,
+        "interest_expense": 10,
+        "operating_cash_flow": 10,
+        "capital_expenditures": 10
+      }
+    },
+    "V": {
+      "years": [
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023
+      ],
+      "records": 6,
+      "metrics_coverage": {
+        "total_assets": 6,
+        "total_debt": 6,
+        "shareholders_equity": 6,
+        "revenue": 6,
+        "operating_income": 6,
+        "net_income": 6,
+        "cash_and_equivalents": 6,
+        "interest_expense": 6,
+        "operating_cash_flow": 6,
+        "capital_expenditures": 6
+      }
+    }
+  },
+  "missing_companies": [
+    "AAPL",
+    "AXP",
+    "BAC",
+    "MCO",
+    "OXY"
+  ],
+  "overall_metrics_coverage": {
+    "total_assets": "83.8%",
+    "total_debt": "97.3%",
+    "shareholders_equity": "100.0%",
+    "revenue": "100.0%",
+    "operating_income": "100.0%",
+    "net_income": "100.0%",
+    "cash_and_equivalents": "83.8%",
+    "interest_expense": "83.8%",
+    "operating_cash_flow": "56.8%",
+    "capital_expenditures": "56.8%"
+  }
+}

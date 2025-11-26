@@ -1,0 +1,68 @@
+{
+  "version": "v3.6.5",
+  "date": "2025-11-24T20:26:08.207291",
+  "description": "v3.6.5 models with expanded AXP/COST HOLD data",
+  "total_companies": 55,
+  "total_samples": 1467,
+  "expanded_data": {
+    "AXP": "1995-2025 (HOLD)",
+    "COST": "2000-2020 (HOLD)"
+  },
+  "split_method": "random_stratified",
+  "test_size": 0.2,
+  "agents": {
+    "debt": {
+      "features": 58,
+      "test_accuracy": 0.8027210884353742,
+      "test_ci_95": [
+        0.7551020408163265,
+        0.8435374149659864
+      ],
+      "train_accuracy": 0.9403239556692242,
+      "gap": 0.13760286723385007,
+      "cv_mean": 0.7937152209492634
+    },
+    "cashflow": {
+      "features": 42,
+      "test_accuracy": 0.7414965986394558,
+      "test_ci_95": [
+        0.6870748299319728,
+        0.7925170068027211
+      ],
+      "train_accuracy": 0.8900255754475703,
+      "gap": 0.1485289768081145,
+      "cv_mean": 0.7630405528277868
+    },
+    "growth": {
+      "features": 63,
+      "test_accuracy": 0.7687074829931972,
+      "test_ci_95": [
+        0.7210884353741497,
+        0.8163265306122449
+      ],
+      "train_accuracy": 0.9028132992327366,
+      "gap": 0.13410581623953932,
+      "cv_mean": 0.7451136570285506
+    }
+  },
+  "bootstrap_ci": {
+    "n_iterations": 1000,
+    "confidence_level": 0.95
+  },
+  "hyperparameters": {
+    "objective": "multi:softprob",
+    "num_class": 3,
+    "max_depth": 3,
+    "learning_rate": 0.03,
+    "n_estimators": 250,
+    "subsample": 0.7,
+    "colsample_bytree": 0.7,
+    "min_child_weight": 5,
+    "gamma": 0.1,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "random_state": 42,
+    "eval_metric": "mlogloss",
+    "early_stopping_rounds": 20
+  }
+}
