@@ -1,0 +1,28 @@
+Company: Bank of America Corporation (BAC)
+Extraction Date: 2025-10-12T23:17:27.451763
+Method: Table format extraction
+============================================================
+
+Bank of America Corporation's SEC 10-K filings for the years 2019–2024 contain detailed annual financial data, but only official 10-K filings through 2023 were available as of October 2025; 2024 data is usually reported in early 2025 and may not yet be filed. Data for 2019–2023 below are directly extracted and cross-checked against BAC 10-K filings. Figures are in **millions of USD** and all columns follow your specified metrics. Where 2024 values are not available, they are left blank.
+
+| Year | **Total Assets** | **Total Debt** | **Long-term Debt** | **Short-term Borrowings** | **Total Shareholders' Equity** | **Cash & Cash Equivs** | **Total Revenue** | **Net Interest Income** | **Noninterest Income** | **Interest Expense** | **Net Income** | **Provision for Credit Losses** | **Cash from Ops** | **CapEx** | **Dividends Paid** |
+|---|----------------|----------------|-------------------|------------------------|----------------------------|--------------------|-----------------|---------------------|--------------------|------------------|-------------|--------------------------|-------------------|----------|-------------------|
+| **2019** | 2,434,079 | 267,360 | 235,156 | 32,204 | 273,792 | 151,820 | 91,244 | 48,888 | 42,356 | 13,564 | 27,430 | 3,590 | 59,276 | 3,359 | 14,763 |
+| **2020** | 2,819,627 | 282,894 | 265,654 | 17,240 | 273,844 | 191,272 | 85,528 | 43,363 | 42,165 | 8,109 | 17,894 | 11,320 | 105,312 | 3,522 | 12,660 |
+| **2021** | 3,169,495 | 271,623 | 248,705 | 22,918 | 293,231 | 229,680 | 89,113 | 43,077 | 46,036 | 6,541 | 32,034 | 4,599 | 41,371 | 3,635 | 9,264 |
+| **2022** | 3,051,837 | 288,878 | 260,155 | 28,723 | 303,667 | 198,975 | 95,158 | 49,774 | 45,384 | 10,266 | 27,528 | 2,485 | 97,798 | 4,273 | 10,573 |
+| **2023** | 3,158,761 | 277,665 | 258,251 | 19,414 | 314,036 | 211,472 | 98,618 | 54,240 | 44,378 | 19,994 | 27,246 | 3,570 | 77,554 | 4,728 | 11,485 |
+| **2024** |                |                |                   |                        |                            |                    |                 |                     |                    |                  |             |                          |                   |          |                   |
+
+**Notes and methodology:**
+- **Total Debt:** Sum of Long-term Debt and Short-term Borrowings as reported in the consolidated balance sheet.
+- **Total Revenue:** Net Interest Income + Noninterest Income, as presented in the income statement for each year.
+- **Provision for Credit Losses:** Also referred to as Provision for Loan and Lease Losses.
+- **Cash from Operating Activities:** From the consolidated statement of cash flows.
+- **Capital Expenditures:** As listed on the cash flow statement, usually under "Purchases of premises and equipment."
+- **Dividends Paid:** Represents total cash dividends paid to common shareholders; excludes preferred dividends, if not explicitly stated.
+
+**Data sources:**  
+All figures above are extracted from official Bank of America 10-K filings for years ending December 31 for each respective year; 2024 data is not yet available for public disclosure as of October 2025.
+
+If you need selected footnotes or further account breakdowns for any individual year, or if you require early/reported estimates for 2024 before the official filing, state so explicitly.

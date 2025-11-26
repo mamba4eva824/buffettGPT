@@ -1,0 +1,103 @@
+Query sent at: 2025-10-12T16:18:34.265600
+Company: Chevron Corporation (CVX)
+Years requested: 2015-2024
+================================================================================
+QUERY:
+================================================================================
+
+Using SEC filing mode, extract comprehensive financial data for Chevron Corporation (CVX) from 2015-2024 annual 10-K filings.
+
+For EACH year from 2015-2024, provide the following metrics from the 10-K filings in a structured format:
+
+BALANCE SHEET (in millions USD):
+- Year
+- Total Assets
+- Total Debt (Long-term debt + Short-term debt)
+- Total Shareholders' Equity
+- Cash and Cash Equivalents
+- Accounts Receivable
+- Inventory
+- Property Plant and Equipment (net)
+
+INCOME STATEMENT (in millions USD):
+- Total Revenue
+- Cost of Revenue
+- Gross Profit
+- Operating Income (EBIT)
+- Interest Expense
+- Net Income
+- Diluted EPS
+- Shares Outstanding (diluted)
+
+CASH FLOW STATEMENT (in millions USD):
+- Operating Cash Flow
+- Capital Expenditures
+- Free Cash Flow (Operating Cash Flow - CapEx)
+- Dividends Paid
+- Stock Buybacks
+
+KEY RATIOS:
+- Debt-to-Equity Ratio
+- Interest Coverage (EBIT/Interest Expense)
+- Return on Equity (ROE)
+- Return on Assets (ROA)
+- Net Profit Margin
+- Free Cash Flow Margin
+
+Please format as a table with years as rows and metrics as columns.
+Include citations to the specific 10-K filing for each year.
+
+================================================================================
+RESPONSE:
+================================================================================
+Below is a **structured table** of Chevron Corporation’s key financial metrics from 2015–2024, extracted from annual 10-K filings. Due to the extensive data requested and the limitations of the search results, the table below focuses on the most recent years (2021–2024) with direct SEC-cited figures. Earlier years (2015–2020) are not included due to lack of direct data in the provided search results. Where possible, all figures are in millions USD and directly cited. Calculated ratios are included where data is sufficient.
+
+**Legend:**  
+- “—” = Data not available in provided filings  
+- All data as of December 31 of each year  
+- All figures in millions USD unless otherwise noted
+
+---
+
+### Chevron Corporation Key Financials (2021–2024)
+
+| Year | Total Assets | Total Debt | Shareholders' Equity | Cash & Equiv. | Accounts Receivable | Inventory | PP&E (net) | Total Revenue | Cost of Revenue | Gross Profit | Operating Income (EBIT) | Interest Expense | Net Income | Diluted EPS | Shares Out. (Diluted, M) | Operating Cash Flow | CapEx | Free Cash Flow | Dividends Paid | Stock Buybacks | Debt/Equity | Interest Coverage | ROE | ROA | Net Profit Margin | FCF Margin | Filing Citation |
+|------|--------------|------------|---------------------|---------------|---------------------|----------|------------|--------------|-----------------|-------------|------------------------|------------------|-----------|------------|------------------------|---------------------|-------|----------------|---------------|---------------|-------------|------------------|-----|-----|-------------------|------------|----------------|
+| 2024 | —            | 8,917[1]   | 153,157[1]          | —             | —                   | —        | —          | 193,414[1]   | 175,286[1]      | 18,128[1]   | —                      | —                | 17,661[1] | —          | 1,760.6[1]             | —                   | —     | —              | —             | —             | 0.06        | —                | 11.5%| —   | 9.1%              | —          | [1]            |
+| 2023 | —            | 9,740[2]   | 161,929[2]          | —             | —                   | —        | —          | 196,913[2]   | 171,365[2]      | 25,548[2]   | —                      | —                | 21,369[2] | —          | 1,857.3[2]             | —                   | —     | —              | —             | —             | 0.06        | —                | 13.2%| —   | 10.9%             | —          | [2]            |
+| 2022 | —            | 10,800[3]  | 160,242[3]          | —             | —                   | —        | —          | 235,717[3]   | 196,578[3]      | 39,139[3]   | —                      | —                | 35,465[3] | 18.28[3]   | 1,940[3]               | —                   | —     | —              | —             | —             | 0.07        | —                | 22.1%| —   | 15.0%             | —          | [3]            |
+| 2021 | —            | 11,693[4]  | 139,940[4]          | —             | —                   | —        | —          | 155,606[4]   | 140,826[4]      | 14,780[4]   | —                      | —                | 15,625[4] | 8.14[4]    | 1,920[4]               | —                   | —     | —              | —             | —             | 0.08        | —                | 11.2%| —   | 10.0%             | —          | [4]            |
+
+---
+
+#### **Key Notes and Calculations**
+
+- **Total Debt**: Sum of long-term and short-term debt as reported in balance sheet tables[1][2][3][4].
+- **Shareholders' Equity**: As reported in balance sheet tables[1][2][3][4].
+- **Total Revenue, Cost of Revenue, Net Income**: As reported in income statement tables[1][2][3][4].
+- **Gross Profit**: Calculated as Total Revenue minus Cost of Revenue.
+- **Diluted EPS and Shares Outstanding**: Directly from EPS tables[3][4].
+- **Debt-to-Equity Ratio**: Total Debt / Shareholders' Equity.
+- **ROE (Return on Equity)**: Net Income / Shareholders' Equity.
+- **Net Profit Margin**: Net Income / Total Revenue.
+- **Interest Coverage, ROA, FCF, Dividends, Buybacks, Cash Flow**: Not available in the provided search results for these years.
+
+---
+
+#### **Data Gaps and Limitations**
+
+- **2015–2020**: Not included due to lack of direct data in the provided search results.
+- **Cash and Cash Equivalents, Accounts Receivable, Inventory, PP&E (net)**: Not available in the provided search results for 2021–2024.
+- **Operating Income (EBIT), Interest Expense, Operating Cash Flow, CapEx, Free Cash Flow, Dividends Paid, Stock Buybacks**: Not available in the provided search results for 2021–2024.
+- **Key Ratios**: Only those calculable from available data are shown.
+- **All data is directly from the cited SEC 10-K filings for each year**.
+
+---
+
+**Citations:**  
+- 2024: [1]  
+- 2023: [2]  
+- 2022: [3]  
+- 2021: [4]  
+
+If you require data for earlier years or more granular line items (e.g., cash, inventory, PP&E, cash flow, etc.), please provide additional SEC filings or request a specific year, and I will extract and structure the data accordingly.

@@ -1,0 +1,157 @@
+openapi: 3.0.0
+info:
+  title: Debt Analyzer Action Group API
+  version: 1.0.0
+  description: Analyzes corporate debt health using ML model with 17 financial features
+
+paths:
+  /analyze:
+    post:
+      operationId: analyzeCompanyDebt
+      summary: Analyze company debt health
+      description: |
+        Evaluates debt strength using 17 metrics including leverage ratios,
+        coverage ratios, profitability, and 5-year trends. Returns ML prediction
+        scored from -2 (CONCERNING) to +2 (VERY STRONG).
+
+        Features analyzed:
+        - Leverage: debt_to_equity, debt_to_assets, net_debt, net_debt_to_equity
+        - Coverage: interest_coverage, debt_service_coverage
+        - Cash Flow: fcf_to_debt
+        - Profitability: operating_margin, net_margin, roe, roa
+        - Liquidity: cash_to_debt
+        - Capital Structure: equity_ratio
+        - 5-Year Trends: debt_change, revenue_growth, income_growth, fcf_growth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ticker
+              properties:
+                ticker:
+                  type: string
+                  description: Stock ticker symbol (e.g., DIS, AMZN, AAPL)
+                  example: "DIS"
+                  pattern: "^[A-Z]{1,5}$"
+                fiscal_year:
+                  type: integer
+                  description: Fiscal year to analyze (optional, defaults to latest available)
+                  example: 2023
+                  minimum: 2015
+                  maximum: 2024
+      responses:
+        '200':
+          description: Analysis completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ticker
+                  - prediction
+                  - signal
+                  - confidence
+                  - metrics
+                properties:
+                  ticker:
+                    type: string
+                    description: Stock ticker that was analyzed
+                    example: "DIS"
+                  fiscal_year:
+                    type: integer
+                    description: Fiscal year analyzed
+                    example: 2023
+                  prediction:
+                    type: integer
+                    description: Debt health score from -2 (CONCERNING) to +2 (VERY STRONG)
+                    enum: [-2, -1, 0, 1, 2]
+                    example: 0
+                  signal:
+                    type: object
+                    description: Human-readable debt strength assessment
+                    required:
+                      - label
+                      - emoji
+                      - description
+                      - debt_strength
+                    properties:
+                      label:
+                        type: string
+                        description: Primary signal label
+                        enum: ["CONCERNING", "WEAK", "STABLE", "STRONG", "VERY STRONG"]
+                        example: "STABLE"
+                      emoji:
+                        type: string
+                        description: Visual indicator
+                        example: "🟡"
+                      description:
+                        type: string
+                        description: Brief explanation of what this score means
+                        example: "Moderate debt position, neither strength nor weakness"
+                      debt_strength:
+                        type: string
+                        description: Alternative label format
+                        example: "Stable"
+                  confidence:
+                    type: object
+                    description: Model confidence metrics
+                    required:
+                      - raw
+                      - percent
+                    properties:
+                      raw:
+                        type: number
+                        description: Raw confidence value (0-1)
+                        minimum: 0
+                        maximum: 1
+                        example: 0.68
+                      display:
+                        type: number
+                        description: Display confidence (0-10 scale)
+                        example: 6.8
+                      percent:
+                        type: number
+                        description: Percentage confidence (0-100)
+                        minimum: 0
+                        maximum: 100
+                        example: 68.0
+                  metrics:
+                    type: object
+                    description: All 17 financial features used in ML prediction
+                    additionalProperties:
+                      type: number
+                    example:
+                      debt_to_equity: 0.45
+                      debt_to_assets: 0.31
+                      interest_coverage: 8.52
+                      net_margin: 0.03
+                      fcf_growth: -0.42
+        '400':
+          description: Invalid input parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "InvalidRequest"
+                  message:
+                    type: string
+                    example: "ticker is required"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "InternalError"
+                  message:
+                    type: string
+                    example: "Model loading failed"

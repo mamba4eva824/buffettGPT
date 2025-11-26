@@ -1,0 +1,30 @@
+[
+  {
+    "ticker": "AAPL",
+    "years": "2014-2019",
+    "file": "AAPL_historical_2014_2019_20251013_150146.txt",
+    "timestamp": "2025-10-13T15:01:46.029913",
+    "response_size": 4429
+  },
+  {
+    "ticker": "CVX",
+    "years": "2018",
+    "file": "CVX_2018_20251013_150153.txt",
+    "timestamp": "2025-10-13T15:01:53.325069",
+    "response_size": 1079
+  },
+  {
+    "ticker": "OXY",
+    "years": "2017-2019",
+    "file": "OXY_historical_2017_2019_20251013_150211.txt",
+    "timestamp": "2025-10-13T15:02:11.040453",
+    "response_size": 2945
+  },
+  {
+    "ticker": "BAC",
+    "years": "2015-2020",
+    "file": "BAC_historical_2015_2020_20251013_150229.txt",
+    "timestamp": "2025-10-13T15:02:29.404972",
+    "response_size": 3571
+  }
+]

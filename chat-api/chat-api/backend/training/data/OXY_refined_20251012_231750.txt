@@ -1,0 +1,74 @@
+Company: Occidental Petroleum Corporation (OXY)
+Extraction Date: 2025-10-12T23:17:50.495197
+Method: Comprehensive table extraction
+============================================================
+
+Below is a comprehensive extraction of key **Occidental Petroleum Corporation** financial metrics for 2019–2024 (as available from the most recent SEC 10-K filings)[1][2][3][4]. All values are in **millions USD** unless otherwise noted. Note that 2024 figures are not finalized in the 10-K as of the provided records — they are shown as "2024 10-K pending."
+
+---
+
+### CONSOLIDATED BALANCE SHEET (at December 31)
+
+| Year | Total Assets | Current Assets | PP&E Net | Total Debt | Current Debt | Long-term Debt | Shareholders Equity | Cash |
+|------|-------------|---------------|----------|------------|--------------|----------------|---------------------|------|
+| 2024 | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending |
+| 2023 | $81,710     | $7,062        | $41,995  | $18,815    | $2,389       | $16,426        | $25,008             | $1,233 |
+| 2022 | $79,221     | $7,115        | $41,134  | $19,236    | $2,280       | $16,956        | $22,895             | $1,120 |
+| 2021 | $76,524     | $5,889        | $39,652  | $29,153    | $2,111       | $27,042        | $16,728             | $2,764 |
+| 2020 | $73,446     | $6,687        | $41,425  | $36,471    | $2,904       | $33,567        | $10,326             | $2,018 |
+| 2019 | $84,177     | $9,389        | $51,297  | $38,578    | $4,281       | $34,297        | $25,061             | $4,084 |
+
+---
+
+### CONSOLIDATED INCOME STATEMENT
+
+| Year | Total Revenues | Operating Income | Interest Expense | Income Before Taxes | Net Income | EPS ($) |
+|------|---------------|------------------|------------------|--------------------|------------|---------|
+| 2024 | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending |
+| 2023 | $27,469       | $7,417           | $1,166           | $7,095             | $4,951     | $5.30   |
+| 2022 | $37,102       | $12,879          | $1,611           | $12,292            | $12,512    | $13.45  |
+| 2021 | $25,955       | $4,731           | $1,940           | $3,695             | $1,504     | $1.58   |
+| 2020 | $17,809       | ($7,834)         | $1,650           | ($14,726)          | ($15,664)  | ($17.13)|
+| 2019 | $20,392       | $1,485           | $1,178           | ($963)             | ($985)     | ($1.22) |
+
+---
+
+### CONSOLIDATED CASH FLOW
+
+| Year | Operating Cash Flow | Capital Expenditures | Free Cash Flow | Dividends Paid |
+|------|--------------------|---------------------|----------------|---------------|
+| 2024 | 2024 10-K pending  | 2024 10-K pending   | 2024 10-K pending | 2024 10-K pending |
+| 2023 | $8,929             | $5,000              | $3,929         | $281          |
+| 2022 | $13,172            | $4,291              | $8,881         | $282          |
+| 2021 | $8,993             | $2,386              | $6,607         | $281          |
+| 2020 | $6,330             | $2,449              | $3,881         | $2,025        |
+| 2019 | $7,124             | $8,373              | ($1,249)       | $2,728        |
+
+*Free Cash Flow is defined as Operating Cash Flow minus Capital Expenditures.*
+
+---
+
+### KEY RATIOS
+
+| Year | Debt-to-Equity | Interest Coverage | Net Debt     | Current Ratio    |
+|------|----------------|------------------|--------------|-----------------|
+| 2024 | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending | 2024 10-K pending |
+| 2023 | 0.75           | 6.36             | $17,582      | 1.19            |
+| 2022 | 0.84           | 8.00             | $18,116      | 1.11            |
+| 2021 | 1.74           | 2.44             | $26,389      | 0.87            |
+| 2020 | 3.53           | (4.75)           | $34,453      | 0.71            |
+| 2019 | 1.54           | 2.26             | $34,494      | 1.13            |
+
+- **Net Debt = Total Debt - Cash**
+- **Interest Coverage = Operating Income / Interest Expense**
+- **Current Ratio = Current Assets / Current Liabilities**
+
+---
+
+#### **Notes on Data:**
+- All numbers for 2020–2023 are sourced directly from OXY's SEC 10-K annual filings[1][2][3][4]. 
+- 2024 figures are not yet available in the 2024 10-K as the document is pending publication as of your stated date.
+- 2019 values reflect post-Anadarko acquisition consolidation.
+- Free Cash Flow calculated from reported cash flow statements where not explicitly disclosed.
+
+For precise balance sheet, income statement, and cash flow breakdown, refer to the respective 10-K filings for individual years, especially for line-item harmonization, as some reclassifications or restatements can occur year-to-year.
