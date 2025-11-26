@@ -129,6 +129,14 @@ resource "aws_iam_policy" "lambda_policy" {
           "cloudwatch:PutMetricData"
         ]
         Resource = "*"
+      },
+      # Secrets Manager Access for Search API Key
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-${var.environment}-sonar-*"
       }
     ]
   })

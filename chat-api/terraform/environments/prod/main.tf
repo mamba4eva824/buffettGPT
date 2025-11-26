@@ -1,25 +1,21 @@
-# Development Environment Configuration
-# Orchestrates all modules for the dev environment
+# Production Environment Configuration
+# Orchestrates all modules for the production environment
 
 terraform {
   required_version = ">= 1.0"
-  
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
   }
-  
+
   # Backend configuration for state management
   # S3 backend with encryption and state locking
   backend "s3" {
-    bucket         = "buffett-chat-terraform-state-430118826061"
-    key            = "dev/terraform.tfstate"
-    region         = "us-east-1"
-    encrypt        = true
-    kms_key_id     = "arn:aws:kms:us-east-1:430118826061:key/d964f8d5-fe43-45c3-9193-3fe8a7d6e12b"
-    dynamodb_table = "buffett-chat-terraform-state-locks"
+    # Configuration loaded from backend.hcl
+    # Use: terraform init -backend-config=backend.hcl
   }
 }
 
@@ -32,28 +28,29 @@ provider "aws" {
 # ================================================
 
 locals {
-  environment  = "dev"
+  environment  = "prod"
   project_name = var.project_name
-  
+
   common_tags = {
     Environment = local.environment
     Project     = local.project_name
     ManagedBy   = "Terraform"
     Module      = "Consolidated"
+    Purpose     = "Production"
   }
-  
+
   # Lambda environment variables
   lambda_common_env_vars = {
-    ENVIRONMENT                = local.environment
-    PROJECT_NAME              = local.project_name
-    LOG_LEVEL                 = "DEBUG"
-    CHAT_SESSIONS_TABLE       = module.dynamodb.chat_sessions_table_name
-    CHAT_MESSAGES_TABLE       = module.dynamodb.chat_messages_table_name
-    CONVERSATIONS_TABLE       = module.dynamodb.conversations_table_name
+    ENVIRONMENT                 = local.environment
+    PROJECT_NAME                = local.project_name
+    LOG_LEVEL                   = "INFO" # Production logging level
+    CHAT_SESSIONS_TABLE         = module.dynamodb.chat_sessions_table_name
+    CHAT_MESSAGES_TABLE         = module.dynamodb.chat_messages_table_name
+    CONVERSATIONS_TABLE         = module.dynamodb.conversations_table_name
     WEBSOCKET_CONNECTIONS_TABLE = module.dynamodb.websocket_connections_table_name
-    ENHANCED_RATE_LIMITS_TABLE = module.dynamodb.enhanced_rate_limits_table_name
-    KMS_KEY_ID                = module.core.kms_key_id
-    CHAT_PROCESSING_QUEUE_URL = module.core.chat_processing_queue_url
+    ENHANCED_RATE_LIMITS_TABLE  = module.dynamodb.enhanced_rate_limits_table_name
+    KMS_KEY_ID                  = module.core.kms_key_id
+    CHAT_PROCESSING_QUEUE_URL   = module.core.chat_processing_queue_url
 
     # Bedrock Configuration - Use module outputs when available
     BEDROCK_AGENT_ID    = try(module.bedrock.agent_id, var.bedrock_agent_id)
@@ -69,14 +66,11 @@ locals {
   lambda_function_env_vars = {
     websocket_connect = {
       ANONYMOUS_SESSIONS_TABLE = module.dynamodb.anonymous_sessions_table_name
-      USERS_TABLE             = ""  # Auth disabled for dev
-      RATE_LIMITS_TABLE       = module.dynamodb.enhanced_rate_limits_table_name
+      USERS_TABLE              = "" # Not using users table for now
+      RATE_LIMITS_TABLE        = module.dynamodb.enhanced_rate_limits_table_name
     }
     chat_processor = {
       # Additional environment variables can be added here if needed
-    }
-    search_handler = {
-      SEARCH_API_KEY_ARN = module.lambda.search_api_key_arn
     }
   }
 }
@@ -87,13 +81,13 @@ locals {
 
 module "core" {
   source = "../../modules/core"
-  
+
   project_name        = local.project_name
   environment         = local.environment
   aws_region          = var.aws_region
   common_tags         = local.common_tags
-  kms_deletion_window = 7  # Shorter for dev
-  enable_vpc          = false  # No VPC for dev
+  kms_deletion_window = 30    # Longer deletion window for production safety
+  enable_vpc          = false # No VPC for production (can be enabled later)
 }
 
 # ================================================
@@ -102,15 +96,15 @@ module "core" {
 
 module "dynamodb" {
   source = "../../modules/dynamodb"
-  
+
   project_name               = local.project_name
   environment                = local.environment
-  billing_mode               = "PAY_PER_REQUEST"  # On-demand for dev
-  kms_key_arn               = module.core.kms_key_arn
-  enable_pitr               = false  # No PITR for dev
-  enable_deletion_protection = false  # Allow deletion in dev
-  enable_anonymous_sessions  = true   # Keep for now, merge later
-  common_tags               = local.common_tags
+  billing_mode               = "PAY_PER_REQUEST" # On-demand for production
+  kms_key_arn                = module.core.kms_key_arn
+  enable_pitr                = true # Enable point-in-time recovery for production
+  enable_deletion_protection = true # Enable deletion protection for production
+  enable_anonymous_sessions  = true # Support anonymous sessions
+  common_tags                = local.common_tags
 }
 
 # ================================================
@@ -119,7 +113,7 @@ module "dynamodb" {
 
 module "lambda" {
   source = "../../modules/lambda"
-  
+
   project_name              = local.project_name
   environment               = local.environment
   lambda_role_arn           = module.core.lambda_role_arn
@@ -129,19 +123,19 @@ module "lambda" {
   function_env_vars         = local.lambda_function_env_vars
   dlq_arn                   = module.core.chat_dlq_arn
   chat_processing_queue_arn = module.core.chat_processing_queue_arn
-  log_retention_days        = 7  # Short retention for dev
-  
+  log_retention_days        = 30 # 30 day retention for production
+
   reserved_concurrency = {
-    chat_processor = 2  # Low concurrency for dev
+    chat_processor = 10 # Higher concurrency for production
   }
-  
+
   sqs_batch_window    = 10
-  sqs_max_concurrency = 2
+  sqs_max_concurrency = 10 # Higher concurrency for production
   common_tags         = local.common_tags
 }
 
 # ================================================
-# API Gateway Module (placeholder - to be created)
+# API Gateway Module
 # ================================================
 
 module "api_gateway" {
@@ -154,19 +148,19 @@ module "api_gateway" {
   lambda_arns = module.lambda.function_arns
 
   # API configuration
-  enable_cors          = true
-  enable_authorization = var.enable_authentication
-  enable_search        = true  # Enable AI search for dev environment only
-  authorizer_function_arn = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
-  authorizer_function_name = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
+  enable_cors                     = true
+  enable_authorization            = var.enable_authentication
+  authorizer_function_arn         = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
+  authorizer_function_name        = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
-  auth_callback_function_arn = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
+  auth_callback_function_arn      = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
+  cloudfront_url                  = module.cloudfront.cloudfront_url
 
   common_tags = local.common_tags
 }
 
 # ================================================
-# Authentication Module (conditional)
+# Authentication Module
 # ================================================
 
 module "auth" {
@@ -179,59 +173,58 @@ module "auth" {
   # OAuth Configuration
   google_client_id     = var.google_client_id
   google_client_secret = var.google_client_secret
-  frontend_url         = var.frontend_url
+  frontend_url         = module.cloudfront.cloudfront_url
   jwt_secret           = var.jwt_secret
 
   # Dependencies
   lambda_role_arn           = module.core.lambda_role_arn
-  lambda_package_path       = "${path.root}/../../../backend/build"
   api_gateway_execution_arn = module.api_gateway.http_api_execution_arn
   dependencies_layer_arn    = module.lambda.dependencies_layer_arn
+  lambda_package_path       = "${path.root}/../../../backend/build"
 
   common_tags = local.common_tags
 }
 
 # ================================================
-# Rate Limiting Module (using enhanced version)
+# Rate Limiting Module
 # ================================================
 
 module "rate_limiting" {
   source = "../../modules/rate-limiting"
-  
+
   project_name = local.project_name
   environment  = local.environment
-  
+
   enable_advanced_features = false
-  
+
   common_tags = local.common_tags
 }
 
 # ================================================
-# Monitoring Module (optional for dev)
+# Monitoring Module
 # ================================================
 
 module "monitoring" {
   source = "../../modules/monitoring"
   count  = var.enable_monitoring ? 1 : 0
-  
+
   project_name = local.project_name
   environment  = local.environment
-  
+
   # Resources to monitor
   lambda_function_names = module.lambda.function_names
-  api_gateway_id       = module.api_gateway.http_api_id
-  websocket_api_id     = module.api_gateway.websocket_api_id
-  
+  api_gateway_id        = module.api_gateway.http_api_id
+  websocket_api_id      = module.api_gateway.websocket_api_id
+
   # Alert configuration
-  alert_email      = var.alert_email
-  
+  alert_email = var.alert_email
+
   common_tags = local.common_tags
 }
 
 # ================================================
 # Bedrock Module - Agent, Knowledge Base, and Guardrails
 # ================================================
-# Fixed: Circular dependency resolved by using wildcard for knowledge base ARN in IAM policy
 
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -249,39 +242,57 @@ module "bedrock" {
   # Knowledge Base Configuration
   knowledge_base_name        = var.bedrock_knowledge_base_name
   knowledge_base_description = var.bedrock_knowledge_base_description
-  # embedding_model_arn - using module default (Titan v2 with 1024 dimensions)
-  # source_bucket_arn - using module default (arn:aws:s3:::buffet-training-data)
   create_data_source         = true
 
   # Pinecone Configuration
-  # pinecone_connection_string - using module default (configured Pinecone host)
-  pinecone_api_key          = var.pinecone_api_key
+  pinecone_api_key           = var.pinecone_api_key
+  pinecone_connection_string = var.pinecone_connection_string
+
+  # S3 Data Source Configuration
+  source_bucket_arn = "arn:aws:s3:::buffet-training-data"
+
+  # Embedding Model Configuration - AWS Titan Embeddings V2 (1024 dimensions)
+  embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
 
   # Data Source and Chunking Configuration
   enable_chunking_configuration = true
-  chunking_strategy            = "SEMANTIC"
-  max_tokens_per_chunk         = 300
+  chunking_strategy             = "SEMANTIC"
+  max_tokens_per_chunk          = 300
 
-  # Enable prompt override to customize temperature and instructions
-  enable_prompt_override = true
+  # Disable prompt override to use AWS defaults
+  enable_prompt_override = false
 
-  # Create agent version after deployment
-  # Set to true to use versioned routing (prevents DRAFT routing issues)
-  create_agent_version = true
-
-  # Guardrails Configuration - Enabled for financial advisor safety
+  # Guardrails Configuration
   enable_guardrails         = true
-  guardrail_name           = var.bedrock_guardrail_name
-  guardrail_description    = var.bedrock_guardrail_description
-  blocked_input_messaging  = "I can only provide financial advice and investment guidance. Please ask questions related to investment planning, retirement, tax strategies, insurance, estate planning, or financial goal setting."
+  guardrail_name            = var.bedrock_guardrail_name
+  guardrail_description     = var.bedrock_guardrail_description
+  blocked_input_messaging   = "I can only provide financial advice and investment guidance. Please ask questions related to investment planning, retirement, tax strategies, insurance, estate planning, or financial goal setting."
   blocked_outputs_messaging = "I cannot provide that type of advice. I'm designed to help with financial planning, investment strategies, retirement planning, tax planning, insurance analysis, estate planning basics, and financial goal setting. Please ask a finance-related question."
 
   # Enable policies for comprehensive guardrails
-  enable_content_policy                = true
-  enable_sensitive_information_policy  = false  # Disabled since no PII/regex configured
+  enable_content_policy               = true
+  enable_sensitive_information_policy = false
   enable_topic_policy                 = true
   enable_word_policy                  = true
   enable_contextual_grounding         = true
+
+  # Agent versioning - set to true to use versioned routing (not DRAFT)
+  # This allows the alias to point to numbered versions (1, 2, 3, etc.)
+  create_agent_version = true
+}
+
+# ================================================
+# CloudFront + S3 Frontend Module
+# ================================================
+
+module "cloudfront" {
+  source = "../../modules/cloudfront-static-site"
+
+  project_name = local.project_name
+  environment  = local.environment
+  price_class  = "PriceClass_100" # US, Canada, Europe
+
+  common_tags = local.common_tags
 }
 
 # ================================================

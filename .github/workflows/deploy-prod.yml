@@ -1,14 +1,14 @@
-name: Deploy to Staging
+name: Deploy to Production
 
 on:
   push:
     branches:
-      - staging  # Auto-deploy when pushing to staging branch
+      - main  # Auto-deploy when pushing to main (after approval)
   workflow_dispatch:  # Allow manual trigger
 
 env:
   AWS_REGION: us-east-1
-  ENVIRONMENT: staging
+  ENVIRONMENT: prod
   NODE_VERSION: '18'
   PYTHON_VERSION: '3.11'
 
@@ -49,6 +49,7 @@ jobs:
     name: Deploy Infrastructure with Terraform
     runs-on: ubuntu-latest
     needs: [build-backend]
+    environment: production  # Requires approval from production environment reviewers
 
     outputs:
       http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
@@ -74,39 +75,39 @@ jobs:
       - name: Create/Update Secrets in AWS Secrets Manager
         run: |
           # Create or update Google OAuth secret
-          aws secretsmanager describe-secret --secret-id buffett-staging-google-oauth 2>/dev/null || \
+          aws secretsmanager describe-secret --secret-id buffett-prod-google-oauth 2>/dev/null || \
           aws secretsmanager create-secret \
-            --name buffett-staging-google-oauth \
-            --description "Google OAuth credentials for staging environment" \
+            --name buffett-prod-google-oauth \
+            --description "Google OAuth credentials for production environment" \
             --region ${{ env.AWS_REGION }}
 
           aws secretsmanager put-secret-value \
-            --secret-id buffett-staging-google-oauth \
+            --secret-id buffett-prod-google-oauth \
             --secret-string "{\"client_id\":\"${{ secrets.GOOGLE_CLIENT_ID }}\",\"client_secret\":\"${{ secrets.GOOGLE_CLIENT_SECRET }}\"}" \
             --region ${{ env.AWS_REGION }}
 
           # Create or update JWT secret
-          aws secretsmanager describe-secret --secret-id buffett-staging-jwt-secret 2>/dev/null || \
+          aws secretsmanager describe-secret --secret-id buffett-prod-jwt-secret 2>/dev/null || \
           aws secretsmanager create-secret \
-            --name buffett-staging-jwt-secret \
-            --description "JWT signing secret for staging environment" \
+            --name buffett-prod-jwt-secret \
+            --description "JWT signing secret for production environment" \
             --region ${{ env.AWS_REGION }}
 
           aws secretsmanager put-secret-value \
-            --secret-id buffett-staging-jwt-secret \
-            --secret-string "${{ secrets.JWT_SECRET }}" \
+            --secret-id buffett-prod-jwt-secret \
+            --secret-string "${{ secrets.PROD_JWT_SECRET }}" \
             --region ${{ env.AWS_REGION }}
 
           # Create or update Pinecone API key
-          aws secretsmanager describe-secret --secret-id buffett-staging-pinecone-api-key 2>/dev/null || \
+          aws secretsmanager describe-secret --secret-id buffett-prod-pinecone-api-key 2>/dev/null || \
           aws secretsmanager create-secret \
-            --name buffett-staging-pinecone-api-key \
-            --description "Pinecone API key for staging environment" \
+            --name buffett-prod-pinecone-api-key \
+            --description "Pinecone API key for production environment" \
             --region ${{ env.AWS_REGION }}
 
           aws secretsmanager put-secret-value \
-            --secret-id buffett-staging-pinecone-api-key \
-            --secret-string "${{ secrets.PINECONE_API_KEY }}" \
+            --secret-id buffett-prod-pinecone-api-key \
+            --secret-string "${{ secrets.PROD_PINECONE_API_KEY }}" \
             --region ${{ env.AWS_REGION }}
 
           echo "✅ AWS Secrets Manager secrets created/updated successfully"
@@ -118,22 +119,22 @@ jobs:
           terraform_wrapper: false  # Needed to capture outputs
 
       - name: Terraform Init
-        working-directory: chat-api/terraform/environments/staging
+        working-directory: chat-api/terraform/environments/prod
         run: terraform init -backend-config=backend.hcl
 
       - name: Terraform Validate
-        working-directory: chat-api/terraform/environments/staging
+        working-directory: chat-api/terraform/environments/prod
         run: terraform validate
 
       - name: Terraform Plan
-        working-directory: chat-api/terraform/environments/staging
+        working-directory: chat-api/terraform/environments/prod
         run: |
           set +e
           terraform plan -out=tfplan \
             -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
             -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-            -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
-            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var="jwt_secret=${{ secrets.PROD_JWT_SECRET }}" \
+            -var="pinecone_api_key=${{ secrets.PROD_PINECONE_API_KEY }}" \
             -var="alert_email=${{ secrets.ALERT_EMAIL }}" \
             -detailed-exitcode
           EXIT_CODE=$?
@@ -147,12 +148,12 @@ jobs:
           fi
 
       - name: Terraform Apply
-        working-directory: chat-api/terraform/environments/staging
+        working-directory: chat-api/terraform/environments/prod
         run: terraform apply -auto-approve tfplan
 
       - name: Get Terraform Outputs
         id: terraform-output
-        working-directory: chat-api/terraform/environments/staging
+        working-directory: chat-api/terraform/environments/prod
         run: |
           HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
           WS_ENDPOINT=$(terraform output -raw websocket_api_endpoint)
@@ -182,23 +183,23 @@ jobs:
         working-directory: frontend
         run: npm install
 
-      - name: Create staging environment file
+      - name: Create production environment file
         working-directory: frontend
         run: |
-          cat > .env.staging << EOF
+          cat > .env.production << EOF
           VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
           VITE_WEBSOCKET_URL=${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}
-          VITE_ENVIRONMENT=staging
-          VITE_ENABLE_DEBUG_LOGS=true
+          VITE_ENVIRONMENT=production
+          VITE_ENABLE_DEBUG_LOGS=false
           VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           EOF
 
-          echo "✅ Created .env.staging with API endpoints"
-          cat .env.staging
+          echo "✅ Created .env.production with API endpoints"
+          cat .env.production
 
       - name: Build frontend
         working-directory: frontend
-        run: npm run build -- --mode staging
+        run: npm run build -- --mode production
 
       - name: Upload frontend artifacts
         uses: actions/upload-artifact@v4
@@ -228,7 +229,7 @@ jobs:
 
       - name: Sync HTML files to S3 (no cache)
         run: |
-          aws s3 sync frontend/dist s3://${{ secrets.S3_FRONTEND_BUCKET }}/ \
+          aws s3 sync frontend/dist s3://${{ secrets.PROD_S3_FRONTEND_BUCKET }}/ \
             --exclude "*" \
             --include "*.html" \
             --cache-control "public, max-age=0, must-revalidate" \
@@ -238,7 +239,7 @@ jobs:
 
       - name: Sync static assets to S3 (long-term cache)
         run: |
-          aws s3 sync frontend/dist s3://${{ secrets.S3_FRONTEND_BUCKET }}/ \
+          aws s3 sync frontend/dist s3://${{ secrets.PROD_S3_FRONTEND_BUCKET }}/ \
             --exclude "*.html" \
             --cache-control "public, max-age=31536000, immutable" \
             --metadata-directive REPLACE
@@ -248,20 +249,20 @@ jobs:
       - name: Invalidate CloudFront cache
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --distribution-id ${{ secrets.PROD_CLOUDFRONT_DISTRIBUTION_ID }} \
             --paths "/*"
 
           echo "✅ CloudFront cache invalidation initiated"
 
       - name: Print deployment URL
         run: |
-          echo "🚀 Frontend deployed successfully!"
-          echo "📡 URL: ${{ secrets.CLOUDFRONT_URL }}"
+          echo "🚀 Frontend deployed successfully to PRODUCTION!"
+          echo "📡 URL: ${{ secrets.PROD_CLOUDFRONT_URL }}"
           echo ""
           echo "Note: CloudFront cache invalidation may take 1-2 minutes to complete."
 
   deployment-summary:
-    name: Deployment Summary
+    name: Production Deployment Summary
     runs-on: ubuntu-latest
     needs: [deploy-infrastructure, build-frontend, deploy-frontend]
     if: always()
@@ -269,22 +270,30 @@ jobs:
     steps:
       - name: Print deployment summary
         run: |
-          echo "🚀 Staging Deployment Summary"
-          echo "=============================="
+          echo "🚀 PRODUCTION Deployment Summary"
+          echo "=================================="
           echo ""
-          echo "Environment: staging"
+          echo "⚠️  This is a PRODUCTION deployment"
+          echo ""
+          echo "Environment: production"
           echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
           echo "WebSocket: ${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}"
-          echo "Frontend: ${{ secrets.CLOUDFRONT_URL }}"
+          echo "Frontend: ${{ secrets.PROD_CLOUDFRONT_URL }}"
           echo ""
           echo "✅ Backend infrastructure deployed"
           echo "✅ Lambda functions deployed"
           echo "✅ Frontend built and deployed to CloudFront"
           echo ""
-          echo "📋 Next Steps:"
-          echo "1. Visit ${{ secrets.CLOUDFRONT_URL }} to test the application"
-          echo "2. Share CloudFront URL with friends and family"
-          echo "3. Monitor CloudWatch logs for any issues"
+          echo "📋 Post-Deployment Checklist:"
+          echo "1. Verify the application is accessible at ${{ secrets.PROD_CLOUDFRONT_URL }}"
+          echo "2. Run smoke tests on critical user flows"
+          echo "3. Monitor CloudWatch dashboards for errors"
+          echo "4. Check API health endpoint"
           echo ""
-          echo "🔍 To check deployment:"
+          echo "🔍 Health Check:"
           echo "   curl ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}/health"
+          echo ""
+          echo "📊 Monitoring:"
+          echo "   - CloudWatch Logs: Check for errors"
+          echo "   - CloudWatch Metrics: Monitor latency and error rates"
+          echo "   - Bedrock: Monitor agent invocations"

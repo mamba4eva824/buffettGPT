@@ -63,6 +63,12 @@ variable "enable_auth_routes" {
   default     = true
 }
 
+variable "enable_search" {
+  description = "Enable AI search routes"
+  type        = bool
+  default     = false
+}
+
 variable "cloudfront_url" {
   description = "CloudFront URL to add to CORS allowed origins"
   type        = string

@@ -29,6 +29,7 @@ FUNCTIONS=(
     "chat_http_handler"
     "chat_processor"
     "conversations_handler"
+    "search_handler"
     "websocket_connect"
     "websocket_disconnect"
     "websocket_message"
