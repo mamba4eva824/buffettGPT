@@ -122,3 +122,9 @@ variable "kms_key_arn" {
   type        = string
   default     = ""
 }
+
+variable "debt_analyzer_provisioned_concurrency" {
+  description = "Provisioned concurrency for debt analyzer Lambda"
+  type        = number
+  default     = 0
+}
