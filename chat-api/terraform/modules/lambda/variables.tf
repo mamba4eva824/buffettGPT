@@ -79,3 +79,46 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+
+# Debt Analyzer Variables
+variable "cloudfront_url" {
+  description = "CloudFront URL for CORS configuration"
+  type        = string
+  default     = ""
+}
+
+variable "debt_analyzer_image_tag" {
+  description = "Docker image tag for debt analyzer Lambda"
+  type        = string
+  default     = "latest"
+}
+
+variable "model_s3_bucket" {
+  description = "S3 bucket containing ML models"
+  type        = string
+  default     = ""
+}
+
+variable "debt_analyzer_model_version" {
+  description = "Version of the debt analyzer ML model"
+  type        = string
+  default     = "1"
+}
+
+variable "financial_cache_table" {
+  description = "DynamoDB table name for financial data cache"
+  type        = string
+  default     = ""
+}
+
+variable "idempotency_table" {
+  description = "DynamoDB table name for idempotency tracking"
+  type        = string
+  default     = ""
+}
+
+variable "kms_key_arn" {
+  description = "KMS key ARN for encryption"
+  type        = string
+  default     = ""
+}
