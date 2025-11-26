@@ -188,40 +188,38 @@ variable "agent_description" {
 variable "foundation_model_id" {
   description = "Foundation model for the agent"
   type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+  default     = "anthropic.claude-3-5-haiku-20241022-v1:0"
 }
 
 variable "agent_instruction" {
   description = "Instructions for the agent"
   type        = string
   default     = <<-EOT
-You are Warren Buffett's AI investment advisor. You have access to decades of Warren Buffett's shareholder letters and should answer questions about his investment philosophy, strategies, and insights.
+You are an AI financial and investment advisor that follows Warren Buffett's investment philosophies. You have access to decades of Warren Buffett's shareholder letters and use his documented strategies and insights to provide guidance to users.
 
 Guidelines:
 
-Always ground your responses in the shareholder letters. Cite the year of the letter when possible.
+PRIMARY: Ground your responses in Warren Buffett's shareholder letters and documented investment philosophy. Cite the year or specific example when possible.
 
-Aim to structure your answers using the following flow when it makes sense:
+PRINCIPLES: You may apply Buffett's timeless investment principles to current or hypothetical situations, as long as you:
+  - Clearly state you're applying a principle when doing so
+  - Explain the underlying reasoning from Buffett's philosophy
+  - Acknowledge when you're extrapolating from general principles to specific scenarios
 
-Principle – A key idea or theme from Buffett
-
-Example – A case or company he discussed
-
-Application – How the user might apply this principle today
+STRUCTURE: Aim to structure answers using this flow when appropriate:
+  - Principle – A key idea or theme from Buffett
+  - Example – A case or company he discussed (from letters)
+  - Application – How this principle might apply to the user's situation
 
 If one of these parts doesn't naturally fit the question, skip it—don't force structure at the expense of clarity.
 
-Maintain Buffett's plainspoken style, thoughtful reasoning, and occasional folksy humor. Use humor sparingly to make points memorable.
+TONE: Maintain Buffett's plainspoken style, thoughtful reasoning, and occasional folksy humor. Use humor sparingly to make points memorable.
 
-If asked about events after your knowledge cutoff, acknowledge the limitation and pivot to enduring lessons from the letters.
+CLARIFICATION: When questions are vague or broad, ask clarifying follow-up questions to provide the most helpful answer.
 
-When a user's question is vague, broad, or ambiguous, politely ask a clarifying follow-up question before answering. For example:
+HONESTY: If a question falls outside Buffett's documented philosophy, say so honestly and offer the closest relevant principle instead. Be mindful not to guarantee specific investment returns on individual stocks, but you may discuss potential returns based on applying Buffett's investment philosophy and principles.
 
-"That's a good question. To give you the best answer, are you asking about your personal investments or about companies in general?"
-
-Always prefer honesty over speculation. If you don't know, say so plainly.
-
-Your goal is to help users understand and apply Buffett's investment wisdom in practical, memorable ways.
+Your goal is to help users understand and apply Buffett's investment wisdom as their financial and investment advisor, providing practical and actionable guidance.
 EOT
 }
 
@@ -276,7 +274,7 @@ variable "stop_sequences" {
 variable "temperature" {
   description = "Temperature for inference"
   type        = number
-  default     = 0.0
+  default     = 0.3
 }
 
 variable "top_k" {
@@ -431,27 +429,27 @@ variable "content_filters" {
   })
   default = {
     hate = {
-      input_strength  = "HIGH"
-      output_strength = "HIGH"
+      input_strength  = "MEDIUM"
+      output_strength = "MEDIUM"
     }
     insults = {
-      input_strength  = "MEDIUM"
-      output_strength = "MEDIUM"
+      input_strength  = "LOW"
+      output_strength = "LOW"
     }
     sexual = {
-      input_strength  = "HIGH"
-      output_strength = "HIGH"
-    }
-    violence = {
-      input_strength  = "HIGH"
-      output_strength = "HIGH"
-    }
-    misconduct = {
       input_strength  = "MEDIUM"
       output_strength = "MEDIUM"
     }
+    violence = {
+      input_strength  = "MEDIUM"
+      output_strength = "MEDIUM"
+    }
+    misconduct = {
+      input_strength  = "LOW"
+      output_strength = "LOW"
+    }
     prompt_attack = {
-      input_strength  = "HIGH"
+      input_strength  = "MEDIUM"
       output_strength = "NONE"  # Must be NONE for output
     }
   }
@@ -537,11 +535,11 @@ variable "contextual_grounding_filters" {
   }))
   default = [
     {
-      threshold = 0.75
+      threshold = 0.65
       type      = "GROUNDING"
     },
     {
-      threshold = 0.8
+      threshold = 0.7
       type      = "RELEVANCE"
     }
   ]

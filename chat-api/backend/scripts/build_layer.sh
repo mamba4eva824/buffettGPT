@@ -33,7 +33,15 @@ echo "Requirements file contents:"
 cat "${LAYER_DIR}/requirements.txt"
 
 # Install dependencies to python/ directory (Lambda layer structure)
-pip install -r "${LAYER_DIR}/requirements.txt" -t "${TEMP_DIR}/python" --no-cache-dir --upgrade
+# Use platform-specific packages for Amazon Linux 2 (Lambda runtime)
+pip install -r "${LAYER_DIR}/requirements.txt" \
+  --platform manylinux2014_x86_64 \
+  --implementation cp \
+  --python-version 3.11 \
+  --only-binary=:all: \
+  --upgrade \
+  --target "${TEMP_DIR}/python" \
+  --no-cache-dir
 
 # Remove unnecessary files to reduce layer size
 echo "Cleaning up unnecessary files..."

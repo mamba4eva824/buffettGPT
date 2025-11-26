@@ -72,3 +72,9 @@ output "lambda_summary" {
     processor_functions = [for k, v in aws_lambda_function.functions : k if contains(["chat_processor"], k)]
   }
 }
+
+# Secrets
+output "search_api_key_arn" {
+  description = "ARN of the Perplexity API key secret"
+  value       = aws_secretsmanager_secret.search_api_key.arn
+}

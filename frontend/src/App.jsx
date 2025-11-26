@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen, X, Menu, ChevronDown, User, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
+import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen, X, Menu, ChevronDown, User, LogOut, Sun, Moon, PanelLeftClose, Sparkles, Lightbulb } from "lucide-react";
 import { AuthProvider, AuthButton, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
 import { ConversationList } from "./components/ConversationList.jsx";
@@ -392,16 +392,16 @@ async function sendChatMessage(restBaseUrl, message, sessionId, token) {
   // Send chat message via REST API
   const baseUrl = restBaseUrl.replace(/\/$/, "");
   const url = `${baseUrl}/chat`;
-  
-  const headers = { 
+
+  const headers = {
     "Content-Type": "application/json"
   };
-  
+
   // Add authorization header if token is available
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  
+
   const body = {
     message: message,
     session_id: sessionId
@@ -409,17 +409,53 @@ async function sendChatMessage(restBaseUrl, message, sessionId, token) {
 
   logger.log('📤 Sending REST API message:', url, body);
 
-  const res = await fetch(url, { 
-    method: "POST", 
+  const res = await fetch(url, {
+    method: "POST",
     headers,
     body: JSON.stringify(body)
   });
-  
+
   if (!res.ok) {
     const errorText = await res.text();
     throw new Error(`Chat request failed (${res.status}): ${errorText}`);
   }
-  
+
+  return res.json();
+}
+
+async function sendSearchQuery(restBaseUrl, query, conversationId, token) {
+  // Send search query via REST API to Perplexity
+  const baseUrl = restBaseUrl.replace(/\/$/, "");
+  const url = `${baseUrl}/search`;
+
+  const headers = {
+    "Content-Type": "application/json"
+  };
+
+  // Add authorization header if token is available
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const body = {
+    query: query,
+    conversation_id: conversationId,
+    model: "sonar"
+  };
+
+  logger.log('🔍 Sending search query:', url, body);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Search request failed (${res.status}): ${errorText}`);
+  }
+
   return res.json();
 }
 
@@ -515,6 +551,7 @@ function ChatApp() {
   // UI state
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
+  const [mode, setMode] = useState('bedrock'); // 'search' or 'bedrock'
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -649,7 +686,7 @@ function ChatApp() {
     }
   }, [sessionId, messages, isAuthenticated, selectedConversation, updateConversation]);
 
-  const doSend = useCallback(async (overrideText = null) => {
+  const doSend = useCallback(async (overrideText = null, currentMode = 'bedrock') => {
     const textToSend = overrideText || input;
     if (!textToSend?.trim()) return;
 
@@ -682,6 +719,77 @@ function ChatApp() {
       }
     }
 
+    // SEARCH MODE: Use REST API to call Perplexity
+    if (currentMode === 'search' && restUrl) {
+      // Add user message immediately
+      const userMsg = {
+        id: `usr-${uid8()}`,
+        type: "user",
+        content: messageText,
+        timestamp: nowIso()
+      };
+      setMessages((m) => [...m, userMsg]);
+
+      try {
+        // Send search query via REST API
+        const effectiveConversationId = selectedConversation?.conversation_id || sessionId || uid8();
+        const response = await sendSearchQuery(restUrl, messageText, effectiveConversationId, token);
+
+        // Add AI response
+        const aiMsg = {
+          id: response.ai_message_id || `ai-${uid8()}`,
+          type: "assistant",
+          content: response.response || "No response received",
+          timestamp: response.timestamp || nowIso(),
+          meta: { processingTime: response.processing_time_ms, model: response.model }
+        };
+        setMessages((m) => [...m, aiMsg]);
+
+        // Clear evaluating state
+        setIsEvaluating(false);
+
+        // Refresh conversations to update inbox ordering
+        if (fetchConversations) {
+          fetchConversations();
+        }
+
+      } catch (error) {
+        logger.error('Search API error:', error);
+        // Add error message
+        const errorMsg = {
+          id: `err-${uid8()}`,
+          type: "system",
+          content: `Search error: ${error.message}`,
+          timestamp: nowIso()
+        };
+        setMessages((m) => [...m, errorMsg]);
+
+        // Clear evaluating state on error
+        setIsEvaluating(false);
+      }
+
+      // For unauthorized users, increment query count
+      if (!isAuthenticated) {
+        const newCount = incrementQueryCount();
+        const newRemaining = DAILY_QUERY_LIMIT - newCount;
+        setRemainingQueries(newRemaining);
+        setHasStartedQuerying(true);
+
+        // Only show banner after first query and with delay for animation
+        setTimeout(() => {
+          setShowRateLimitBanner(true);
+        }, 500);
+
+        // Auto-hide banner after 8 seconds
+        setTimeout(() => {
+          setShowRateLimitBanner(false);
+        }, 8000);
+      }
+
+      return;
+    }
+
+    // BEDROCK MODE: Use WebSocket or fallback to REST
     // For authenticated users, wait for WebSocket connection if it's in progress
     if (isAuthenticated && token && (status === "connecting" || status === "disconnected")) {
       setIsConnecting(true);
@@ -1117,6 +1225,8 @@ function ChatApp() {
                     setSettingsOpen={setSettingsOpen}
                     showTopicButtons={true}
                     isAuthenticated={isAuthenticated}
+                    mode={mode}
+                    setMode={setMode}
                   />
                 </div>
               </div>
@@ -1175,6 +1285,8 @@ function ChatApp() {
                     setSettingsOpen={setSettingsOpen}
                     showTopicButtons={false}
                     isAuthenticated={isAuthenticated}
+                    mode={mode}
+                    setMode={setMode}
                   />
                 </div>
               </>
@@ -1372,80 +1484,101 @@ function SearchComposer({
   newChat,
   setSettingsOpen,
   showTopicButtons = false,
-  isAuthenticated
+  isAuthenticated,
+  mode,
+  setMode
 }) {
-  const textareaRef = useRef(null);
-
-  // Auto-resize function - only expand when content needs multiple lines
-  const autoResize = (textarea) => {
-    if (textarea) {
-      // Reset height to minimum to get accurate scrollHeight
-      textarea.style.height = '44px';
-
-      // Only expand if content actually needs more height
-      if (textarea.scrollHeight > 44) {
-        textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
-      }
-    }
-  };
-
-  // Reset height when input is cleared
-  useEffect(() => {
-    if (textareaRef.current) {
-      if (input === '') {
-        textareaRef.current.style.height = '44px';
-      } else {
-        autoResize(textareaRef.current);
-      }
-    }
-  }, [input]);
+  const inputRef = useRef(null);
 
   const handlePromptSelect = async (prompt) => {
     // Use the main doSend function with the prompt text as override
-    doSend(prompt);
+    doSend(prompt, mode);
 
     // Clear the input after sending
     setInput('');
-
-    // Reset textarea height
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '44px';
-    }
   };
 
   return (
     <>
-      <div className="mx-auto max-w-3xl relative px-2 md:px-0">
-        <textarea
-          ref={textareaRef}
-          placeholder={isConnecting ? "Connecting..." : "Ask Warren Buffett about investing and business..."}
-          value={input}
-          onChange={(e)=>{
-            setInput(e.target.value);
-            autoResize(e.target);
-          }}
-          onKeyDown={(e)=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); doSend(); } }}
-          className="min-h-[48px] md:min-h-[44px] max-h-40 w-full resize-none rounded-2xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-[14px] md:py-3 pr-14 md:pr-12 text-sm md:text-sm text-center md:text-left outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100 dark:text-slate-100 overflow-hidden leading-tight"
-          disabled={isConnecting}
-          style={{height: '48px'}}
-        />
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!input.trim() || isConnecting) return;
-            doSend();
-          }}
-          disabled={!input.trim() || isConnecting}
-          className={classNames(
-            "absolute right-[3px] top-1/2 -translate-y-1/2 h-[42px] md:h-[38px] w-[42px] md:w-auto md:px-3 inline-flex items-center justify-center rounded-xl text-sm font-medium shadow-sm transition-colors text-white z-10 touch-manipulation",
-            (!input.trim() || isConnecting)
-              ? "bg-indigo-400 cursor-not-allowed"
-              : "bg-indigo-600 hover:bg-indigo-700 cursor-pointer active:bg-indigo-800"
-          )}
-        >
-          {isConnecting ? <Loader2 className="h-4 w-4 animate-spin"/> : <Send className="h-4 w-4"/>}
-        </button>
+      <div className="mx-auto max-w-3xl px-2 md:px-0">
+        {/* Search Bar Container */}
+        <div className="relative flex items-center rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 shadow-sm px-3 py-3 focus-within:border-indigo-300 dark:focus-within:border-indigo-500">
+          {/* Left toggles */}
+          <div className="flex items-center gap-1 pr-3">
+            <button
+              type="button"
+              onClick={() => setMode('search')}
+              className={classNames(
+                "inline-flex h-8 w-8 items-center justify-center rounded-md border transition-all",
+                mode === 'search'
+                  ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
+                  : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600"
+              )}
+              title="Search mode (Perplexity)"
+              aria-label="Search mode"
+            >
+              <Search className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('bedrock')}
+              className={classNames(
+                "inline-flex h-8 w-8 items-center justify-center rounded-md border transition-all",
+                mode === 'bedrock'
+                  ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
+                  : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600"
+              )}
+              title="Buffett Agent mode"
+              aria-label="Buffett Agent mode"
+            >
+              <Lightbulb className="h-4 w-4" />
+            </button>
+            <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-600" />
+          </div>
+
+          {/* Input */}
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder={isConnecting ? "Connecting..." : "Ask Warren Buffett about investing and business..."}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (input.trim()) doSend(null, mode);
+              }
+            }}
+            disabled={isConnecting}
+            className="peer block w-full bg-transparent text-sm md:text-[15px] placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none dark:text-slate-100"
+          />
+
+          {/* Send button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!input.trim() || isConnecting) return;
+              doSend(null, mode);
+            }}
+            disabled={!input.trim() || isConnecting}
+            className={classNames(
+              "ml-2 inline-flex h-9 w-9 items-center justify-center rounded-lg shadow-sm transition-colors",
+              (!input.trim() || isConnecting)
+                ? "bg-indigo-400 dark:bg-indigo-600/50 cursor-not-allowed text-white"
+                : "bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 cursor-pointer text-white"
+            )}
+          >
+            {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {/* Mode label */}
+        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 px-2">
+          <span className="font-medium">
+            {mode === 'search' ? '🔍 Search' : '💡 Buffett Agent'}
+          </span>
+        </div>
       </div>
 
       {showTopicButtons && isAuthenticated && (

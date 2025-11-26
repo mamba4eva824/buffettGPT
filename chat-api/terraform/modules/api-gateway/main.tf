@@ -285,6 +285,22 @@ resource "aws_apigatewayv2_integration" "conversations_handler_integration" {
   }
 }
 
+# Search Handler Integration
+resource "aws_apigatewayv2_integration" "search_integration" {
+  count            = var.enable_search ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["search_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000  # API Gateway max is 30000ms (30 seconds)
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
 # Routes
 resource "aws_apigatewayv2_route" "chat_post_route" {
   api_id    = aws_apigatewayv2_api.http_api.id
@@ -406,6 +422,30 @@ resource "aws_apigatewayv2_route" "conversation_options" {
   api_id    = aws_apigatewayv2_api.http_api.id
   route_key = "OPTIONS /conversations/{conversation_id}"
   target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# ================================================
+# Search API Routes
+# ================================================
+
+# POST /search - AI-powered search
+resource "aws_apigatewayv2_route" "search" {
+  count     = var.enable_search ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "POST /search"
+  target    = "integrations/${aws_apigatewayv2_integration.search_integration[0].id}"
+
+  authorization_type = "NONE"  # No auth required for dev
+}
+
+# OPTIONS /search - CORS preflight
+resource "aws_apigatewayv2_route" "search_options" {
+  count     = var.enable_search ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /search"
+  target    = "integrations/${aws_apigatewayv2_integration.search_integration[0].id}"
 
   authorization_type = "NONE"
 }
@@ -538,6 +578,16 @@ resource "aws_lambda_permission" "conversations_api_permission" {
   statement_id  = "AllowExecutionFromHTTPAPIConversations"
   action        = "lambda:InvokeFunction"
   function_name = var.lambda_arns["conversations_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
+
+# Search Handler Lambda Permission
+resource "aws_lambda_permission" "search_api_permission" {
+  count         = var.enable_search ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPISearch"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["search_handler"]
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
