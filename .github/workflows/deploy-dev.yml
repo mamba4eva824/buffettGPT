@@ -149,21 +149,28 @@ jobs:
       - name: Terraform Apply
         working-directory: chat-api/terraform/environments/dev
         run: |
-          # First attempt
-          if terraform apply -auto-approve tfplan; then
-            echo "Terraform apply succeeded on first attempt"
-          else
-            echo "First attempt failed, regenerating plan and retrying..."
-            # Regenerate plan for retry (state may have changed)
-            terraform plan -out=tfplan \
-              -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
-              -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-              -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
-              -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
-              -var="alert_email=${{ secrets.ALERT_EMAIL }}"
-            # Second attempt
-            terraform apply -auto-approve tfplan
-          fi
+          # Two-phase apply to handle API Gateway authorizer deletion ordering
+          # Phase 1: Update routes first (to remove authorizer references before authorizers are deleted)
+          echo "Phase 1: Updating API Gateway routes..."
+          terraform apply -auto-approve \
+            -target='module.api_gateway.aws_apigatewayv2_route.chat_post_route' \
+            -target='module.api_gateway.aws_apigatewayv2_route.history_get_route' \
+            -target='module.api_gateway.aws_apigatewayv2_route.list_conversations' \
+            -target='module.api_gateway.aws_apigatewayv2_route.create_conversation' \
+            -target='module.api_gateway.aws_apigatewayv2_route.get_conversation' \
+            -target='module.api_gateway.aws_apigatewayv2_route.update_conversation' \
+            -target='module.api_gateway.aws_apigatewayv2_route.delete_conversation' \
+            -target='module.api_gateway.aws_apigatewayv2_route.get_conversation_messages' \
+            -target='module.api_gateway.aws_apigatewayv2_route.websocket_connect_route' \
+            -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
+            -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
+            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
+            -var="alert_email=${{ secrets.ALERT_EMAIL }}" || true
+
+          # Phase 2: Full apply (authorizers can now be safely deleted)
+          echo "Phase 2: Full infrastructure apply..."
+          terraform apply -auto-approve tfplan
 
       - name: Get Terraform Outputs
         id: terraform-output

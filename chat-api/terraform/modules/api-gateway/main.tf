@@ -192,11 +192,6 @@ resource "aws_apigatewayv2_authorizer" "http_jwt_authorizer" {
   authorizer_credentials_arn        = aws_iam_role.authorizer_invocation_role[0].arn
   identity_sources                  = ["$request.header.Authorization"]
   enable_simple_responses           = true
-
-  # Defer deletion until routes that reference this authorizer are updated
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 resource "aws_apigatewayv2_authorizer" "websocket_jwt_authorizer" {
@@ -208,11 +203,6 @@ resource "aws_apigatewayv2_authorizer" "websocket_jwt_authorizer" {
   # Remove identity_sources to ensure authorizer is called for all connections (including anonymous)
   # identity_sources           = ["route.request.header.Authorization", "route.request.querystring.token"]
   authorizer_credentials_arn = aws_iam_role.authorizer_invocation_role[0].arn
-
-  # Defer deletion until routes that reference this authorizer are updated
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 # IAM Role for Authorizer Invocation (WebSocket)
