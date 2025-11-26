@@ -9,7 +9,6 @@ on:
 env:
   AWS_REGION: us-east-1
   ENVIRONMENT: dev
-  NODE_VERSION: '18'
   PYTHON_VERSION: '3.11'
 
 jobs:
@@ -109,7 +108,7 @@ jobs:
             --secret-string "${{ secrets.PINECONE_API_KEY }}" \
             --region ${{ env.AWS_REGION }}
 
-          echo "✅ AWS Secrets Manager secrets created/updated successfully"
+          echo "AWS Secrets Manager secrets created/updated successfully"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -161,131 +160,30 @@ jobs:
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
           echo "websocket_api_endpoint=$WS_ENDPOINT" >> $GITHUB_OUTPUT
 
-          echo "📡 API Endpoints:"
+          echo "API Endpoints:"
           echo "  HTTP API: $HTTP_ENDPOINT"
           echo "  WebSocket: $WS_ENDPOINT"
-
-  build-frontend:
-    name: Build Frontend
-    runs-on: ubuntu-latest
-    needs: [deploy-infrastructure]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm install
-
-      - name: Create dev environment file
-        working-directory: frontend
-        run: |
-          cat > .env.dev << EOF
-          VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
-          VITE_WEBSOCKET_URL=${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}
-          VITE_ENVIRONMENT=dev
-          VITE_ENABLE_DEBUG_LOGS=true
-          VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          EOF
-
-          echo "✅ Created .env.dev with API endpoints"
-          cat .env.dev
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build -- --mode dev
-
-      - name: Upload frontend artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-          retention-days: 1
-
-  deploy-frontend:
-    name: Deploy Frontend to S3 + CloudFront
-    runs-on: ubuntu-latest
-    needs: [build-frontend]
-
-    steps:
-      - name: Download frontend artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Sync HTML files to S3 (no cache)
-        run: |
-          aws s3 sync frontend/dist s3://${{ secrets.DEV_S3_FRONTEND_BUCKET }}/ \
-            --exclude "*" \
-            --include "*.html" \
-            --cache-control "public, max-age=0, must-revalidate" \
-            --metadata-directive REPLACE
-
-          echo "✅ HTML files synced with no-cache headers"
-
-      - name: Sync static assets to S3 (long-term cache)
-        run: |
-          aws s3 sync frontend/dist s3://${{ secrets.DEV_S3_FRONTEND_BUCKET }}/ \
-            --exclude "*.html" \
-            --cache-control "public, max-age=31536000, immutable" \
-            --metadata-directive REPLACE
-
-          echo "✅ Static assets synced with long-term cache headers"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.DEV_CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
-
-          echo "✅ CloudFront cache invalidation initiated"
-
-      - name: Print deployment URL
-        run: |
-          echo "🚀 Frontend deployed successfully!"
-          echo "📡 URL: ${{ secrets.DEV_CLOUDFRONT_URL }}"
-          echo ""
-          echo "Note: CloudFront cache invalidation may take 1-2 minutes to complete."
 
   deployment-summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure, build-frontend, deploy-frontend]
+    needs: [deploy-infrastructure]
     if: always()
 
     steps:
       - name: Print deployment summary
         run: |
-          echo "🚀 Dev Deployment Summary"
+          echo "Dev Deployment Summary"
           echo "=============================="
           echo ""
           echo "Environment: dev"
           echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
           echo "WebSocket: ${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}"
-          echo "Frontend: ${{ secrets.DEV_CLOUDFRONT_URL }}"
           echo ""
-          echo "✅ Backend infrastructure deployed"
-          echo "✅ Lambda functions deployed"
-          echo "✅ Frontend built and deployed to CloudFront"
+          echo "Backend infrastructure deployed"
+          echo "Lambda functions deployed"
           echo ""
-          echo "📋 Next Steps:"
-          echo "1. Visit ${{ secrets.DEV_CLOUDFRONT_URL }} to test the application"
-          echo "2. Check CloudWatch logs for any issues"
-          echo "3. When ready, merge to staging branch for staging deployment"
+          echo "Frontend: Run locally with 'npm run dev' in the frontend directory"
           echo ""
-          echo "🔍 To check deployment:"
+          echo "To check deployment:"
           echo "   curl ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}/health"
