@@ -298,6 +298,8 @@ resource "aws_iam_role_policy" "debt_analyzer_dynamodb_cache" {
 # ============================================================================
 
 resource "aws_iam_role_policy" "debt_analyzer_kms_decrypt" {
+  count = var.kms_key_arn != "" ? 1 : 0
+
   name = "kms-decrypt-access"
   role = aws_iam_role.debt_analyzer_role.id
 
