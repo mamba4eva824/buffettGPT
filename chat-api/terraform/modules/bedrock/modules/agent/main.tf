@@ -74,6 +74,11 @@ resource "aws_bedrockagent_agent" "main" {
     Purpose   = "Bedrock Agent for Warren Buffett Investment Advice"
     Component = "Bedrock Agent"
   })
+
+  # Workaround for AWS provider bug that causes guardrail_configuration to be null after apply
+  lifecycle {
+    ignore_changes = [guardrail_configuration]
+  }
 }
 
 # Agent Knowledge Base Association
