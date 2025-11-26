@@ -14,13 +14,15 @@ variable "aws_region" {
 
 # Bedrock Configuration
 variable "bedrock_agent_id" {
-  description = "Bedrock agent ID"
+  description = "Bedrock agent ID (optional - will be created by module)"
   type        = string
+  default     = ""
 }
 
 variable "bedrock_agent_alias" {
-  description = "Bedrock agent alias"
+  description = "Bedrock agent alias (optional - will be created by module)"
   type        = string
+  default     = ""
 }
 
 variable "bedrock_region" {
