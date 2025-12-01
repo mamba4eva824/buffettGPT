@@ -57,10 +57,10 @@ for FUNCTION in "${FUNCTIONS[@]}"; do
     # Copy only the handler file
     cp "${SRC_DIR}/${FUNCTION}.py" "${TEMP_DIR}/"
 
-    # Copy only specific utility directories (not all of src which contains dependencies)
-    # Copy handlers/utils directory (contains conversation_updater and other utilities)
-    if [ -d "${SRC_DIR}/utils" ]; then
-        cp -r "${SRC_DIR}/utils" "${TEMP_DIR}/"
+    # Copy the utils directory from src/utils (not src/handlers/utils)
+    UTILS_DIR="$(dirname "${SRC_DIR}")/utils"
+    if [ -d "${UTILS_DIR}" ]; then
+        cp -r "${UTILS_DIR}" "${TEMP_DIR}/"
     fi
 
     # Copy any shared utilities if they exist
