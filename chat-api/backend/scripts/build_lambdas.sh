@@ -57,7 +57,7 @@ for FUNCTION in "${FUNCTIONS[@]}"; do
     # Copy only the handler file
     cp "${SRC_DIR}/${FUNCTION}.py" "${TEMP_DIR}/"
 
-    # Copy the utils directory from src/utils (not src/handlers/utils)
+    # Copy the utils directory from src/utils
     UTILS_DIR="$(dirname "${SRC_DIR}")/utils"
     if [ -d "${UTILS_DIR}" ]; then
         cp -r "${UTILS_DIR}" "${TEMP_DIR}/"
