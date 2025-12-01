@@ -66,6 +66,27 @@ output "anonymous_sessions_table_arn" {
   value       = var.enable_anonymous_sessions ? aws_dynamodb_table.anonymous_sessions[0].arn : null
 }
 
+# ML Tables
+output "financial_data_cache_table_name" {
+  description = "Name of the financial data cache table"
+  value       = aws_dynamodb_table.financial_data_cache.name
+}
+
+output "financial_data_cache_table_arn" {
+  description = "ARN of the financial data cache table"
+  value       = aws_dynamodb_table.financial_data_cache.arn
+}
+
+output "ticker_lookup_table_name" {
+  description = "Name of the ticker lookup cache table"
+  value       = aws_dynamodb_table.ticker_lookup_cache.name
+}
+
+output "ticker_lookup_table_arn" {
+  description = "ARN of the ticker lookup cache table"
+  value       = aws_dynamodb_table.ticker_lookup_cache.arn
+}
+
 # Summary Output
 output "table_summary" {
   description = "Summary of all DynamoDB tables"

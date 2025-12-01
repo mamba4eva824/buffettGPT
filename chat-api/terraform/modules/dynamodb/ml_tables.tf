@@ -67,6 +67,44 @@ resource "aws_dynamodb_table" "financial_data_cache" {
   )
 }
 
+# Ticker Lookup Cache - maps company names to ticker symbols
+resource "aws_dynamodb_table" "ticker_lookup_cache" {
+  name           = "${var.project_name}-${var.environment}-ticker-lookup"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "company_name"  # Lowercase normalized company name
+
+  attribute {
+    name = "company_name"
+    type = "S"
+  }
+
+  # TTL: 30 days (company name → ticker rarely changes)
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  point_in_time_recovery {
+    enabled = var.enable_pitr
+  }
+
+  deletion_protection_enabled = var.enable_deletion_protection
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name    = "${var.project_name}-${var.environment}-ticker-lookup"
+      Purpose = "Company name to ticker symbol cache"
+      TTL     = "30 days"
+    }
+  )
+}
+
 resource "aws_dynamodb_table" "idempotency_cache" {
   name           = "${var.project_name}-${var.environment}-idempotency-cache"
   billing_mode   = "PAY_PER_REQUEST"  # On-demand for unpredictable request patterns
