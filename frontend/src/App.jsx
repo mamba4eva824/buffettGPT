@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen, X, Menu, ChevronDown, User, LogOut, Sun, Moon, PanelLeftClose, Sparkles, Lightbulb } from "lucide-react";
+import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen, X, Menu, ChevronDown, User, LogOut, Sun, Moon, PanelLeftClose, Sparkles, Lightbulb, BarChart3 } from "lucide-react";
+import AnalysisView from "./components/analysis/AnalysisView.jsx";
 import { AuthProvider, AuthButton, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
 import { ConversationList } from "./components/ConversationList.jsx";
@@ -13,7 +14,7 @@ import logger from "./utils/logger.js";
 const ENV_CONFIG = {
   WEBSOCKET_URL: import.meta.env.VITE_WEBSOCKET_URL || "",
   REST_API_URL: import.meta.env.VITE_REST_API_URL || "",
-  APP_NAME: import.meta.env.VITE_APP_NAME || "BuffettGPT",
+  APP_NAME: import.meta.env.VITE_APP_NAME || "Buffett",
   ENVIRONMENT: import.meta.env.VITE_ENVIRONMENT || "development",
   ENABLE_DEBUG_LOGS: import.meta.env.VITE_ENABLE_DEBUG_LOGS === "true",
   ENABLE_DEMO_MODE: import.meta.env.VITE_ENABLE_DEMO_MODE === "true",
@@ -551,7 +552,9 @@ function ChatApp() {
   // UI state
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
-  const [mode, setMode] = useState('bedrock'); // 'search' or 'bedrock'
+  const [mode, setMode] = useState('bedrock'); // 'search', 'bedrock', or 'analysis'
+  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [analysisTicker, setAnalysisTicker] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -717,6 +720,15 @@ function ChatApp() {
         // Wait for the WebSocket to reconnect before sending
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
+    }
+
+    // ANALYSIS MODE: Open Deep Value Analysis view
+    if (currentMode === 'analysis') {
+      setAnalysisTicker(messageText.trim());
+      setShowAnalysis(true);
+      if (!overrideText) setInput("");
+      setIsEvaluating(false);
+      return;
     }
 
     // SEARCH MODE: Use REST API to call Perplexity
@@ -1233,7 +1245,17 @@ function ChatApp() {
             ) : (
               /* SPLIT LAYOUT - Messages exist (active conversation) */
               <>
-                {/* Messages Area */}
+                {/* Analysis View or Messages Area */}
+                {showAnalysis ? (
+                  <div className="flex-1 overflow-hidden p-4">
+                    <AnalysisView
+                      ticker={analysisTicker}
+                      fiscalYear={new Date().getFullYear()}
+                      onClose={() => setShowAnalysis(false)}
+                      analysisApiUrl={import.meta.env.VITE_ANALYSIS_API_URL}
+                    />
+                  </div>
+                ) : (
                 <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out">
                   <div className="mx-auto max-w-3xl space-y-4">
                     {messages.map((m, index) => {
@@ -1263,6 +1285,7 @@ function ChatApp() {
                     <div ref={messagesEndRef} />
                   </div>
                 </div>
+                )}
 
                 {/* Bottom Composer */}
                 <div className="border-t border-slate-100 dark:border-slate-700 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out">
@@ -1326,7 +1349,7 @@ function ChatApp() {
 
 
               <div className="rounded-lg bg-slate-50 dark:bg-slate-700 p-3 text-sm text-slate-600 dark:text-slate-300">
-                <div className="font-medium text-slate-800 dark:text-slate-200 mb-2">About BuffettGPT</div>
+                <div className="font-medium text-slate-800 dark:text-slate-200 mb-2">About Buffett</div>
                 <p>Your personal AI assistant trained on Warren Buffett's investing wisdom and business philosophy. All connections are automatically configured and ready to use.</p>
               </div>
             </div>
@@ -1533,6 +1556,20 @@ function SearchComposer({
             >
               <Lightbulb className="h-4 w-4" />
             </button>
+            <button
+              type="button"
+              onClick={() => setMode('analysis')}
+              className={classNames(
+                "inline-flex h-8 w-8 items-center justify-center rounded-md border transition-all",
+                mode === 'analysis'
+                  ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
+                  : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600"
+              )}
+              title="Deep Value Analysis"
+              aria-label="Deep Value Analysis"
+            >
+              <BarChart3 className="h-4 w-4" />
+            </button>
             <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-600" />
           </div>
 
@@ -1576,8 +1613,13 @@ function SearchComposer({
         {/* Mode label */}
         <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 px-2">
           <span className="font-medium">
-            {mode === 'search' ? '🔍 Search' : '💡 Buffett Agent'}
+            {mode === 'search' ? '🔍 Search' : mode === 'analysis' ? '📊 Deep Value Analysis' : '💡 Buffett Agent'}
           </span>
+          {mode === 'analysis' && (
+            <span className="ml-2 text-slate-400 dark:text-slate-500">
+              Enter a company name (e.g., Apple, MSFT)
+            </span>
+          )}
         </div>
       </div>
 
