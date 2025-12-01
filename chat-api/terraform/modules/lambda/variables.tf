@@ -128,3 +128,10 @@ variable "debt_analyzer_provisioned_concurrency" {
   type        = number
   default     = 0
 }
+
+# Function URL CORS Configuration
+variable "cors_allowed_origins" {
+  description = "Allowed origins for Lambda Function URL CORS"
+  type        = list(string)
+  default     = ["http://localhost:3000", "http://localhost:5173"]
+}

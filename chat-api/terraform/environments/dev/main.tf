@@ -63,6 +63,22 @@ locals {
     # WebSocket endpoint for API Gateway Management API (needed by multiple functions)
     # Format: {api-id}.execute-api.{region}.amazonaws.com/{stage}
     WEBSOCKET_API_ENDPOINT = try("${module.api_gateway.websocket_api_id}.execute-api.us-east-1.amazonaws.com/${local.environment}", "")
+
+    # S3 Model Configuration (Ensemble Analysis)
+    MODEL_S3_BUCKET = module.s3.models_bucket_name
+    MODEL_S3_PREFIX = "ensemble/v1"
+
+    # Expert Agent Configuration (Ensemble Analysis)
+    DEBT_AGENT_ID        = try(module.bedrock.debt_agent_id, "")
+    DEBT_AGENT_ALIAS     = try(module.bedrock.debt_agent_alias_id, "")
+    CASHFLOW_AGENT_ID    = try(module.bedrock.cashflow_agent_id, "")
+    CASHFLOW_AGENT_ALIAS = try(module.bedrock.cashflow_agent_alias_id, "")
+    GROWTH_AGENT_ID      = try(module.bedrock.growth_agent_id, "")
+    GROWTH_AGENT_ALIAS   = try(module.bedrock.growth_agent_alias_id, "")
+
+    # FMP API Configuration (Ensemble Analysis)
+    FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
+    FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
   }
 
   # Function-specific environment variables
@@ -102,7 +118,7 @@ module "core" {
 
 module "dynamodb" {
   source = "../../modules/dynamodb"
-  
+
   project_name               = local.project_name
   environment                = local.environment
   billing_mode               = "PAY_PER_REQUEST"  # On-demand for dev
@@ -111,6 +127,18 @@ module "dynamodb" {
   enable_deletion_protection = false  # Allow deletion in dev
   enable_anonymous_sessions  = true   # Keep for now, merge later
   common_tags               = local.common_tags
+}
+
+# ================================================
+# S3 Module - Models Bucket
+# ================================================
+
+module "s3" {
+  source = "../../modules/s3"
+
+  project_name = local.project_name
+  environment  = local.environment
+  common_tags  = local.common_tags
 }
 
 # ================================================
