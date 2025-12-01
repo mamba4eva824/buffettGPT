@@ -262,21 +262,24 @@ def normalize_ticker(company_input: str) -> str:
     cleaned = company_input.strip()
     upper_input = cleaned.upper()
 
-    # Check if it's already a valid ticker format (1-5 letters, or with . like BRK.B)
-    if upper_input.replace('.', '').isalpha() and len(upper_input) <= 6:
+    # Check if it's already a valid ticker format (1-5 letters, or with . or - like BRK.B)
+    if upper_input.replace('.', '').replace('-', '').isalpha() and len(upper_input) <= 6:
         return upper_input
 
-    # Use FMP search API to find the ticker
+    # US exchanges to prioritize
+    US_EXCHANGES = {'NASDAQ', 'NYSE', 'AMEX', 'NYSEARCA', 'BATS', 'CBOE'}
+
+    # Use FMP stable search-name API to find the ticker
     try:
         api_key = get_fmp_api_key()
-        base_url = "https://financialmodelingprep.com/api/v3/search"
+        base_url = "https://financialmodelingprep.com/stable/search-name"
 
         with httpx.Client(timeout=10.0) as client:
             response = client.get(
                 base_url,
                 params={
                     'query': cleaned,
-                    'limit': 5,
+                    'limit': 10,
                     'apikey': api_key
                 }
             )
@@ -284,9 +287,12 @@ def normalize_ticker(company_input: str) -> str:
             results = response.json()
 
             if results and len(results) > 0:
-                # Return the first match (best match)
-                ticker = results[0].get('symbol', '').upper()
-                company_name = results[0].get('name', '')
+                # Prioritize US exchanges
+                us_results = [r for r in results if r.get('exchange') in US_EXCHANGES]
+                best_match = us_results[0] if us_results else results[0]
+
+                ticker = best_match.get('symbol', '').upper()
+                company_name = best_match.get('name', '')
                 logger.info(f"Resolved '{cleaned}' to {ticker} ({company_name})")
                 return ticker
 
