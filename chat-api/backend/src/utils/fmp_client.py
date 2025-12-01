@@ -248,69 +248,58 @@ def get_financial_data(ticker: str, fiscal_year: Optional[int] = None) -> dict:
 
 def normalize_ticker(company_input: str) -> str:
     """
-    Attempt to normalize a company name to its ticker symbol.
-
-    For now, this is a simple lookup table. In production, you might
-    use an API or more comprehensive database.
+    Normalize a company name to its ticker symbol using FMP search API.
 
     Args:
-        company_input: Company name or ticker (e.g., 'Apple' or 'AAPL')
+        company_input: Company name or ticker (e.g., 'Novo Nordisk' or 'NVO')
 
     Returns:
         Ticker symbol in uppercase
+
+    Raises:
+        ValueError: If no matching company found
     """
-    # Common company name to ticker mappings
-    COMPANY_TO_TICKER = {
-        'apple': 'AAPL',
-        'apple inc': 'AAPL',
-        'microsoft': 'MSFT',
-        'google': 'GOOGL',
-        'alphabet': 'GOOGL',
-        'amazon': 'AMZN',
-        'meta': 'META',
-        'facebook': 'META',
-        'tesla': 'TSLA',
-        'nvidia': 'NVDA',
-        'netflix': 'NFLX',
-        'disney': 'DIS',
-        'walmart': 'WMT',
-        'jpmorgan': 'JPM',
-        'berkshire': 'BRK.B',
-        'berkshire hathaway': 'BRK.B',
-        'coca-cola': 'KO',
-        'coca cola': 'KO',
-        'pepsi': 'PEP',
-        'pepsico': 'PEP',
-        'visa': 'V',
-        'mastercard': 'MA',
-        'johnson & johnson': 'JNJ',
-        'j&j': 'JNJ',
-        'procter & gamble': 'PG',
-        'p&g': 'PG',
-        'exxon': 'XOM',
-        'exxon mobil': 'XOM',
-        'chevron': 'CVX',
-        'costco': 'COST',
-        'american express': 'AXP',
-        'amex': 'AXP',
-        'sirius': 'SIRI',
-        'sirius xm': 'SIRI',
-        'rivian': 'RIVN',
-    }
+    cleaned = company_input.strip()
+    upper_input = cleaned.upper()
 
-    cleaned = company_input.strip().lower()
-
-    # Check if it's already a valid ticker (1-5 uppercase letters)
-    upper_input = company_input.strip().upper()
+    # Check if it's already a valid ticker format (1-5 letters, or with . like BRK.B)
     if upper_input.replace('.', '').isalpha() and len(upper_input) <= 6:
         return upper_input
 
-    # Look up in mapping
-    if cleaned in COMPANY_TO_TICKER:
-        return COMPANY_TO_TICKER[cleaned]
+    # Use FMP search API to find the ticker
+    try:
+        api_key = get_fmp_api_key()
+        base_url = "https://financialmodelingprep.com/api/v3/search"
 
-    # Return as-is (uppercase) if not found
-    return upper_input
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(
+                base_url,
+                params={
+                    'query': cleaned,
+                    'limit': 5,
+                    'apikey': api_key
+                }
+            )
+            response.raise_for_status()
+            results = response.json()
+
+            if results and len(results) > 0:
+                # Return the first match (best match)
+                ticker = results[0].get('symbol', '').upper()
+                company_name = results[0].get('name', '')
+                logger.info(f"Resolved '{cleaned}' to {ticker} ({company_name})")
+                return ticker
+
+            # No results found
+            logger.warning(f"No ticker found for company: {cleaned}")
+            raise ValueError(f"Could not find ticker for: {cleaned}")
+
+    except httpx.HTTPError as e:
+        logger.error(f"FMP search API error: {e}")
+        raise ValueError(f"Failed to search for company: {cleaned}")
+    except Exception as e:
+        logger.error(f"Error normalizing ticker: {e}")
+        raise
 
 
 def validate_ticker(ticker: str) -> bool:
