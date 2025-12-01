@@ -10,7 +10,7 @@ resource "aws_lambda_function_url" "ensemble_analyzer" {
   cors {
     allow_credentials = true
     allow_origins     = var.cors_allowed_origins
-    allow_methods     = ["POST", "OPTIONS"]
+    allow_methods     = ["POST"]
     allow_headers     = ["content-type", "authorization"]
     expose_headers    = ["content-type"]
     max_age           = 86400
@@ -26,7 +26,7 @@ resource "aws_lambda_function_url" "analysis_followup" {
   cors {
     allow_credentials = true
     allow_origins     = var.cors_allowed_origins
-    allow_methods     = ["POST", "OPTIONS"]
+    allow_methods     = ["POST"]
     allow_headers     = ["content-type", "authorization"]
     expose_headers    = ["content-type"]
     max_age           = 86400
