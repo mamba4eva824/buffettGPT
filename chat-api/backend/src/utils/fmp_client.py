@@ -54,6 +54,84 @@ def get_cache_table():
     return dynamodb.Table(table_name)
 
 
+def get_ticker_lookup_table():
+    """Get the DynamoDB table for ticker lookup cache."""
+    table_name = os.environ.get(
+        'TICKER_LOOKUP_TABLE',
+        'buffett-dev-ticker-lookup'
+    )
+    return dynamodb.Table(table_name)
+
+
+def get_cached_ticker(company_name: str) -> Optional[str]:
+    """
+    Check DynamoDB cache for company name → ticker mapping.
+
+    Args:
+        company_name: Lowercase company name
+
+    Returns:
+        Ticker symbol if found and not expired, None otherwise
+    """
+    table = get_ticker_lookup_table()
+    normalized_name = company_name.strip().lower()
+
+    try:
+        response = table.get_item(Key={'company_name': normalized_name})
+
+        if 'Item' not in response:
+            logger.info(f"Ticker cache miss for '{normalized_name}'")
+            return None
+
+        cached = response['Item']
+        expires_at = cached.get('expires_at', 0)
+
+        # Check if cache is expired
+        if int(expires_at) < int(datetime.now().timestamp()):
+            logger.info(f"Ticker cache expired for '{normalized_name}'")
+            return None
+
+        ticker = cached.get('ticker')
+        logger.info(f"Ticker cache hit: '{normalized_name}' → {ticker}")
+        return ticker
+
+    except Exception as e:
+        logger.error(f"Ticker cache lookup failed: {e}")
+        return None
+
+
+def store_cached_ticker(company_name: str, ticker: str, full_name: str = "") -> None:
+    """
+    Store company name → ticker mapping in DynamoDB cache with 30-day TTL.
+
+    Args:
+        company_name: Original company name query
+        ticker: Resolved ticker symbol
+        full_name: Full company name from FMP (for reference)
+    """
+    table = get_ticker_lookup_table()
+    normalized_name = company_name.strip().lower()
+
+    # Set 30-day TTL
+    now = datetime.now()
+    expires_at = int((now + timedelta(days=30)).timestamp())
+
+    item = {
+        'company_name': normalized_name,
+        'ticker': ticker.upper(),
+        'full_name': full_name,
+        'cached_at': int(now.timestamp()),
+        'expires_at': expires_at
+    }
+
+    try:
+        table.put_item(Item=item)
+        logger.info(f"Cached ticker: '{normalized_name}' → {ticker}")
+    except Exception as e:
+        logger.error(f"Failed to cache ticker: {e}")
+        # Don't raise - caching is not critical
+
+
 def get_cached_data(ticker: str, fiscal_year: int) -> Optional[dict]:
     """
     Check DynamoDB cache for existing financial data.
@@ -248,7 +326,12 @@ def get_financial_data(ticker: str, fiscal_year: Optional[int] = None) -> dict:
 
 def normalize_ticker(company_input: str) -> str:
     """
-    Normalize a company name to its ticker symbol using FMP search API.
+    Normalize a company name to its ticker symbol.
+
+    Flow:
+    1. If input looks like a ticker (e.g., 'AAPL') → return as-is
+    2. Check DynamoDB ticker cache → if found, return cached ticker
+    3. If cache miss → call FMP search API → cache result → return ticker
 
     Args:
         company_input: Company name or ticker (e.g., 'Novo Nordisk' or 'NVO')
@@ -262,14 +345,18 @@ def normalize_ticker(company_input: str) -> str:
     cleaned = company_input.strip()
     upper_input = cleaned.upper()
 
-    # Check if it's already a valid ticker format (1-5 letters, or with . or - like BRK.B)
+    # Step 1: Check if it's already a valid ticker format (1-5 letters, or with . or - like BRK.B)
     if upper_input.replace('.', '').replace('-', '').isalpha() and len(upper_input) <= 6:
         return upper_input
 
-    # US exchanges to prioritize
+    # Step 2: Check DynamoDB ticker cache
+    cached_ticker = get_cached_ticker(cleaned)
+    if cached_ticker:
+        return cached_ticker
+
+    # Step 3: Cache miss - call FMP search API
     US_EXCHANGES = {'NASDAQ', 'NYSE', 'AMEX', 'NYSEARCA', 'BATS', 'CBOE'}
 
-    # Use FMP stable search-name API to find the ticker
     try:
         api_key = get_fmp_api_key()
         base_url = "https://financialmodelingprep.com/stable/search-name"
@@ -292,8 +379,12 @@ def normalize_ticker(company_input: str) -> str:
                 best_match = us_results[0] if us_results else results[0]
 
                 ticker = best_match.get('symbol', '').upper()
-                company_name = best_match.get('name', '')
-                logger.info(f"Resolved '{cleaned}' to {ticker} ({company_name})")
+                full_name = best_match.get('name', '')
+                logger.info(f"Resolved '{cleaned}' to {ticker} ({full_name})")
+
+                # Cache the result for future lookups
+                store_cached_ticker(cleaned, ticker, full_name)
+
                 return ticker
 
             # No results found

@@ -79,6 +79,7 @@ locals {
     # FMP API Configuration (Ensemble Analysis)
     FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
     FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
+    TICKER_LOOKUP_TABLE        = try(module.dynamodb.ticker_lookup_table_name, "")
   }
 
   # Function-specific environment variables
