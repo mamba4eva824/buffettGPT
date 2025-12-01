@@ -18,6 +18,31 @@
 
 ### Mandatory Commands for Dev Deployment:
 
+```bash
+cd chat-api/terraform/environments/dev
+terraform init
+terraform validate
+terraform plan
+```
+
+### 🔐 STATE LOCK MANAGEMENT
+
+**CRITICAL**: Before triggering CI/CD pipeline, ensure no local Terraform state locks exist.
+
+If you ran `terraform plan` locally, you MUST release the state lock before pushing to trigger CI/CD:
+
+```bash
+# Check if a lock exists (will show lock info if present)
+cd chat-api/terraform/environments/dev
+
+# If CI/CD fails with "Error acquiring the state lock", release it:
+terraform force-unlock -force <LOCK_ID>
+```
+
+**Why this matters**: Local `terraform plan` creates a DynamoDB state lock. If not released, CI/CD pipeline will fail with `ConditionalCheckFailedException`.
+
+**Prevention**: Always ensure local terraform operations complete cleanly before triggering CI/CD.
+
 ## 📦 LAMBDA PACKAGING RULES
 
 **ABSOLUTE RULE**: ALL Lambda deployment packages (.zip files) MUST be placed in:
