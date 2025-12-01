@@ -34,6 +34,8 @@ FUNCTIONS=(
     "websocket_connect"
     "websocket_disconnect"
     "websocket_message"
+    "ensemble_analyzer"
+    "analysis_followup"
 )
 
 # Build each function

@@ -137,6 +137,30 @@ resource "aws_iam_policy" "lambda_policy" {
           "secretsmanager:GetSecretValue"
         ]
         Resource = "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-${var.environment}-sonar-*"
+      },
+      # S3 Access for ML Models (Ensemble Analysis)
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:GetObjectVersion",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          "arn:aws:s3:::${var.project_name}-${var.environment}-models",
+          "arn:aws:s3:::${var.project_name}-${var.environment}-models/*"
+        ]
+      },
+      # Secrets Manager Access for FMP API Key and JWT Secret
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-${var.environment}-fmp*",
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-${var.environment}-jwt-secret*"
+        ]
       }
     ]
   })

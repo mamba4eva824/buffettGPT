@@ -78,3 +78,27 @@ output "search_api_key_arn" {
   description = "ARN of the Perplexity API key secret"
   value       = aws_secretsmanager_secret.search_api_key.arn
 }
+
+output "fmp_api_key_arn" {
+  description = "ARN of the FMP API key secret"
+  value       = data.aws_secretsmanager_secret.fmp_api_key.arn
+}
+
+output "fmp_api_key_name" {
+  description = "Name of the FMP API key secret"
+  value       = data.aws_secretsmanager_secret.fmp_api_key.name
+}
+
+# ================================================
+# Lambda Function URL Outputs (for SSE streaming)
+# ================================================
+
+output "ensemble_analyzer_url" {
+  description = "Function URL for the ensemble analyzer (SSE streaming)"
+  value       = try(aws_lambda_function_url.ensemble_analyzer.function_url, null)
+}
+
+output "analysis_followup_url" {
+  description = "Function URL for analysis followup (SSE streaming)"
+  value       = try(aws_lambda_function_url.analysis_followup.function_url, null)
+}

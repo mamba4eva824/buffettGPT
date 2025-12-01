@@ -16,8 +16,21 @@ resource "aws_dynamodb_table" "financial_data_cache" {
   }
 
   attribute {
+    name = "ticker"
+    type = "S"
+  }
+
+  attribute {
     name = "cached_at"
     type = "N"
+  }
+
+  # GSI for querying by ticker (all years for a company)
+  global_secondary_index {
+    name            = "ticker-index"
+    hash_key        = "ticker"
+    range_key       = "cached_at"
+    projection_type = "ALL"
   }
 
   # GSI for cache expiration queries

@@ -52,6 +52,18 @@ locals {
       memory_size = 512
       description = "Debt analysis agent handler with streaming support"
     }
+    ensemble_analyzer = {
+      handler     = "ensemble_analyzer.lambda_handler"
+      timeout     = 120
+      memory_size = 512
+      description = "Ensemble 3-model analyzer with Bedrock streaming"
+    }
+    analysis_followup = {
+      handler     = "analysis_followup.lambda_handler"
+      timeout     = 60
+      memory_size = 256
+      description = "Follow-up question handler with session memory"
+    }
   }
 }
 

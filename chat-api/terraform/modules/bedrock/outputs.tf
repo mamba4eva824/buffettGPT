@@ -110,6 +110,43 @@ output "guardrail_status" {
   value       = var.enable_guardrails ? module.guardrails[0].guardrail_status : null
 }
 
+# ================================================
+# Expert Agent Outputs (for Ensemble Analysis)
+# ================================================
+
+# Debt Expert Agent
+output "debt_agent_id" {
+  description = "ID of the Debt Expert Agent"
+  value       = module.debt_expert_agent.agent_id
+}
+
+output "debt_agent_alias_id" {
+  description = "Alias ID of the Debt Expert Agent"
+  value       = module.debt_expert_agent.agent_alias_id
+}
+
+# Cashflow Expert Agent
+output "cashflow_agent_id" {
+  description = "ID of the Cashflow Expert Agent"
+  value       = module.cashflow_expert_agent.agent_id
+}
+
+output "cashflow_agent_alias_id" {
+  description = "Alias ID of the Cashflow Expert Agent"
+  value       = module.cashflow_expert_agent.agent_alias_id
+}
+
+# Growth Expert Agent
+output "growth_agent_id" {
+  description = "ID of the Growth Expert Agent"
+  value       = module.growth_expert_agent.agent_id
+}
+
+output "growth_agent_alias_id" {
+  description = "Alias ID of the Growth Expert Agent"
+  value       = module.growth_expert_agent.agent_alias_id
+}
+
 # Configuration Summary
 output "configuration_summary" {
   description = "Summary of the deployed configuration"

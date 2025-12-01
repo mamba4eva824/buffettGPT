@@ -144,3 +144,81 @@ module "agent" {
 
   depends_on = [module.knowledge_base, module.guardrails]
 }
+
+# ================================================
+# Expert Agents for Ensemble Analysis
+# ================================================
+
+module "debt_expert_agent" {
+  source = "./modules/agent"
+
+  agent_name              = "${var.project_name}-${var.environment}-debt-expert"
+  agent_description       = "Debt analysis expert agent for ensemble system"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "anthropic.claude-haiku-4-5-20251001-v1:0"
+  agent_instruction       = file("${path.module}/prompts/debt_expert_instruction.txt")
+  idle_session_ttl        = var.idle_session_ttl
+
+  # No knowledge base association for expert agents
+  associate_knowledge_base = false
+  knowledge_base_id        = ""
+
+  # No guardrails for expert agents (main agent has them)
+  guardrail_configuration = null
+
+  # Simpler agent config - no prompt override needed
+  enable_prompt_override  = false
+  create_agent_version    = true
+  agent_alias_name        = "live"
+  agent_alias_description = "Live alias for debt expert agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam]
+}
+
+module "cashflow_expert_agent" {
+  source = "./modules/agent"
+
+  agent_name              = "${var.project_name}-${var.environment}-cashflow-expert"
+  agent_description       = "Cashflow analysis expert agent for ensemble system"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "anthropic.claude-haiku-4-5-20251001-v1:0"
+  agent_instruction       = file("${path.module}/prompts/cashflow_expert_instruction.txt")
+  idle_session_ttl        = var.idle_session_ttl
+
+  associate_knowledge_base = false
+  knowledge_base_id        = ""
+  guardrail_configuration  = null
+  enable_prompt_override   = false
+  create_agent_version     = true
+  agent_alias_name         = "live"
+  agent_alias_description  = "Live alias for cashflow expert agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam]
+}
+
+module "growth_expert_agent" {
+  source = "./modules/agent"
+
+  agent_name              = "${var.project_name}-${var.environment}-growth-expert"
+  agent_description       = "Growth analysis expert agent for ensemble system"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "anthropic.claude-haiku-4-5-20251001-v1:0"
+  agent_instruction       = file("${path.module}/prompts/growth_expert_instruction.txt")
+  idle_session_ttl        = var.idle_session_ttl
+
+  associate_knowledge_base = false
+  knowledge_base_id        = ""
+  guardrail_configuration  = null
+  enable_prompt_override   = false
+  create_agent_version     = true
+  agent_alias_name         = "live"
+  agent_alias_description  = "Live alias for growth expert agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam]
+}
