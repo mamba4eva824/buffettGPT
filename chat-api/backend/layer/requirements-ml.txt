@@ -1,0 +1,5 @@
+# ML dependencies for XGBoost inference
+# Separate layer due to size constraints
+numpy>=1.24.0,<2.0.0
+scikit-learn>=1.3.0,<1.4.0  # Pin to 1.3.x to match trained models
+xgboost>=2.0.0
