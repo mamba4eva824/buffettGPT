@@ -207,6 +207,20 @@ dev.err
 *.tmp
 *.temp
 
+# Deep Value Insights (development data and models)
+deep_value_insights/
+
+# Claude/AI IDE context files (contain internal dev notes)
+**/CLAUDE.md
+
+# Terraform plan files (may contain sensitive info)
+tfplan*
+**/tfplan*
+
+# Lambda layer dependencies (should be built, not committed)
+chat-api/backend/layer/python/
+chat-api/terraform/modules/auth/layers/
+
 # =============================================================================
 # SENSITIVE DATA PROTECTION
 # =============================================================================
