@@ -48,40 +48,41 @@ output "data_source_id" {
   value       = module.knowledge_base.data_source_id
 }
 
-# Agent Outputs
+# Agent Outputs (deprecated - main advisor agent removed 2024-12-20)
+# These outputs now reference the supervisor agent as the primary agent
 output "agent_id" {
-  description = "ID of the Bedrock Agent"
-  value       = module.agent.agent_id
+  description = "ID of the primary Bedrock Agent (supervisor)"
+  value       = module.supervisor_agent.agent_id
 }
 
 output "agent_arn" {
-  description = "ARN of the Bedrock Agent"
-  value       = module.agent.agent_arn
+  description = "ARN of the primary Bedrock Agent (supervisor)"
+  value       = module.supervisor_agent.agent_arn
 }
 
 output "agent_name" {
-  description = "Name of the Bedrock Agent"
-  value       = module.agent.agent_name
+  description = "Name of the primary Bedrock Agent (supervisor)"
+  value       = module.supervisor_agent.agent_name
 }
 
 output "agent_version" {
-  description = "Version of the Bedrock Agent"
-  value       = module.agent.agent_version
+  description = "Version of the primary Bedrock Agent (supervisor)"
+  value       = module.supervisor_agent.agent_version
 }
 
 output "agent_alias_id" {
-  description = "ID of the agent alias"
-  value       = module.agent.agent_alias_id
+  description = "ID of the primary agent alias (supervisor)"
+  value       = module.supervisor_agent.agent_alias_id
 }
 
 output "agent_alias_arn" {
-  description = "ARN of the agent alias"
-  value       = module.agent.agent_alias_arn
+  description = "ARN of the primary agent alias (supervisor)"
+  value       = module.supervisor_agent.agent_alias_arn
 }
 
 output "agent_alias_name" {
-  description = "Name of the agent alias"
-  value       = module.agent.agent_alias_name
+  description = "Name of the primary agent alias (supervisor)"
+  value       = module.supervisor_agent.agent_alias_name
 }
 
 # Guardrails Outputs
@@ -147,6 +148,22 @@ output "growth_agent_alias_id" {
   value       = module.growth_expert_agent.agent_alias_id
 }
 
+# Supervisor Agent
+output "supervisor_agent_id" {
+  description = "ID of the Supervisor Agent"
+  value       = module.supervisor_agent.agent_id
+}
+
+output "supervisor_agent_alias_id" {
+  description = "Alias ID of the Supervisor Agent"
+  value       = module.supervisor_agent.agent_alias_id
+}
+
+output "supervisor_agent_arn" {
+  description = "ARN of the Supervisor Agent"
+  value       = module.supervisor_agent.agent_arn
+}
+
 # Configuration Summary
 output "configuration_summary" {
   description = "Summary of the deployed configuration"
@@ -157,11 +174,11 @@ output "configuration_summary" {
       created_at = module.knowledge_base.knowledge_base_created_at
     }
     agent = {
-      id         = module.agent.agent_id
-      name       = module.agent.agent_name
-      version    = module.agent.agent_version
-      alias_id   = module.agent.agent_alias_id
-      alias_name = module.agent.agent_alias_name
+      id         = module.supervisor_agent.agent_id
+      name       = module.supervisor_agent.agent_name
+      version    = module.supervisor_agent.agent_version
+      alias_id   = module.supervisor_agent.agent_alias_id
+      alias_name = module.supervisor_agent.agent_alias_name
     }
     guardrails = var.enable_guardrails ? {
       id      = module.guardrails[0].guardrail_id

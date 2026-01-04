@@ -11,6 +11,11 @@ output "websocket_api_endpoint" {
   value       = module.api_gateway.websocket_api_endpoint
 }
 
+output "analysis_api_endpoint" {
+  description = "Analysis REST API endpoint URL (for streaming analysis)"
+  value       = module.api_gateway.analysis_api_endpoint
+}
+
 # Lambda Functions
 output "lambda_functions" {
   description = "Deployed Lambda function names"

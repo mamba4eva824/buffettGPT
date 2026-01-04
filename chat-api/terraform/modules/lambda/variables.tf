@@ -135,3 +135,16 @@ variable "cors_allowed_origins" {
   type        = list(string)
   default     = ["http://localhost:3000", "http://localhost:5173"]
 }
+
+# Prediction Ensemble Variables
+variable "prediction_ensemble_image_tag" {
+  description = "Docker image tag for prediction ensemble Lambda"
+  type        = string
+  default     = "latest"
+}
+
+variable "bedrock_model_id" {
+  description = "Bedrock model ID for ConverseStream API (Claude Haiku 4.5 via US cross-region inference profile)"
+  type        = string
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+}
