@@ -37,6 +37,18 @@ jobs:
           chmod +x scripts/build_lambdas.sh
           ./scripts/build_lambdas.sh
 
+      - name: Build ML Layer
+        working-directory: chat-api/backend
+        run: |
+          chmod +x scripts/build_ml_layer.sh
+          ./scripts/build_ml_layer.sh
+
+      - name: Build Data Fetcher Action Lambda
+        working-directory: chat-api/backend
+        run: |
+          chmod +x scripts/build_data_fetcher_action.sh
+          ./scripts/build_data_fetcher_action.sh
+
       - name: Upload Lambda packages
         uses: actions/upload-artifact@v4
         with:
