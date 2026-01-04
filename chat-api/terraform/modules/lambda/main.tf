@@ -46,18 +46,8 @@ locals {
       memory_size = 256
       description = "AI search handler with streaming support"
     }
-    debt_analysis_agent_handler = {
-      handler     = "debt_analysis_agent_handler.lambda_handler"
-      timeout     = 120
-      memory_size = 512
-      description = "Debt analysis agent handler with streaming support"
-    }
-    ensemble_analyzer = {
-      handler     = "ensemble_analyzer.lambda_handler"
-      timeout     = 120
-      memory_size = 512
-      description = "Ensemble 3-model analyzer with Bedrock streaming"
-    }
+    # NOTE: debt_analysis_agent_handler was removed - functionality merged into prediction_ensemble
+    # NOTE: prediction_ensemble is now Docker-based (see prediction_ensemble_docker.tf)
     analysis_followup = {
       handler     = "analysis_followup.lambda_handler"
       timeout     = 60
@@ -79,6 +69,27 @@ resource "aws_lambda_layer_version" "dependencies" {
   compatible_runtimes = [var.runtime]
 
   source_code_hash = filebase64sha256("${var.lambda_package_path}/dependencies-layer.zip")
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# ================================================
+# Lambda Layer for ML Dependencies (numpy, scikit-learn)
+# ================================================
+
+resource "aws_lambda_layer_version" "ml_dependencies" {
+  # Use S3 for layers > 50MB (scipy + xgboost = ~60MB)
+  s3_bucket        = var.model_s3_bucket
+  s3_key           = "layers/ml-layer.zip"
+  layer_name       = "${var.project_name}-${var.environment}-ml-dependencies"
+  description      = "ML dependencies (numpy, scikit-learn, xgboost, scipy) for XGBoost inference"
+
+  compatible_runtimes = [var.runtime]
+
+  # Note: source_code_hash not supported with S3 source
+  # Layer versions are immutable; deploy new version by changing s3_object_version
 
   lifecycle {
     create_before_destroy = true
