@@ -87,6 +87,39 @@ output "ticker_lookup_table_arn" {
   value       = aws_dynamodb_table.ticker_lookup_cache.arn
 }
 
+# Forex Rate Cache Table
+output "forex_cache_table_name" {
+  description = "Name of the forex rate cache table"
+  value       = aws_dynamodb_table.forex_rate_cache.name
+}
+
+output "forex_cache_table_arn" {
+  description = "ARN of the forex rate cache table"
+  value       = aws_dynamodb_table.forex_rate_cache.arn
+}
+
+# Investment Reports Table (v1 - single blob)
+output "investment_reports_table_name" {
+  description = "Name of the investment reports table"
+  value       = aws_dynamodb_table.investment_reports.name
+}
+
+output "investment_reports_table_arn" {
+  description = "ARN of the investment reports table"
+  value       = aws_dynamodb_table.investment_reports.arn
+}
+
+# Investment Reports v2 Table (section-per-item schema)
+output "investment_reports_v2_table_name" {
+  description = "Name of the investment reports v2 table (section-based)"
+  value       = aws_dynamodb_table.investment_reports_v2.name
+}
+
+output "investment_reports_v2_table_arn" {
+  description = "ARN of the investment reports v2 table (section-based)"
+  value       = aws_dynamodb_table.investment_reports_v2.arn
+}
+
 # Summary Output
 output "table_summary" {
   description = "Summary of all DynamoDB tables"
@@ -99,6 +132,11 @@ output "table_summary" {
     }
     rate_limiting = {
       enhanced_rate_limits = aws_dynamodb_table.enhanced_rate_limits.name
+    }
+    investment_research = {
+      investment_reports    = aws_dynamodb_table.investment_reports.name
+      investment_reports_v2 = aws_dynamodb_table.investment_reports_v2.name
+      forex_cache           = aws_dynamodb_table.forex_rate_cache.name
     }
     optional = {
       anonymous_sessions = var.enable_anonymous_sessions ? aws_dynamodb_table.anonymous_sessions[0].name : "disabled"

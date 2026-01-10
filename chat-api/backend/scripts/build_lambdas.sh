@@ -22,19 +22,18 @@ echo ""
 echo "Building Lambda layer..."
 "${SCRIPT_DIR}/build_layer.sh"
 
-# List of Lambda functions to package
+# List of Lambda functions to package (zip-based)
+# NOTE: prediction_ensemble is Docker-based, see lambda/prediction_ensemble/
 FUNCTIONS=(
     "auth_callback"
     "auth_verify"
     "chat_http_handler"
     "chat_processor"
     "conversations_handler"
-    "debt_analysis_agent_handler"
     "search_handler"
     "websocket_connect"
     "websocket_disconnect"
     "websocket_message"
-    "ensemble_analyzer"
     "analysis_followup"
 )
 

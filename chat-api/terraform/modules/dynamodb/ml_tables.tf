@@ -105,6 +105,44 @@ resource "aws_dynamodb_table" "ticker_lookup_cache" {
   )
 }
 
+# Forex Rate Cache - caches exchange rates for multi-currency support
+resource "aws_dynamodb_table" "forex_rate_cache" {
+  name           = "${var.project_name}-${var.environment}-forex-cache"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "currency_pair"  # e.g., "DKKUSD", "EURUSD"
+
+  attribute {
+    name = "currency_pair"
+    type = "S"
+  }
+
+  # TTL: 24 hours (forex rates change daily)
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  point_in_time_recovery {
+    enabled = var.enable_pitr
+  }
+
+  deletion_protection_enabled = var.enable_deletion_protection
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name    = "${var.project_name}-${var.environment}-forex-cache"
+      Purpose = "Forex rate cache for multi-currency financial reports"
+      TTL     = "24 hours"
+    }
+  )
+}
+
 resource "aws_dynamodb_table" "idempotency_cache" {
   name           = "${var.project_name}-${var.environment}-idempotency-cache"
   billing_mode   = "PAY_PER_REQUEST"  # On-demand for unpredictable request patterns

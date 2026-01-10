@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import useTypewriter from '../../hooks/useTypewriter';
 
 /**
  * StreamingText - Real-time markdown display with auto-scroll
@@ -13,12 +14,18 @@ import { motion } from 'framer-motion';
 const StreamingText = ({ text, isStreaming }) => {
   const containerRef = useRef(null);
 
+  // Use typewriter effect for word-by-word reveal
+  const { displayText, isTyping } = useTypewriter(text, {
+    speed: 50,  // ~50 characters per second
+    isActive: isStreaming
+  });
+
   // Auto-scroll as text streams in
   useEffect(() => {
-    if (containerRef.current && isStreaming) {
+    if (containerRef.current && (isTyping || isStreaming)) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [text, isStreaming]);
+  }, [displayText, isTyping, isStreaming]);
 
   // Simple markdown-to-JSX renderer
   const renderMarkdown = (content) => {
@@ -121,13 +128,12 @@ const StreamingText = ({ text, isStreaming }) => {
   return (
     <div
       ref={containerRef}
-      className="prose dark:prose-invert max-w-none overflow-y-auto"
-      style={{ maxHeight: 'calc(100vh - 300px)' }}
+      className="prose dark:prose-invert max-w-none"
     >
-      {renderMarkdown(text)}
+      {renderMarkdown(displayText)}
 
-      {/* Blinking cursor while streaming */}
-      {isStreaming && text && (
+      {/* Blinking cursor while typing or streaming */}
+      {(isTyping || isStreaming) && displayText && (
         <motion.span
           className="inline-block w-2 h-5 bg-blue-500 ml-1 align-middle"
           animate={{ opacity: [1, 0, 1] }}

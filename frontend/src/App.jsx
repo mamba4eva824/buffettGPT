@@ -1,12 +1,205 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Wifi, WifiOff, Loader2, Trash2, MessageSquare, Zap, ThumbsUp, ThumbsDown, RefreshCcw, Archive, FolderOpen, X, Menu, ChevronDown, User, LogOut, Sun, Moon, PanelLeftClose, Sparkles, Lightbulb, BarChart3 } from "lucide-react";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
 import AnalysisView from "./components/analysis/AnalysisView.jsx";
-import { AuthProvider, AuthButton, useAuth, GoogleLoginButton } from "./auth.jsx";
+import StreamingText from "./components/analysis/StreamingText.jsx";
+import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
 import { ConversationList } from "./components/ConversationList.jsx";
 import { loadConversationHistory } from "./api/conversationsApi.js";
 import { Avatar } from "./components/Avatar.jsx";
 import logger from "./utils/logger.js";
+
+// Helper to detect if content is analysis output
+function isAnalysisContent(content) {
+  if (!content) return false;
+
+  // Check for structured JSON format (new supervisor analysis format)
+  if (content.startsWith('{')) {
+    try {
+      const data = JSON.parse(content);
+      if (data._type === 'supervisor_analysis') return true;
+    } catch (e) {
+      // Not valid JSON, continue with other checks
+    }
+  }
+
+  // Check for specific analyst markers
+  const hasAnalystMarkers = content.includes('## DEBT ANALYST:') ||
+         content.includes('## CASHFLOW ANALYST:') ||
+         content.includes('## GROWTH ANALYST:') ||
+         content.includes('DEBT ANALYST:') ||
+         content.includes('CASHFLOW ANALYST:') ||
+         content.includes('GROWTH ANALYST:');
+
+  if (hasAnalystMarkers) return true;
+
+  // Check for supervisor/analysis patterns (more flexible detection)
+  const hasAnalysisPatterns = (
+    (content.includes('Investment') || content.includes('investment')) &&
+    (content.includes('Analysis') || content.includes('analysis') ||
+     content.includes('Recommendation') || content.includes('recommendation'))
+  ) || (
+    // Check for signal patterns like "BUY", "HOLD", "SELL" with confidence
+    /\b(BUY|HOLD|SELL)\b.*\d+%/i.test(content)
+  ) || (
+    // Check for structured analysis sections
+    content.includes('## Summary') ||
+    content.includes('## Recommendation') ||
+    content.includes('## Investment Thesis') ||
+    content.includes('**Debt Analysis**') ||
+    content.includes('**Cashflow Analysis**') ||
+    content.includes('**Growth Analysis**')
+  );
+
+  return hasAnalysisPatterns;
+}
+
+// Helper to extract company/ticker from a user query
+// Handles: "What's Tesla's growth?", "Analyze Apple", "AAPL", "Tell me about Microsoft"
+function extractCompanyFromQuery(query) {
+  if (!query) return null;
+  const text = query.trim();
+
+  // If it looks like a ticker already (1-5 uppercase letters), return as-is
+  if (/^[A-Z]{1,5}$/.test(text.toUpperCase()) && text.length <= 5) {
+    return text.toUpperCase();
+  }
+
+  // Common patterns for company mentions
+  const patterns = [
+    // "Analyze X" or "analyze X"
+    /analyze\s+(.+?)(?:\s*$|\s+(?:debt|cashflow|growth|position|outlook))/i,
+    // "What's X's outlook?" or "What is X's growth?"
+    /what(?:'s|'s| is)\s+(.+?)(?:'s|'s)\s+(?:debt|cashflow|growth|outlook|position|analysis)/i,
+    // "Tell me about X" or "Tell me about X's debt"
+    /tell me about\s+(.+?)(?:'s|'s|\s+debt|\s+cashflow|\s+growth|\s*$)/i,
+    // "X's debt analysis" or "X debt analysis"
+    /^(.+?)(?:'s|'s)?\s+(?:debt|cashflow|growth|financial)\s*(?:analysis|outlook|position)?/i,
+    // "How is X doing?" or "How's X?"
+    /how(?:'s|'s| is)\s+(.+?)(?:\s+doing|\?|$)/i,
+    // Simple "X" if it's 2+ words that look like a company name
+    /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      // Clean up the extracted company name
+      let company = match[1].trim();
+      // Remove trailing punctuation
+      company = company.replace(/[?.!,]+$/, '').trim();
+      // Remove possessive 's if present at end
+      company = company.replace(/'s$|'s$/, '').trim();
+      if (company.length > 0) {
+        return company;
+      }
+    }
+  }
+
+  // Fallback: just return the input as-is (backend will try to normalize it)
+  return text;
+}
+
+// Helper to extract ticker from analysis messages
+function extractTickerFromMessages(messages) {
+  // Look through user messages for company/ticker
+  for (const msg of messages) {
+    if (msg.type === 'user' && msg.content) {
+      const content = msg.content.trim();
+
+      // Try pattern with parentheses first: "Analyze X (debt analysis)"
+      let match = content.match(/Analyze\s+(.+?)\s*\(/i);
+      if (match) {
+        return match[1].trim();
+      }
+      // Try simple "Analyze X" pattern
+      match = content.match(/Analyze\s+(.+)/i);
+      if (match) {
+        return match[1].trim();
+      }
+      // Check if it's just a ticker (1-5 uppercase letters)
+      if (/^[A-Z]{1,5}$/.test(content.toUpperCase()) && content.length <= 5) {
+        return content.toUpperCase();
+      }
+      // Check if it looks like a company name (first user message in analysis conversation)
+      // If we have analysis content but couldn't match patterns, use the first user message as-is
+      if (content.length > 0 && content.length < 50) {
+        return content;
+      }
+    }
+  }
+  return null;
+}
+
+// Helper to parse saved messages into AnalysisView results format
+function parseAnalysisResults(messages) {
+  const results = {
+    debt: { isStreaming: false, text: '', prediction: null, confidence: null },
+    cashflow: { isStreaming: false, text: '', prediction: null, confidence: null },
+    growth: { isStreaming: false, text: '', prediction: null, confidence: null }
+  };
+
+  // Find assistant messages with analysis content
+  for (const msg of messages) {
+    if (msg.type !== 'assistant' || !msg.content) continue;
+
+    const content = msg.content;
+
+    // Try to parse as structured JSON (new format from supervisor analysis)
+    if (content.startsWith('{')) {
+      try {
+        const data = JSON.parse(content);
+        if (data._type === 'supervisor_analysis' && data.predictions) {
+          // Map structured data to results format
+          for (const [agentType, pred] of Object.entries(data.predictions)) {
+            if (['debt', 'cashflow', 'growth'].includes(agentType) && pred) {
+              results[agentType] = {
+                isStreaming: false,
+                text: data.synthesis || '',
+                prediction: pred.prediction,
+                confidence: pred.confidence
+              };
+            }
+          }
+          // Found structured analysis, return early
+          return results;
+        }
+      } catch (e) {
+        // Not valid JSON, fall through to marker-based parsing
+      }
+    }
+
+    // Fallback: Detect which analyst type by markers (legacy format)
+    let agentType = null;
+    if (content.includes('DEBT ANALYST:')) {
+      agentType = 'debt';
+    } else if (content.includes('CASHFLOW ANALYST:')) {
+      agentType = 'cashflow';
+    } else if (content.includes('GROWTH ANALYST:')) {
+      agentType = 'growth';
+    }
+
+    if (agentType && !results[agentType].text) {
+      // Extract prediction and confidence from header
+      // Pattern: "DEBT ANALYST: HOLD (33% confidence)"
+      const headerMatch = content.match(/(\w+)\s+ANALYST:\s*(SELL|HOLD|BUY)\s*\((\d+)%\s*confidence\)/i);
+
+      results[agentType] = {
+        isStreaming: false,
+        text: content,
+        prediction: headerMatch ? headerMatch[2].toUpperCase() : 'HOLD',
+        confidence: headerMatch ? parseInt(headerMatch[3]) / 100 : 0.33
+      };
+    }
+  }
+
+  return results;
+}
+
+// Check if messages contain analysis content
+function hasAnalysisMessages(messages) {
+  return messages.some(msg => msg.type === 'assistant' && isAnalysisContent(msg.content));
+}
 
 /*************************
  * Environment Configuration *
@@ -385,80 +578,6 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
   return { status, sessionId, messages, connect, disconnect, sendMessage, setMessages, switchConversation };
 }
 
-/************************
- * REST helpers          *
- ************************/
-
-async function sendChatMessage(restBaseUrl, message, sessionId, token) {
-  // Send chat message via REST API
-  const baseUrl = restBaseUrl.replace(/\/$/, "");
-  const url = `${baseUrl}/chat`;
-
-  const headers = {
-    "Content-Type": "application/json"
-  };
-
-  // Add authorization header if token is available
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const body = {
-    message: message,
-    session_id: sessionId
-  };
-
-  logger.log('📤 Sending REST API message:', url, body);
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Chat request failed (${res.status}): ${errorText}`);
-  }
-
-  return res.json();
-}
-
-async function sendSearchQuery(restBaseUrl, query, conversationId, token) {
-  // Send search query via REST API to Perplexity
-  const baseUrl = restBaseUrl.replace(/\/$/, "");
-  const url = `${baseUrl}/search`;
-
-  const headers = {
-    "Content-Type": "application/json"
-  };
-
-  // Add authorization header if token is available
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const body = {
-    query: query,
-    conversation_id: conversationId,
-    model: "sonar"
-  };
-
-  logger.log('🔍 Sending search query:', url, body);
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body)
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Search request failed (${res.status}): ${errorText}`);
-  }
-
-  return res.json();
-}
 
 /************************
  * Message bubble        *
@@ -466,6 +585,31 @@ async function sendSearchQuery(restBaseUrl, query, conversationId, token) {
 function MessageBubble({ msg, user, messageRef }) {
   const isUser = msg.type === "user";
   const isSystem = msg.type === "system";
+  const isAnalysis = !isUser && !isSystem && isAnalysisContent(msg.content);
+
+  // For analysis content, render with StreamingText for proper markdown
+  if (isAnalysis) {
+    return (
+      <div ref={messageRef} className="w-full">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 md:p-6 shadow-sm border border-slate-100 dark:border-slate-700">
+          <StreamingText text={msg.content} isStreaming={false} />
+        </div>
+      </div>
+    );
+  }
+
+  // For user "Analyze X" messages, show a compact pill
+  if (isUser && msg.content?.startsWith('Analyze ')) {
+    return (
+      <div ref={messageRef} className="flex justify-end">
+        <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full text-sm">
+          <span>📊</span>
+          <span>{msg.content}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div ref={messageRef} className={classNames("flex gap-2 md:gap-3", isUser ? "justify-end" : "justify-start") }>
       {!isUser && (
@@ -479,13 +623,6 @@ function MessageBubble({ msg, user, messageRef }) {
       )}
       <div className={classNames("max-w-[85%] md:max-w-[80%] rounded-2xl px-3 md:px-4 py-2.5 md:py-3 text-sm md:text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-slate-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100")}>
         <div className="whitespace-pre-wrap break-words">{msg.content}</div>
-        {!isUser && !isSystem && (
-          <div className={classNames("mt-2 flex items-center gap-3 md:gap-2 text-[11px] text-slate-400")}>
-            <button className="inline-flex items-center hover:opacity-70 active:opacity-50 min-h-[44px] md:min-h-0 -my-2 md:my-0" title="Like"><ThumbsUp className="h-3.5 w-3.5 md:h-3 md:w-3"/></button>
-            <button className="inline-flex items-center hover:opacity-70 active:opacity-50 min-h-[44px] md:min-h-0 -my-2 md:my-0" title="Dislike"><ThumbsDown className="h-3.5 w-3.5 md:h-3 md:w-3"/></button>
-            <button className="inline-flex items-center gap-1 hover:opacity-70 active:opacity-50 min-h-[44px] md:min-h-0 -my-2 md:my-0"><RefreshCcw className="h-3.5 w-3.5 md:h-3 md:w-3"/> Retry</button>
-          </div>
-        )}
       </div>
       {isUser && (
         <Avatar
@@ -527,7 +664,6 @@ function ChatApp() {
   
   // Use environment variables directly - no user override needed
   const wsUrl = ENV_CONFIG.WEBSOCKET_URL;
-  const restUrl = ENV_CONFIG.REST_API_URL;
   const [userName, setUserName] = useState(() => {
     const saved = getLS(LS_KEYS.userName);
     return saved || `${ENV_CONFIG.DEFAULT_USER_NAME}_${uid8()}`;
@@ -552,12 +688,15 @@ function ChatApp() {
   // UI state
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
-  const [mode, setMode] = useState('bedrock'); // 'search', 'bedrock', or 'analysis'
+  const [selectedMode, setSelectedMode] = useState('buffett');
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [analysisTicker, setAnalysisTicker] = useState('');
+  const [savedAnalysisResults, setSavedAnalysisResults] = useState(null);  // For viewing saved analysis from history
+  const [analysisComplete, setAnalysisComplete] = useState(false);  // Track when to show follow-up suggestions
+  const [isLoadedFromHistory, setIsLoadedFromHistory] = useState(false);  // Prevent re-analysis when viewing saved
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
+  const isConnecting = false; // Simplified - no connection waiting needed for analysis mode
   const [sidebarOpen, setSidebarOpen] = useState(isAuthenticated);
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
@@ -582,7 +721,7 @@ function ChatApp() {
     fetchConversations
   } = useConversations({ token, userId: user?.id, includeArchived: isAuthenticated ? showArchived : false });
 
-  const { status, sessionId, messages, connect, disconnect, sendMessage, setMessages, switchConversation } = useAwsWebSocket({
+  const { status, sessionId, messages, connect, disconnect, setMessages, switchConversation } = useAwsWebSocket({
     wsUrl,
     userId,
     token,
@@ -689,7 +828,7 @@ function ChatApp() {
     }
   }, [sessionId, messages, isAuthenticated, selectedConversation, updateConversation]);
 
-  const doSend = useCallback(async (overrideText = null, currentMode = 'bedrock') => {
+  const doSend = useCallback(async (overrideText = null) => {
     const textToSend = overrideText || input;
     if (!textToSend?.trim()) return;
 
@@ -707,171 +846,22 @@ function ChatApp() {
       setInput("");
     }
 
-    // Set evaluating state when sending message
-    setIsEvaluating(true);
-
     // Create conversation if needed (for authenticated users)
     if (isAuthenticated && !selectedConversation && messages.length === 0) {
-      const title = messageText.slice(0, 50) + (messageText.length > 50 ? '...' : '');
+      const title = `Analysis: ${messageText.slice(0, 40)}${messageText.length > 40 ? '...' : ''}`;
       const newConv = await createConversation(title);
       if (newConv) {
         setSelectedConversation(newConv);
-        // useEffect will handle WebSocket reconnection with the new conversation_id
-        // Wait for the WebSocket to reconnect before sending
-        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
-    // ANALYSIS MODE: Open Deep Value Analysis view
-    if (currentMode === 'analysis') {
-      setAnalysisTicker(messageText.trim());
-      setShowAnalysis(true);
-      if (!overrideText) setInput("");
-      setIsEvaluating(false);
-      return;
-    }
-
-    // SEARCH MODE: Use REST API to call Perplexity
-    if (currentMode === 'search' && restUrl) {
-      // Add user message immediately
-      const userMsg = {
-        id: `usr-${uid8()}`,
-        type: "user",
-        content: messageText,
-        timestamp: nowIso()
-      };
-      setMessages((m) => [...m, userMsg]);
-
-      try {
-        // Send search query via REST API
-        const effectiveConversationId = selectedConversation?.conversation_id || sessionId || uid8();
-        const response = await sendSearchQuery(restUrl, messageText, effectiveConversationId, token);
-
-        // Add AI response
-        const aiMsg = {
-          id: response.ai_message_id || `ai-${uid8()}`,
-          type: "assistant",
-          content: response.response || "No response received",
-          timestamp: response.timestamp || nowIso(),
-          meta: { processingTime: response.processing_time_ms, model: response.model }
-        };
-        setMessages((m) => [...m, aiMsg]);
-
-        // Clear evaluating state
-        setIsEvaluating(false);
-
-        // Refresh conversations to update inbox ordering
-        if (fetchConversations) {
-          fetchConversations();
-        }
-
-      } catch (error) {
-        logger.error('Search API error:', error);
-        // Add error message
-        const errorMsg = {
-          id: `err-${uid8()}`,
-          type: "system",
-          content: `Search error: ${error.message}`,
-          timestamp: nowIso()
-        };
-        setMessages((m) => [...m, errorMsg]);
-
-        // Clear evaluating state on error
-        setIsEvaluating(false);
-      }
-
-      // For unauthorized users, increment query count
-      if (!isAuthenticated) {
-        const newCount = incrementQueryCount();
-        const newRemaining = DAILY_QUERY_LIMIT - newCount;
-        setRemainingQueries(newRemaining);
-        setHasStartedQuerying(true);
-
-        // Only show banner after first query and with delay for animation
-        setTimeout(() => {
-          setShowRateLimitBanner(true);
-        }, 500);
-
-        // Auto-hide banner after 8 seconds
-        setTimeout(() => {
-          setShowRateLimitBanner(false);
-        }, 8000);
-      }
-
-      return;
-    }
-
-    // BEDROCK MODE: Use WebSocket or fallback to REST
-    // For authenticated users, wait for WebSocket connection if it's in progress
-    if (isAuthenticated && token && (status === "connecting" || status === "disconnected")) {
-      setIsConnecting(true);
-      // Wait up to 5 seconds for connection
-      let attempts = 0;
-      const maxAttempts = 25;
-      while ((status === "connecting" || status === "disconnected") && attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-        attempts++;
-      }
-      setIsConnecting(false);
-
-      // If still not connected after waiting, log warning
-      if (status !== "connected") {
-        logger.warn('⚠️ WebSocket failed to connect after waiting, status:', status);
-      }
-    }
-
-    // Check if we should use REST API (authenticated and has REST URL)
-    if (isAuthenticated && token && restUrl && status !== "connected") {
-      // Add user message immediately
-      const userMsg = {
-        id: `usr-${uid8()}`,
-        type: "user",
-        content: messageText,
-        timestamp: nowIso()
-      };
-      setMessages((m) => [...m, userMsg]);
-
-      try {
-        // Send via REST API - use conversation_id if available, otherwise sessionId
-        const effectiveSessionId = selectedConversation?.conversation_id || sessionId || uid8();
-        const response = await sendChatMessage(restUrl, messageText, effectiveSessionId, token);
-
-        // Add AI response
-        const aiMsg = {
-          id: response.ai_message_id || `ai-${uid8()}`,
-          type: "assistant",
-          content: response.response || "No response received",
-          timestamp: response.timestamp || nowIso(),
-          meta: { processingTime: response.processing_time }
-        };
-        setMessages((m) => [...m, aiMsg]);
-
-        // Clear evaluating state
-        setIsEvaluating(false);
-
-        // Refresh conversations to update inbox ordering
-        if (fetchConversations) {
-          fetchConversations();
-        }
-
-      } catch (error) {
-        logger.error('REST API error:', error);
-        // Add error message
-        const errorMsg = {
-          id: `err-${uid8()}`,
-          type: "system",
-          content: `Error: ${error.message}`,
-          timestamp: nowIso()
-        };
-        setMessages((m) => [...m, errorMsg]);
-
-        // Clear evaluating state on error
-        setIsEvaluating(false);
-      }
-    } else {
-      // Use WebSocket or demo mode - pass conversation_id
-      sendMessage(messageText, selectedConversation?.conversation_id);
-    }
+    // Open Deep Value Analysis view (fresh analysis, not from saved results)
+    // Extract company/ticker from natural language query
+    const extractedCompany = extractCompanyFromQuery(messageText);
+    setSavedAnalysisResults(null);
+    setIsLoadedFromHistory(false);  // This is a new analysis, not loaded from history
+    setAnalysisTicker(extractedCompany);
+    setShowAnalysis(true);
 
     // For unauthorized users, increment query count and show banner
     if (!isAuthenticated) {
@@ -880,39 +870,30 @@ function ChatApp() {
       setRemainingQueries(newRemaining);
       setHasStartedQuerying(true);
 
-      // Only show banner after first query and with delay for animation
       setTimeout(() => {
         setShowRateLimitBanner(true);
       }, 500);
 
-      // Auto-hide banner after 8 seconds
       setTimeout(() => {
         setShowRateLimitBanner(false);
       }, 8000);
     }
-  }, [input, sendMessage, isAuthenticated, token, restUrl, status, sessionId, setMessages, selectedConversation, createConversation, fetchConversations]);
+  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation]);
 
-  const newChat = useCallback(async () => {
-    // Clear messages first
+  const newChat = useCallback(() => {
+    // Clear messages and reset analysis view state
     setMessages([]);
+    setShowAnalysis(false);
+    setSavedAnalysisResults(null);
+    setAnalysisComplete(false);
+    setAnalysisTicker('');
+    setIsLoadedFromHistory(false);
 
-    // If authenticated, create a new conversation in the backend
-    if (isAuthenticated && token) {
-      const title = `Chat ${new Date().toLocaleDateString()}`;
-      const newConv = await createConversation(title);
-      if (newConv) {
-        setSelectedConversation(newConv);
-        // Don't manually reconnect here - let useEffect handle it
-        return; // Exit early, conversation change will trigger reconnect
-      }
-    }
-
-    // For non-authenticated users or if conversation creation failed
-    // Clear selection and start fresh session
+    // Clear selection - conversation will be created in doSend when user submits a company
     setSelectedConversation(null);
     disconnect();
     setTimeout(() => connect(), 50);
-  }, [disconnect, connect, setMessages, setSelectedConversation, isAuthenticated, token, createConversation]);
+  }, [disconnect, connect, setMessages, setSelectedConversation]);
 
   const removeSession = useCallback((id) => {
     setSessions((prev) => {
@@ -923,7 +904,7 @@ function ChatApp() {
   }, []);
 
   // Load conversation messages when switching conversations
-  const loadConversationMessages = useCallback(async (conversationId) => {
+  const loadConversationMessages = useCallback(async (conversationId, conversationTitle = null) => {
     if (!token || !conversationId) return;
 
     try {
@@ -971,6 +952,49 @@ function ChatApp() {
           return timeA - timeB;
         });
 
+      // Check if this conversation has analysis content OR title indicates analysis
+      const isAnalysisConversation = hasAnalysisMessages(formattedMessages) ||
+        (conversationTitle && conversationTitle.toLowerCase().startsWith('analysis:'));
+
+      if (isAnalysisConversation) {
+        // Extract ticker and parse results for AnalysisView
+        let ticker = extractTickerFromMessages(formattedMessages);
+
+        // Fallback: try to extract from conversation title (e.g., "Analysis: Apple...")
+        if (!ticker && conversationTitle) {
+          const titleMatch = conversationTitle.match(/Analysis:\s*(.+?)(?:\.\.\.|$)/i);
+          if (titleMatch) {
+            ticker = titleMatch[1].trim();
+          }
+        }
+
+        const analysisResults = parseAnalysisResults(formattedMessages);
+
+        // Check if we actually have analysis content to display
+        const hasContent = analysisResults.debt?.text ||
+                          analysisResults.cashflow?.text ||
+                          analysisResults.growth?.text;
+
+        // Even if we can't parse results, show analysis view if we have a ticker
+        if (ticker) {
+          // IMPORTANT: Order matters for preventing race conditions!
+          // Set guards FIRST (isLoadedFromHistory, savedResults) before setting
+          // the trigger (analysisTicker) to prevent useEffect from firing prematurely
+          setIsLoadedFromHistory(true);  // 1. Guard - prevents new analysis
+          setSavedAnalysisResults(hasContent ? analysisResults : null);  // 2. Results
+          setAnalysisComplete(hasContent);  // 3. Completion state
+          setShowAnalysis(true);  // 4. Show the view
+          setAnalysisTicker(ticker);  // 5. TRIGGER - set last!
+          // Don't set messages - we'll show AnalysisView instead
+          setMessages([]);
+          return;
+        }
+      }
+
+      // Regular conversation - show messages
+      setSavedAnalysisResults(null);
+      setShowAnalysis(false);
+      setAnalysisComplete(false);
       setMessages(formattedMessages);
     } catch (error) {
       logger.error('Error loading conversation messages:', error);
@@ -979,21 +1003,12 @@ function ChatApp() {
   }, [token, setMessages]);
 
 
-  const connectionBadge = status === "connected" ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2 py-1 text-xs"><Wifi className="h-3 w-3"/> Connected</span>
-  ) : status === "connecting" ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-700 px-2 py-1 text-xs"><Loader2 className="h-3 w-3 animate-spin"/> Connecting</span>
-  ) : status === "error" ? (
-    <span className="inline-flex items-center gap-1 rounded-full bg-red-100 text-red-700 px-2 py-1 text-xs"><WifiOff className="h-3 w-3"/> Error</span>
-  ) : (
-    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-600 px-2 py-1 text-xs"><WifiOff className="h-3 w-3"/> Disconnected</span>
-  );
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#e6eef9] dark:bg-slate-900 text-slate-800 dark:text-slate-100">
-      {/* App shell */}
-      <div className="mx-auto h-full max-w-[1400px] md:px-4 md:py-6">
-        <div className="flex h-full md:rounded-3xl bg-white dark:bg-slate-800 md:shadow-xl md:ring-1 md:ring-black/5 md:ring-slate-700/50">
+    <div className="h-screen w-screen overflow-hidden bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100">
+      {/* App shell - full width, no pane */}
+      <div className="h-full">
+        <div className="flex h-full">
           {/* Mobile backdrop overlay - only visible when sidebar open on mobile */}
           {isAuthenticated && sidebarOpen && (
             <div
@@ -1037,10 +1052,10 @@ function ChatApp() {
             ) : (
               <>
                 {/* Collapsed sidebar content */}
-                <div className="flex flex-col items-center gap-3">
+                <div className="flex flex-col items-center gap-3 h-full">
                   <button
                     onClick={() => setSidebarOpen(true)}
-                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-300"
                     title="Open sidebar"
                   >
                     <Menu className="h-4 w-4" />
@@ -1048,7 +1063,7 @@ function ChatApp() {
                   <button
                     onClick={newChat}
                     className="rounded-md p-2 bg-indigo-600 text-white hover:bg-indigo-700"
-                    title="New chat"
+                    title="New Analysis"
                   >
                     <Plus className="h-4 w-4" />
                   </button>
@@ -1061,36 +1076,53 @@ function ChatApp() {
                         if (searchInput) searchInput.focus();
                       }, 300);
                     }}
-                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-300"
                     title="Search chats"
                   >
                     <Search className="h-4 w-4" />
                   </button>
+
+                  {/* Spacer to push profile to bottom */}
+                  <div className="flex-1" />
+
+                  {/* Profile picture at bottom with connection status */}
                   <button
-                    onClick={() => setSettingsOpen(true)}
-                    className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                    title="Settings"
+                    onClick={() => setSidebarOpen(true)}
+                    className="rounded-full hover:ring-2 hover:ring-indigo-500 transition-all"
+                    title={user?.name || "Account"}
                   >
-                    <Settings className="h-4 w-4" />
+                    <div className="relative">
+                      <Avatar
+                        src={user?.picture || ''}
+                        alt={user?.name || user?.email || 'User'}
+                        size="w-8 h-8"
+                      />
+                      {/* Connection status dot */}
+                      {status && (
+                        <span className={classNames(
+                          "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800",
+                          status === "connected" ? "bg-emerald-500" :
+                          status === "connecting" ? "bg-amber-500 animate-pulse" :
+                          "bg-slate-400"
+                        )} />
+                      )}
+                    </div>
                   </button>
                 </div>
               </>
             )}
 
             {sidebarOpen && (
-              <>
+              <div className="flex flex-col h-full pb-4">
             <div className="flex items-center gap-2">
-              <button onClick={newChat} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700">
-                <Plus className="h-4 w-4"/> New chat
-              </button>
-              <button onClick={() => setSettingsOpen(true)} className="ml-auto rounded-xl border border-slate-200 dark:border-slate-600 p-2 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300" title="Settings">
-                <Settings className="h-4 w-4"/>
+              <button onClick={newChat} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg hover:bg-indigo-700 hover:shadow-indigo-200 dark:hover:shadow-indigo-900/30 transition-all">
+                <Plus className="h-4 w-4"/> New Analysis
               </button>
             </div>
 
-            <div className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
-              <Search className="h-4 w-4 text-slate-400"/>
-              <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"/>
+            <div className="mt-4 h-8 flex items-center gap-2 rounded-full border border-slate-200/80 dark:border-slate-600/50 bg-slate-50/90 dark:bg-slate-700/50 backdrop-blur-sm px-3 focus-within:border-indigo-400 dark:focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
+              <Search className="h-3.5 w-3.5 text-slate-400"/>
+              <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search" className="w-full bg-transparent text-xs outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500"/>
             </div>
 
 
@@ -1114,7 +1146,7 @@ function ChatApp() {
               )}
             </div>
 
-            <div className="mt-2 space-y-1 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600" style={{maxHeight: "calc(100vh - 320px)"}}>
+            <div className="mt-2 space-y-1 overflow-y-auto pr-1 pb-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600" style={{ maxHeight: 'calc(100vh - 280px)' }}>
               {/* Show conversation list for authenticated users */}
               {isAuthenticated ? (
                 <ConversationList
@@ -1126,7 +1158,7 @@ function ChatApp() {
                     setSelectedConversation(conv);
                     // Load messages for this conversation
                     if (conv.conversation_id) {
-                      await loadConversationMessages(conv.conversation_id);
+                      await loadConversationMessages(conv.conversation_id, conv.title);
                       // useEffect will handle WebSocket reconnection with conversation_id
                     }
                   }}
@@ -1162,16 +1194,27 @@ function ChatApp() {
               )}
             </div>
 
-            <div className="mt-4 text-xs text-center text-slate-400">Last 7 days</div>
-              </>
+            {/* Account section at bottom of sidebar */}
+            <div className="mt-auto shrink-0 mb-6">
+              <AccountDropdown
+                isOpen={accountDropdownOpen}
+                onToggle={setAccountDropdownOpen}
+                onSettingsClick={() => setSettingsOpen(true)}
+                darkMode={darkMode}
+                onDarkModeToggle={toggleDarkMode}
+                dropdownPosition="top"
+                connectionStatus={status}
+              />
+            </div>
+              </div>
             )}
           </aside>
           )}
 
           {/* Main panel */}
           <main className="relative flex min-w-0 flex-1 flex-col">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-700 px-4 md:px-6 py-4">
+            {/* Header - minimal, only for mobile menu and non-authenticated users */}
+            <div className="flex items-center justify-between px-4 md:px-6 py-2">
               <div className="flex items-center gap-2 md:gap-3">
                 {/* Mobile hamburger menu - only show on mobile when authenticated */}
                 {isAuthenticated && (
@@ -1183,43 +1226,28 @@ function ChatApp() {
                     <Menu className="h-5 w-5" />
                   </button>
                 )}
-                <button
-                  onClick={newChat}
-                  className="rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors cursor-pointer"
-                  title="Start new chat"
-                >
-                  {ENV_CONFIG.APP_NAME}
-                </button>
-                {/* Hide connection badge and session info on small mobile screens */}
-                <div className="hidden sm:block">
-                  {connectionBadge}
-                </div>
-                {selectedConversation ? (
-                  <div className="hidden sm:block rounded-full bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 text-xs text-indigo-600 dark:text-indigo-300">
-                    {selectedConversation.title}
-                  </div>
-                ) : sessionId ? (
-                  <div className="hidden sm:block rounded-full bg-slate-50 dark:bg-slate-700 px-3 py-1 text-xs text-slate-500 dark:text-slate-400">Session: {sessionId.slice(0,8)}…</div>
-                ) : null}
               </div>
               <div className="flex items-center gap-2">
                 {!wsUrl && (
                   <div className="rounded-lg bg-amber-50 px-3 py-1 text-xs text-amber-700">Add your WebSocket URL in Settings →</div>
                 )}
-                <AccountDropdown
-                  isOpen={accountDropdownOpen}
-                  onToggle={setAccountDropdownOpen}
-                  onSettingsClick={() => setSettingsOpen(true)}
-                  darkMode={darkMode}
-                  onDarkModeToggle={toggleDarkMode}
-                />
+                {/* Account dropdown moved to sidebar - show login button for non-authenticated users */}
+                {!isAuthenticated && (
+                  <AccountDropdown
+                    isOpen={accountDropdownOpen}
+                    onToggle={setAccountDropdownOpen}
+                    onSettingsClick={() => setSettingsOpen(true)}
+                    darkMode={darkMode}
+                    onDarkModeToggle={toggleDarkMode}
+                  />
+                )}
               </div>
             </div>
 
             {/* Dynamic Layout Based on Message State */}
-            {messages.length === 0 ? (
+            {messages.length === 0 && !showAnalysis ? (
               /* CENTERED LAYOUT - No messages (landing, auth, new chat) */
-              <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 transition-all duration-300 ease-in-out">
+              <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 pb-24 transition-all duration-300 ease-in-out">
                 <div className="text-center mb-8">
                   <div className="text-slate-400 dark:text-white text-3xl font-medium">
                     Welcome{isAuthenticated && userFirstName ? `, ${userFirstName}` : ''} to {ENV_CONFIG.APP_NAME}
@@ -1232,13 +1260,8 @@ function ChatApp() {
                     setInput={setInput}
                     doSend={doSend}
                     isConnecting={isConnecting}
-                    status={status}
-                    newChat={newChat}
-                    setSettingsOpen={setSettingsOpen}
-                    showTopicButtons={true}
-                    isAuthenticated={isAuthenticated}
-                    mode={mode}
-                    setMode={setMode}
+                    selectedMode={selectedMode}
+                    onModeChange={setSelectedMode}
                   />
                 </div>
               </div>
@@ -1247,18 +1270,29 @@ function ChatApp() {
               <>
                 {/* Analysis View or Messages Area */}
                 {showAnalysis ? (
-                  <div className="flex-1 overflow-hidden p-4">
+                  <div className="flex-1 flex flex-col min-h-0 p-4">
                     <AnalysisView
+                      key={`analysis-${selectedConversation?.conversation_id || 'new'}-${analysisTicker}`}
                       ticker={analysisTicker}
                       fiscalYear={new Date().getFullYear()}
-                      onClose={() => setShowAnalysis(false)}
+                      onClose={() => {
+                        setShowAnalysis(false);
+                        setSavedAnalysisResults(null);
+                        setAnalysisComplete(false);
+                        setIsLoadedFromHistory(false);
+                      }}
                       analysisApiUrl={import.meta.env.VITE_ANALYSIS_API_URL}
+                      token={token}
+                      conversationId={selectedConversation?.conversation_id}
+                      savedResults={savedAnalysisResults}
+                      isLoadedFromHistory={isLoadedFromHistory}
+                      onSuggestionsReady={setAnalysisComplete}
                     />
                   </div>
                 ) : (
-                <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out">
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
                   <div className="mx-auto max-w-3xl space-y-4">
-                    {messages.map((m, index) => {
+                    {messages.map((m) => {
                       // Find the last user message in the entire array
                       const userMessages = messages.filter(msg => msg.type === 'user');
                       const lastUserMsg = userMessages[userMessages.length - 1];
@@ -1287,7 +1321,8 @@ function ChatApp() {
                 </div>
                 )}
 
-                {/* Bottom Composer */}
+                {/* Bottom Composer - hide when analysis is showing */}
+                {!showAnalysis && (
                 <div className="border-t border-slate-100 dark:border-slate-700 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out">
                   {/* Rate Limit Banner */}
                   {showRateLimitBanner && !isAuthenticated && hasStartedQuerying && (
@@ -1303,15 +1338,11 @@ function ChatApp() {
                     setInput={setInput}
                     doSend={doSend}
                     isConnecting={isConnecting}
-                    status={status}
-                    newChat={newChat}
-                    setSettingsOpen={setSettingsOpen}
-                    showTopicButtons={false}
-                    isAuthenticated={isAuthenticated}
-                    mode={mode}
-                    setMode={setMode}
+                    selectedMode={selectedMode}
+                    onModeChange={setSelectedMode}
                   />
                 </div>
+                )}
               </>
             )}
 
@@ -1405,94 +1436,62 @@ function RateLimitBanner({ remainingQueries, onClose, onSignUp, isVisible }) {
   );
 }
 
-// Main App component wrapped with AuthProvider
-// Topic Buttons Component
-function TopicButtons({ onPromptSelect }) {
-  const [openDropdown, setOpenDropdown] = useState(null);
+// Analysis Mode Dropdown Component
+function AnalysisModeDropdown({ selectedMode, onModeChange }) {
+  const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  const topics = {
-    buffett_wisdom: {
-      label: "Buffett Wisdom",
-      prompts: [
-        "What does \"be fearful when others are greedy\" mean?",
-        "What is an \"economic moat\"?",
-        "Does Buffett recommend diversification or concentration?",
-        "What does Buffett look for in company management?",
-        "How should investors react to market crashes?"
-      ]
-    },
-    wealth_planning: {
-      label: "Wealth Planning",
-      prompts: [
-        "How much should I save for retirement at age 30?",
-        "Pay off mortgage early or invest the money?",
-        "Roth IRA vs. Traditional IRA - which is better?",
-        "Should I pay off debt before investing?",
-        "How much do I need in an emergency fund?"
-      ]
-    },
-    learn_investing: {
-      label: "Learn Investing",
-      prompts: [
-        "What is intrinsic value?",
-        "What's the difference between growth and value investing?",
-        "How does compound interest work?",
-        "What financial metrics should I analyze?",
-        "How do I know if a stock is overvalued?"
-      ]
-    }
-  };
+  const modes = [
+    { id: 'buffett', name: 'Buffett', description: 'Value investing analysis' },
+    { id: 'investment-research', name: 'Investment Research', description: 'Comprehensive research' },
+  ];
 
-  // Close dropdown when clicking outside
   useEffect(() => {
-    function handleClickOutside(event) {
+    const handleClickOutside = (event) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setOpenDropdown(null);
+        setIsOpen(false);
       }
-    }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
-    if (openDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
-  }, [openDropdown]);
-
-  const handlePromptClick = (prompt) => {
-    onPromptSelect(prompt);
-    setOpenDropdown(null);
-  };
+  const currentMode = modes.find(m => m.id === selectedMode) || modes[0];
 
   return (
-    <div className="mx-auto max-w-3xl mt-8 md:mt-6 mb-2 md:mb-0">
-      <div className="flex justify-center gap-3 md:gap-4" ref={dropdownRef}>
-        {Object.entries(topics).map(([key, topic]) => (
-          <div key={key} className="relative">
-            <button
-              onClick={() => setOpenDropdown(openDropdown === key ? null : key)}
-              className="px-4 md:px-4 py-2.5 md:py-2 text-sm md:text-base rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 dark:hover:bg-indigo-600 hover:text-white dark:hover:text-white hover:shadow-lg hover:shadow-indigo-200 dark:hover:shadow-indigo-900/50 transition-all duration-200 border border-indigo-200 dark:border-indigo-700"
-            >
-              {topic.label}
-            </button>
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 bg-slate-100/80 dark:bg-slate-600/50 hover:bg-slate-200/80 dark:hover:bg-slate-500/50 rounded-full transition-all duration-200"
+      >
+        <span>{currentMode.name}</span>
+        <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
 
-            {openDropdown === key && (
-              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 md:left-0 md:translate-x-0 w-[calc(100vw-2rem)] md:w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200">
-                <div className="py-2">
-                  {topic.prompts.map((prompt, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handlePromptClick(prompt)}
-                      className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-b-0"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+      {isOpen && (
+        <div className="absolute top-full right-0 mt-2 w-52 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+          {modes.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              onClick={() => {
+                onModeChange(mode.id);
+                setIsOpen(false);
+              }}
+              className={classNames(
+                "w-full text-left px-4 py-2.5 text-sm transition-colors",
+                mode.id === selectedMode
+                  ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400"
+                  : "text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+              )}
+            >
+              <div className="font-medium">{mode.name}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{mode.description}</div>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1503,130 +1502,83 @@ function SearchComposer({
   setInput,
   doSend,
   isConnecting,
-  status,
-  newChat,
-  setSettingsOpen,
-  showTopicButtons = false,
-  isAuthenticated,
-  mode,
-  setMode
+  suggestions = [],
+  onSuggestionClick,
+  suggestionsLoading = false,
+  selectedMode = 'buffett',
+  onModeChange
 }) {
   const inputRef = useRef(null);
 
-  const handlePromptSelect = async (prompt) => {
-    // Use the main doSend function with the prompt text as override
-    doSend(prompt, mode);
-
-    // Clear the input after sending
-    setInput('');
-  };
-
   return (
-    <>
-      <div className="mx-auto max-w-3xl px-2 md:px-0">
-        {/* Search Bar Container */}
-        <div className="relative flex items-center rounded-xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 shadow-sm px-3 py-3 focus-within:border-indigo-300 dark:focus-within:border-indigo-500">
-          {/* Left toggles */}
-          <div className="flex items-center gap-1 pr-3">
-            <button
-              type="button"
-              onClick={() => setMode('search')}
-              className={classNames(
-                "inline-flex h-8 w-8 items-center justify-center rounded-md border transition-all",
-                mode === 'search'
-                  ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
-                  : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600"
-              )}
-              title="Search mode (Perplexity)"
-              aria-label="Search mode"
-            >
-              <Search className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('bedrock')}
-              className={classNames(
-                "inline-flex h-8 w-8 items-center justify-center rounded-md border transition-all",
-                mode === 'bedrock'
-                  ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
-                  : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600"
-              )}
-              title="Buffett Agent mode"
-              aria-label="Buffett Agent mode"
-            >
-              <Lightbulb className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('analysis')}
-              className={classNames(
-                "inline-flex h-8 w-8 items-center justify-center rounded-md border transition-all",
-                mode === 'analysis'
-                  ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400"
-                  : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600"
-              )}
-              title="Deep Value Analysis"
-              aria-label="Deep Value Analysis"
-            >
-              <BarChart3 className="h-4 w-4" />
-            </button>
-            <span className="mx-1 h-6 w-px bg-slate-200 dark:bg-slate-600" />
-          </div>
+    <div className="mx-auto max-w-3xl px-2 md:px-0">
+      {/* Search Bar Container - iOS 26 liquid glass style */}
+      <div className="relative flex items-center rounded-full border border-slate-200/80 dark:border-slate-600/50 bg-white/90 dark:bg-slate-700/80 backdrop-blur-xl shadow-lg px-5 py-3.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
+        {/* Input */}
+        <input
+          ref={inputRef}
+          type="text"
+          placeholder={isConnecting ? "Connecting..." : "Enter a company name or ticker..."}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              if (input.trim()) doSend();
+            }
+          }}
+          disabled={isConnecting}
+          className="peer block w-full bg-transparent text-sm md:text-[15px] placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none dark:text-slate-100"
+        />
 
-          {/* Input */}
-          <input
-            ref={inputRef}
-            type="text"
-            placeholder={isConnecting ? "Connecting..." : "Ask Warren Buffett about investing and business..."}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (input.trim()) doSend(null, mode);
-              }
-            }}
-            disabled={isConnecting}
-            className="peer block w-full bg-transparent text-sm md:text-[15px] placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none dark:text-slate-100"
+        {/* Analysis Mode Dropdown */}
+        <div className="ml-3 mr-1 flex-shrink-0">
+          <AnalysisModeDropdown
+            selectedMode={selectedMode}
+            onModeChange={onModeChange}
           />
-
-          {/* Send button */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (!input.trim() || isConnecting) return;
-              doSend(null, mode);
-            }}
-            disabled={!input.trim() || isConnecting}
-            className={classNames(
-              "ml-2 inline-flex h-9 w-9 items-center justify-center rounded-lg shadow-sm transition-colors",
-              (!input.trim() || isConnecting)
-                ? "bg-indigo-400 dark:bg-indigo-600/50 cursor-not-allowed text-white"
-                : "bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 cursor-pointer text-white"
-            )}
-          >
-            {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
         </div>
 
-        {/* Mode label */}
-        <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 px-2">
-          <span className="font-medium">
-            {mode === 'search' ? '🔍 Search' : mode === 'analysis' ? '📊 Deep Value Analysis' : '💡 Buffett Agent'}
-          </span>
-          {mode === 'analysis' && (
-            <span className="ml-2 text-slate-400 dark:text-slate-500">
-              Enter a company name (e.g., Apple, MSFT)
-            </span>
+        {/* Send button */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!input.trim() || isConnecting) return;
+            doSend();
+          }}
+          disabled={!input.trim() || isConnecting}
+          className={classNames(
+            "flex-shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full shadow-sm transition-all duration-200",
+            (!input.trim() || isConnecting)
+              ? "bg-indigo-400 dark:bg-indigo-600/50 cursor-not-allowed text-white"
+              : "bg-indigo-600 hover:bg-indigo-700 hover:scale-105 dark:bg-indigo-600 dark:hover:bg-indigo-500 cursor-pointer text-white"
           )}
-        </div>
+        >
+          {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </button>
       </div>
 
-      {showTopicButtons && isAuthenticated && (
-        <TopicButtons onPromptSelect={handlePromptSelect} />
+      {/* Follow-up suggestion pills */}
+      {suggestions.length > 0 && (
+        <div className="flex gap-2 justify-center mt-3 pb-2 px-2 overflow-x-auto scrollbar-hide">
+          {suggestionsLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
+          ) : (
+            suggestions.map((q, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => onSuggestionClick?.(q)}
+                className="px-4 py-2.5 text-sm text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:scale-105 transition-all duration-200 whitespace-nowrap flex-shrink-0"
+              >
+                {q}
+              </button>
+            ))
+          )}
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -1667,7 +1619,7 @@ function DarkModeToggle({ darkMode, onToggle }) {
 }
 
 // Account Dropdown Component
-function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle }) {
+function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle, dropdownPosition = "bottom", connectionStatus }) {
   const { user, isAuthenticated, logout } = useAuth();
   const dropdownRef = useRef(null);
 
@@ -1690,16 +1642,27 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
       {/* Dropdown Trigger */}
       <button
         onClick={() => onToggle(!isOpen)}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+        className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors w-full"
       >
         {isAuthenticated && user ? (
           <>
-            <Avatar
-              src={user?.picture || ''}
-              alt={user?.name || user?.email || 'User'}
-              size="w-6 h-6"
-            />
-            <span className="text-sm font-medium text-slate-700 dark:text-white">{user?.name || user?.email || 'User'}</span>
+            <div className="relative">
+              <Avatar
+                src={user?.picture || ''}
+                alt={user?.name || user?.email || 'User'}
+                size="w-6 h-6"
+              />
+              {/* Connection status dot */}
+              {connectionStatus && (
+                <span className={classNames(
+                  "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800",
+                  connectionStatus === "connected" ? "bg-emerald-500" :
+                  connectionStatus === "connecting" ? "bg-amber-500 animate-pulse" :
+                  "bg-slate-400"
+                )} />
+              )}
+            </div>
+            <span className="text-sm font-medium text-slate-700 dark:text-white truncate">{user?.name || user?.email || 'User'}</span>
           </>
         ) : (
           <>
@@ -1710,14 +1673,19 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
           </>
         )}
         <ChevronDown className={classNames(
-          "h-4 w-4 text-slate-400 transition-transform",
+          "h-4 w-4 text-slate-400 transition-transform ml-auto",
           isOpen ? "rotate-180" : ""
         )} />
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200">
+        <div className={classNames(
+          "absolute w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg z-50 transition-all duration-200",
+          dropdownPosition === "top"
+            ? "bottom-full mb-3 left-0"
+            : "top-full mt-2 right-0"
+        )}>
           {isAuthenticated && user ? (
             <>
               {/* User Info Header */}
