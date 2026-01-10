@@ -89,6 +89,10 @@ locals {
     FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
     TICKER_LOOKUP_TABLE        = try(module.dynamodb.ticker_lookup_table_name, "")
 
+    # Investment Research Tables
+    INVESTMENT_REPORTS_TABLE    = try(module.dynamodb.investment_reports_table_name, "")
+    INVESTMENT_REPORTS_V2_TABLE = try(module.dynamodb.investment_reports_v2_table_name, "")
+
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
   }

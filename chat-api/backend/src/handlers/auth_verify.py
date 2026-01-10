@@ -52,18 +52,31 @@ def get_jwt_secret() -> str:
 
 def extract_token(event: Dict[str, Any]) -> Optional[str]:
     """
-    Extract JWT token from WebSocket event
-    Supports both Authorization header and token query parameter
+    Extract JWT token from authorization event
+
+    Supports multiple API Gateway authorizer formats:
+    - REST API TOKEN authorizer: event.authorizationToken
+    - HTTP API v2 authorizer: event.headers.authorization
+    - WebSocket authorizer: query params or headers
     """
 
-    # Try Authorization header first
+    # Check REST API TOKEN authorizer format first
+    # REST API TOKEN authorizers pass the full header value in authorizationToken
+    # Format: "Bearer <token>" in authorizationToken field
+    auth_token = event.get('authorizationToken')
+    if auth_token:
+        if auth_token.startswith('Bearer '):
+            return auth_token[7:]  # Remove 'Bearer ' prefix
+        return auth_token  # Return as-is if no Bearer prefix
+
+    # Try Authorization header (HTTP API v2 / WebSocket)
     headers = event.get('headers', {})
     auth_header = headers.get('authorization') or headers.get('Authorization')
 
     if auth_header and auth_header.startswith('Bearer '):
         return auth_header[7:]  # Remove 'Bearer ' prefix
 
-    # Try token query parameter
+    # Try token query parameter (WebSocket)
     query_params = event.get('queryStringParameters') or {}
     token = query_params.get('token')
 
@@ -123,30 +136,40 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
 
 def detect_request_type(event: Dict[str, Any]) -> str:
     """
-    Detect if this is a WebSocket or HTTP API authorization request
+    Detect authorization request type to return correct response format.
+
+    Response format requirements:
+    - REST API TOKEN authorizers: have 'authorizationToken', need IAM policy
+    - HTTP API v2 authorizers: have 'version: 2.0', need simple {"isAuthorized": true}
+    - WebSocket authorizers: have methodArn with '/ws/', need IAM policy
 
     Args:
         event: The authorization event
 
     Returns:
-        "websocket" or "http"
+        "rest_api", "websocket", or "http"
     """
-    # Check for HTTP API v2 specific fields
+    # REST API TOKEN authorizers have authorizationToken field
+    # They need IAM policy response (same as WebSocket)
+    if 'authorizationToken' in event:
+        return "rest_api"
+
+    # HTTP API v2 specific fields - need simple response
     if 'version' in event and event['version'] == '2.0':
         return "http"
 
-    # Check for routeArn (HTTP API v2) vs methodArn (WebSocket)
     if 'routeArn' in event:
         return "http"
-    elif 'methodArn' in event:
-        # Could be either, but check the ARN format
+
+    # WebSocket or other REST API variants with methodArn
+    if 'methodArn' in event:
         method_arn = event['methodArn']
         if '/ws/' in method_arn or '$connect' in method_arn or '$disconnect' in method_arn:
             return "websocket"
         else:
-            return "http"
+            return "rest_api"  # REST API needs IAM policy too
 
-    # Default to websocket for backward compatibility
+    # Default to websocket for backward compatibility (IAM policy response)
     return "websocket"
 
 def create_policy(effect: str, resource: str, user_id: str = None, request_type: str = "websocket") -> Dict[str, Any]:
@@ -180,6 +203,20 @@ def create_policy(effect: str, resource: str, user_id: str = None, request_type:
         return response
     else:
         # WebSocket/API Gateway v1 policy format
+        # Use wildcard resource to allow all endpoints with same token
+        # This is important for REST API TOKEN authorizers with caching
+        # Without wildcard, cached policy from first request won't match subsequent requests
+        # to different paths (e.g., /analysis/debt vs /analysis/cashflow)
+        #
+        # Convert: arn:aws:execute-api:region:account:api-id/stage/method/resource
+        # To:      arn:aws:execute-api:region:account:api-id/stage/*
+        wildcard_resource = resource
+        if effect == "Allow":
+            parts = resource.split('/')
+            if len(parts) >= 2:
+                # Keep up to stage, then wildcard
+                wildcard_resource = '/'.join(parts[:2]) + '/*'
+
         policy = {
             "principalId": user_id or "anonymous",
             "policyDocument": {
@@ -188,7 +225,7 @@ def create_policy(effect: str, resource: str, user_id: str = None, request_type:
                     {
                         "Action": "execute-api:Invoke",
                         "Effect": effect,
-                        "Resource": resource
+                        "Resource": wildcard_resource
                     }
                 ]
             }
@@ -239,8 +276,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         token = extract_token(event)
 
         if not token:
-            if request_type == "http":
-                logger.info("No token provided for HTTP request - denying access")
+            if request_type in ("http", "rest_api"):
+                logger.info(f"No token provided for {request_type} request - denying access")
                 return create_policy("Deny", method_arn, None, request_type)
             else:
                 logger.info("No token provided for WebSocket - allowing anonymous access")
@@ -253,7 +290,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             if not user_id:
                 logger.warning("JWT token missing user_id")
-                if request_type == "http":
+                if request_type in ("http", "rest_api"):
                     return create_policy("Deny", method_arn, None, request_type)
                 else:
                     return create_policy("Allow", method_arn, None, request_type)
@@ -263,8 +300,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         except Exception as token_error:
             logger.warning(f"Token verification failed: {str(token_error)}")
-            if request_type == "http":
-                # For HTTP API, deny access on token verification failure
+            if request_type in ("http", "rest_api"):
+                # For HTTP API and REST API, deny access on token verification failure
                 return create_policy("Deny", method_arn, None, request_type)
             else:
                 # For WebSocket, we still allow connection but treat as anonymous

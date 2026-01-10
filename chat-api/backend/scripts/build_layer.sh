@@ -79,3 +79,8 @@ unzip -l "${BUILD_DIR}/dependencies-layer.zip" | head -20
 
 echo ""
 echo "Lambda layer build complete!"
+
+# NOTE: ML dependencies (numpy, scikit-learn) are handled by Docker
+# for the prediction_ensemble Lambda. See:
+# - chat-api/backend/lambda/prediction_ensemble/Dockerfile
+# - chat-api/backend/lambda/prediction_ensemble/requirements.txt

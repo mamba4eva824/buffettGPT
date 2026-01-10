@@ -1,0 +1,429 @@
+Analyze {ticker} for fiscal year {fiscal_year} from a value investing perspective.
+
+{metrics_context}
+
+## Your Task
+Create an **engaging, accessible investment analysis report** for Millennials and Gen Z investors who may not have formal finance backgrounds. Your goal is to **educate while analyzing** - every reader should finish feeling smarter about investing, while also receiving comprehensive financial data.
+
+Think deeply about:
+1. The 5-year narrative arc across all fiscal years
+2. Business cycle context (pandemic stress test, inflation period, current position)
+3. Trend trajectories - improving, stable, or deteriorating
+4. Core value investing principles: durable competitive advantage, quality management, margin of safety
+
+---
+
+## MANDATORY: Plain English Financial Translations
+
+**NEVER use financial jargon without immediate translation.** Use these reader-friendly alternatives:
+
+| Financial Term | Say This Instead | How to Use It |
+|---------------|------------------|---------------|
+| Free Cash Flow (FCF) | "money left after paying all bills" | "$4B in money left after paying all bills" |
+| FCF Margin | "cash keep rate" | "keeps 43 cents of every dollar as actual cash" |
+| Operating Cash Flow | "cash from running the business" | "Generated $6B from actually selling products" |
+| OCF/Net Income Ratio | "cash conversion quality" | "Collects $2.30 in cash for every $1 of reported profit" |
+| Debt-to-Equity | "borrowing level" | "borrowed 60 cents for every dollar they own" |
+| Interest Coverage | "debt safety cushion" | "earns 5x what they need for loan payments" |
+| Net Debt | "total owed minus savings" | "after dipping into savings, they still owe $10B" |
+| Gross Margin | "profit per sale (before overhead)" | "keeps 76 cents from every dollar sold" |
+| Operating Margin | "profit from core business" | "keeps 18 cents after running day-to-day operations" |
+| Net Margin | "actual take-home profit" | "takes home 27 cents per dollar of sales" |
+| EBITDA | "operating profits (before loans & accounting)" | — |
+| ROE | "return on owner's money" | "shareholders earned 25% on their investment" |
+| ROIC | "return on all invested money" | "generated 18% return on total capital invested" |
+| CapEx | "money spent on equipment/growth" | "invested $3B in new factories" |
+| Working Capital | "cash tied up in daily operations" | "has $2B locked up in inventory and unpaid bills" |
+| FCF Yield | "cash return vs stock price" | "generates 5% of its market value in cash yearly" |
+| Current Ratio | "short-term bill-paying power" | "has $2 for every $1 due soon" |
+| YoY | "vs. same time last year" | "revenue up 15% vs. same time last year" |
+| QoQ | "vs. last quarter" | "sales dropped 5% vs. last quarter" |
+| EPS | "profit per share you own" | "earned $2.50 for each share you own" |
+
+**Rule:** If you use a financial term, the plain-English version must appear in the same sentence or immediately after.
+
+---
+
+## TIME PERIOD CLARITY (Critical for Reader Understanding)
+
+Readers get confused when reports mix timeframes. Structure ALL trend discussions clearly:
+
+### "What's Happening RIGHT NOW" (Recent Momentum)
+- Focus on last **2-4 quarters**
+- Use comparisons like "vs. last quarter" or "over the past 9 months"
+- Lead with phrases like: "In the last few months..." or "Recently..."
+- This is the **weather** - current conditions
+
+### "The Bigger Picture" (Long-Term Direction)
+- Focus on **3-5 years**
+- Use comparisons like "vs. same time last year" or "since 2021"
+- Lead with phrases like: "Over the past 5 years..." or "Looking at the full picture..."
+- This is the **climate** - overall pattern
+
+**ALWAYS label which timeframe you're discussing:**
+- BAD: "Revenue growth dropped from 37% to 5%" (confusing - what period?)
+- GOOD: "Compared to last year, revenue growth dropped from 37% to 5%" (clear)
+- GOOD: "Over the last 3 quarters, revenue has declined each time" (clear)
+
+---
+
+## TABLE GUIDELINES (6-8 Row Standard)
+
+**Maximum 6 columns per table.** Balance readability with data depth.
+**Rows:** Use 6-8 data rows for historical trends and quarterly data. Use 3-4 rows for current snapshot tables.
+
+**Standard Table Structure:**
+| Metric/Period | Value | Context | Trend | Verdict |
+|---------------|-------|---------|-------|---------|
+
+**For Historical Tables (5-Year View):**
+| Year | Key Metric 1 | Key Metric 2 | Key Metric 3 | Trend | Verdict |
+|------|--------------|--------------|--------------|-------|---------|
+| 2021 | ... | ... | ... | ... | ... |
+| 2022 | ... | ... | ... | ... | ... |
+| 2023 | ... | ... | ... | ... | ... |
+| 2024 | ... | ... | ... | ... | ... |
+| 2025 | ... | ... | ... | ... | ... |
+| Trajectory | — | — | — | ↗️/↘️/→ | Summary |
+
+**For Quarterly Tables (Recent Momentum):**
+| Quarter | Key Metric 1 | Key Metric 2 | Key Metric 3 | Quality |
+|---------|--------------|--------------|--------------|---------|
+| Q4 2025 | ... | ... | ... | Verdict |
+| Q3 2025 | ... | ... | ... | Verdict |
+| Q2 2025 | ... | ... | ... | Verdict |
+| Q1 2025 | ... | ... | ... | Verdict |
+| Q4 2024 | ... | ... | ... | Verdict |
+| Q3 2024 | ... | ... | ... | Verdict |
+
+---
+
+## MANDATORY: Plain-Language Summary Callouts
+
+After EVERY major section (Growth, Profitability, Cashflow, Debt), include a callout box that translates the content into everyday language.
+
+**CRITICAL: Vary the callout header each time.** Never use the same header twice in a report.
+
+**Header Options (choose contextually, or create your own):**
+- "Translation:"
+- "In Plain English:"
+- "The Bottom Line:"
+- "If This Were a Text to a Friend:"
+- "Put Simply:"
+- "Quick Take:"
+- "What This Really Means:"
+- "The Key Insight:"
+- "Level Up Your Understanding:"
+- "Decoded:"
+- "The Takeaway:"
+- Or create a CUSTOM header that fits the section (e.g., "The Debt Story in One Sentence:")
+
+**Each callout MUST include a FRESH analogy** - never repeat an analogy used elsewhere in the report.
+
+---
+
+## ANALOGY REQUIREMENTS (Minimum Standards)
+
+Each major section MUST include at least ONE relatable analogy.
+
+| Section | Required | Best Analogy Types |
+|---------|----------|-------------------|
+| Growth | 1 minimum | Career growth, social media followers, streaming subscribers |
+| Profitability | 1 minimum | Restaurant margins, side hustle profits, paycheck deductions |
+| Cash Flow | 1 minimum | Paychecks, side hustles, savings accounts, subscription revenue |
+| Debt Health | 1 minimum | Credit cards, mortgages, car loans, personal budgeting |
+| Plain-Language Callouts | 1 each | Any relatable Gen Z/Millennial context |
+
+**Analogy Sources to Draw From:**
+- Streaming services (Netflix, Spotify, subscriptions)
+- Social media (followers, engagement, going viral)
+- Gaming (leveling up, power-ups, boss battles)
+- Food & dining (restaurants, delivery apps, cooking)
+- Personal finance (rent, savings, credit scores)
+- Transportation (Uber, road trips, car payments)
+- Fitness (gym memberships, progress tracking)
+- Dating apps (matches, premium features)
+- Shopping (sales, deals, return policies)
+- Freelancing/gig work (inconsistent income, landing clients)
+
+**Quality Check:** After writing, review each section. If a non-finance friend couldn't understand it without Googling, add another analogy or simplify further.
+
+---
+
+## CRITICAL: Recent Trend Analysis (MANDATORY)
+
+**Before giving ANY rating, you MUST explicitly analyze recent trends.**
+
+### 1. Growth Momentum Check
+- Compare growth rate NOW vs. same time last year
+- State clearly: "Growth is [accelerating/stable/decelerating] - from X% to Y%"
+- Assess severity: A company slowing from 30% to 20% is different from 30% to 5%
+
+### 2. Sequential Revenue Check
+- Count consecutive quarters of declining sales
+- State clearly: "Revenue has [grown/declined] for X consecutive quarters"
+- Context matters: 2 quarters could be seasonal; 4+ quarters is a pattern
+
+### 3. Margin Compression Check
+- Compare current profit margins to same quarter last year
+- State clearly: "Margins are [expanding/stable/compressing] - from X% to Y%"
+- Consider why: Price wars? Investment in growth? One-time costs?
+
+### 4. Profitability Quality Check
+- Is profit growth outpacing or lagging revenue growth?
+- Are margins sustainable or one-time?
+- Cash conversion: Are profits translating to actual cash?
+
+### Severity Guide
+| Severity | What It Looks Like | Rating Impact |
+|----------|-------------------|---------------|
+| Yellow Flag | Moderate change, worth watching | May still be Strong with explanation |
+| Orange Flag | Notable deterioration | Should impact rating |
+| Red Flag | Severe, sustained decline | Likely warrants HOLD or SELL |
+
+---
+
+## Writing Style Guidelines
+
+**Write for someone who knows what a stock is but has never read a 10-K.**
+
+1. **Conversational Tone**: Write like you're explaining to a smart friend over coffee, not presenting to a boardroom
+
+2. **Dynamic, Contextual Headers**: Create section titles specific to THIS company's situation
+   - BAD: "Growth Analysis" (generic)
+   - GOOD: "From 37% to 5%: The Growth Hangover" (specific, intriguing)
+
+3. **Visual Indicators for Quick Scanning**:
+   - Good/positive: "+" or relevant emoji
+   - Concerning/weak: "-" or relevant emoji
+   - Neutral/mixed: "~" or relevant emoji
+
+4. **Standalone Reports**: Each report must be 100% self-contained
+   - NEVER reference other reports or previous analyses
+   - Explain every concept fresh - assume the reader has never seen another investment report
+   - This may be their FIRST investment report ever
+
+5. **Numbers in Context**: Raw numbers mean nothing without comparison
+   - BAD: "Net income was $2.3 billion"
+   - GOOD: "Net income was $2.3 billion—down 40% from last year's peak"
+
+---
+
+## Required Report Sections
+
+**IMPORTANT: Section Order - Growth, Profitability, Cashflow, Debt**
+
+This follows the natural investor thought process:
+- Is it growing? → Is it profitable? → Is it generating cash? → Is it financially stable?
+
+### 1. TL;DR
+2-3 punchy sentences. The elevator pitch. Would you tell a friend to look into this stock?
+
+### 2. Quick Health Dashboard
+
+Immediately after TL;DR, include this visual summary:
+
+**{ticker} at a Glance**
+| Area | Health | One-Liner |
+|------|--------|-----------|
+| 📈 Growth Trend | emoji | [One sentence] |
+| 💰 Profitability | emoji | [One sentence] |
+| 💵 Cash Generation | emoji | [One sentence] |
+| 🏦 Debt Level | emoji | [One sentence] |
+| ⚡ Recent Momentum | emoji | [One sentence] |
+
+**Legend:** Green = Strong | Yellow = Mixed/Watch | Red = Concern
+
+### 3. What Does {ticker} Actually Do?
+2-3 sentences: How does this company make money? How do they fit into daily life? Make it tangible for someone who's never heard of them.
+
+---
+
+### 4. Growth Section (FIRST Financial Section)
+**Create a dynamic header** specific to {ticker}'s growth narrative
+
+Include:
+- Revenue trajectory table (6-8 rows - show 5-year trend OR 6-8 recent quarters)
+- "Recent Momentum" subsection: What's happened in the last 2-4 quarters?
+- "Bigger Picture" subsection: What's the 5-year trend?
+- YoY and QoQ comparisons clearly labeled
+- **Plain-Language Callout** with fresh analogy
+- **Bottom Line**: 1-2 sentence takeaway with +/~/- indicator
+
+---
+
+### 5. Profitability Section (NEW - REQUIRED)
+**Create a dynamic header** specific to {ticker}'s profit story
+
+This section answers: "Is growth actually translating into profits?"
+
+**Required Profitability Table (6-8 rows):**
+| Metric | Peak | Now | Trend | Verdict |
+|--------|------|-----|-------|---------|
+| Profit per sale (Gross Margin) | X% | Y% | arrow | Good/Watch/Concern |
+| Profit from core business (Operating Margin) | X% | Y% | arrow | Good/Watch/Concern |
+| Take-home profit (Net Margin) | X% | Y% | arrow | Good/Watch/Concern |
+| Return on owner's money (ROE) | X% | Y% | arrow | Good/Watch/Concern |
+| Profit per share (EPS) | $X | $Y | arrow | Good/Watch/Concern |
+| Profit Quality | Note on sustainability | | | |
+
+Include:
+- Are margins expanding or compressing? Why?
+- Is profit growth keeping up with revenue growth?
+- One-time items vs sustainable profitability
+- **Plain-Language Callout** with fresh analogy
+- **Bottom Line**: 1-2 sentence takeaway with +/~/- indicator
+
+---
+
+### 6. Cashflow Section (ENHANCED)
+**Create a dynamic header** specific to {ticker}'s cash story
+
+This section answers: "Are profits converting to actual cash?"
+
+**Required Cashflow Table (6-8 rows - recent quarters):**
+| Quarter | Cash from Business (OCF) | Cash After Bills (FCF) | Cash Keep Rate | Quality |
+|---------|-------------------------|------------------------|----------------|---------|
+| Q4 2025 | $X | $X | X% | Verdict |
+| Q3 2025 | $X | $X | X% | Verdict |
+| Q2 2025 | $X | $X | X% | Verdict |
+| Q1 2025 | $X | $X | X% | Verdict |
+| Q4 2024 | $X | $X | X% | Verdict |
+| Q3 2024 | $X | $X | X% | Verdict |
+
+Include:
+- Explain WHY cash flow matters more than just revenue (use an analogy!)
+- Operating Cash Flow vs Free Cash Flow - what's the difference?
+- Cash Conversion Quality: OCF/Net Income ratio
+- How they use their cash (dividends? buybacks? reinvestment? debt paydown?)
+- **Plain-Language Callout** with fresh analogy
+- **Bottom Line**: 1-2 sentence takeaway with +/~/- indicator
+
+---
+
+### 7. Debt Section
+**Create a dynamic header** specific to {ticker}'s debt story
+
+Include:
+- Key debt metrics table (6-8 rows) with plain-English explanations
+- The 5-year trajectory: getting better or worse?
+- Debt safety cushion (interest coverage) explained simply
+- **Plain-Language Callout** with fresh analogy
+- **Bottom Line**: 1-2 sentence takeaway with +/~/- indicator
+
+---
+
+### 8. The Bull Case (Why Buy)
+Create an engaging, specific header, then list 3-4 strengths with metrics
+Each point should be 2-3 sentences max
+
+### 9. The Bear Case (Why Pass)
+Create an engaging, specific header, then list 3-4 risks with specific concerns
+Each point should be 2-3 sentences max
+
+---
+
+### 10. Warning Signs Checklist
+
+Before your verdict, complete this checklist:
+
+| Check | Status | What's Happening |
+|-------|--------|------------------|
+| Revenue Growth | emoji | [accelerating/stable/slowing, X% to Y%] |
+| Profit Margins | emoji | [expanding/stable/compressing, X% to Y%] |
+| Cash Generation | emoji | [strong/adequate/weak] |
+| Cash Conversion | emoji | [high quality/adequate/concerning] |
+| Debt Level | emoji | [low/moderate/high, improving/worsening] |
+| Recent Momentum | emoji | [positive/mixed/negative last 2-4 quarters] |
+
+**Warning Flags:** X of 6 areas showing concern
+
+**If ANY items show warnings, explain in plain language how this affects your verdict.**
+
+---
+
+### 11. The Verdict
+**Create a dynamic header** that summarizes your view
+
+Include:
+- Rating breakdown using this scale:
+
+| Rating | What It Means | Think of It Like... |
+|--------|---------------|---------------------|
+| Very Strong | Best-in-class, sleep-well-at-night | A+ student, star employee |
+| Strong | Better than most, solid with minor issues | B+ student, reliable |
+| Stable | Average, nothing special or scary | C student, does the job |
+| Weak | Below average, yellow flags | Needs improvement |
+| Very Weak | Red flags, significant concerns | Failing, avoid |
+
+- **4-Category Rating Table:**
+| Category | Rating | Key Reason |
+|----------|--------|------------|
+| Growth | Rating | One sentence |
+| Profitability | Rating | One sentence |
+| Cash Flow | Rating | One sentence |
+| Debt Health | Rating | One sentence |
+
+- **Who should consider this stock?** (Be specific about investor types)
+- **Who should avoid this stock?** (Be equally specific)
+- **Final conviction statement** (1-2 sentences, clear recommendation)
+
+---
+
+## Verdict Weighting
+
+Weight your final verdict as follows:
+- **50%**: Most recent 2-4 quarters (momentum is the leading indicator!)
+- **30%**: 5-year trajectory (long-term foundation)
+- **20%**: Balance sheet strength (stability buffer)
+
+**CRITICAL**: A company with great 5-year history but deteriorating recent quarters should be HOLD or SELL, not BUY. Recent momentum matters most.
+
+---
+
+## Quality Checklist Before Submitting
+
+Review your report against these criteria:
+- [ ] Every financial term has a plain-English translation nearby
+- [ ] Time periods are clearly labeled (vs. last year, vs. last quarter, etc.)
+- [ ] Tables have max 6 columns; historical/quarterly tables use 6-8 rows for trend visibility
+- [ ] Section order is: Growth → Profitability → Cashflow → Debt
+- [ ] Profitability section is included with all required metrics
+- [ ] Cashflow section includes both OCF and FCF data
+- [ ] Each major section has a plain-language callout with unique header
+- [ ] At least 5 different analogies used throughout (no repeats)
+- [ ] A non-finance friend could understand 90% of this report
+- [ ] Headers are dynamic and specific to {ticker}, not generic
+- [ ] Warning Signs has 6 checks (added profitability and cash conversion)
+
+---
+
+**REQUIRED JSON BLOCK** (place at the very end, after all narrative content):
+```json
+{{
+  "growth": {{
+    "rating": "Very Strong" | "Strong" | "Stable" | "Weak" | "Very Weak",
+    "confidence": "High" | "Medium" | "Low",
+    "key_factors": ["factor1", "factor2", "factor3"]
+  }},
+  "profitability": {{
+    "rating": "Very Strong" | "Strong" | "Stable" | "Weak" | "Very Weak",
+    "confidence": "High" | "Medium" | "Low",
+    "key_factors": ["factor1", "factor2", "factor3"]
+  }},
+  "cashflow": {{
+    "rating": "Very Strong" | "Strong" | "Stable" | "Weak" | "Very Weak",
+    "confidence": "High" | "Medium" | "Low",
+    "key_factors": ["factor1", "factor2", "factor3"]
+  }},
+  "debt": {{
+    "rating": "Very Strong" | "Strong" | "Stable" | "Weak" | "Very Weak",
+    "confidence": "High" | "Medium" | "Low",
+    "key_factors": ["factor1", "factor2", "factor3"]
+  }},
+  "overall_verdict": "BUY" | "HOLD" | "SELL",
+  "conviction": "High" | "Medium" | "Low"
+}}
+```
+
+Remember: Your goal is to make investing accessible while providing comprehensive data. A great report leaves readers feeling informed AND empowered—not intimidated or confused. Make this report feel like a conversation, not a lecture, but don't sacrifice financial depth for simplicity.
