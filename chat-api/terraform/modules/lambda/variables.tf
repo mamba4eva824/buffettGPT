@@ -148,3 +148,10 @@ variable "bedrock_model_id" {
   type        = string
   default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
+
+# Investment Research Variables
+variable "investment_research_image_tag" {
+  description = "Docker image tag for investment research Lambda"
+  type        = string
+  default     = "v1.0.0"
+}
