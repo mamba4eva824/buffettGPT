@@ -120,3 +120,25 @@ variable "prediction_ensemble_function_url" {
   type        = string
   default     = ""
 }
+
+# ============================================================================
+# Investment Research API Variables
+# ============================================================================
+
+variable "enable_research_api" {
+  description = "Enable REST API endpoints for investment research"
+  type        = bool
+  default     = false
+}
+
+variable "investment_research_function_url" {
+  description = "Function URL for Investment Research Lambda (HTTP_PROXY target)"
+  type        = string
+  default     = ""
+}
+
+variable "investment_research_function_name" {
+  description = "Name of the Investment Research Lambda function"
+  type        = string
+  default     = ""
+}
