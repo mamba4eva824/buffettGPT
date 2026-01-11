@@ -74,3 +74,12 @@ output "authorizer_invocation_role_arn" {
   description = "ARN of the authorizer invocation IAM role"
   value       = var.enable_authorization ? aws_iam_role.authorizer_invocation_role[0].arn : null
 }
+
+# ============================================================================
+# Investment Research API Outputs
+# ============================================================================
+
+output "research_api_endpoint" {
+  description = "Endpoint URL for Investment Research API (SSE streaming)"
+  value       = var.enable_analysis_api && var.enable_research_api ? "${aws_api_gateway_stage.analysis[0].invoke_url}/research" : null
+}

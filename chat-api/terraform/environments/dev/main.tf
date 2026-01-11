@@ -222,6 +222,12 @@ module "api_gateway" {
   auth_verify_invoke_arn            = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
   auth_verify_function_name         = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
 
+  # Investment Research API (REST API with JWT auth)
+  # Uses HTTP_PROXY integration to Lambda Function URL for SSE streaming of cached reports
+  enable_research_api                 = true
+  investment_research_function_url    = module.lambda.investment_research_docker_function_url
+  investment_research_function_name   = module.lambda.investment_research_docker_function_name
+
   common_tags = local.common_tags
 }
 

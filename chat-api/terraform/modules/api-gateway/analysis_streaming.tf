@@ -179,6 +179,7 @@ resource "aws_api_gateway_deployment" "analysis" {
 
   triggers = {
     redeployment = sha1(jsonencode([
+      # Analysis API resources
       aws_api_gateway_resource.analysis[0].id,
       aws_api_gateway_resource.analysis_agent[0].id,
       aws_api_gateway_method.analysis_post[0].id,
@@ -189,6 +190,16 @@ resource "aws_api_gateway_deployment" "analysis" {
       aws_api_gateway_integration.analysis_options[0].id,
       aws_api_gateway_gateway_response.analysis_default_4xx[0].id,
       aws_api_gateway_gateway_response.analysis_default_5xx[0].id,
+      # Investment Research API resources (conditional)
+      try(aws_api_gateway_resource.research[0].id, ""),
+      try(aws_api_gateway_resource.research_report[0].id, ""),
+      try(aws_api_gateway_resource.research_report_ticker[0].id, ""),
+      try(aws_api_gateway_resource.research_report_stream[0].id, ""),
+      try(aws_api_gateway_method.research_stream_get[0].id, ""),
+      try(aws_api_gateway_integration.research_stream_lambda[0].id, ""),
+      try(aws_api_gateway_integration.research_stream_lambda[0].uri, ""),
+      try(aws_api_gateway_method.research_stream_options[0].id, ""),
+      try(aws_api_gateway_integration.research_stream_options[0].id, ""),
     ]))
   }
 
@@ -200,7 +211,9 @@ resource "aws_api_gateway_deployment" "analysis" {
     aws_api_gateway_integration.analysis_lambda,
     aws_api_gateway_integration.analysis_options,
     aws_api_gateway_gateway_response.analysis_default_4xx,
-    aws_api_gateway_gateway_response.analysis_default_5xx
+    aws_api_gateway_gateway_response.analysis_default_5xx,
+    aws_api_gateway_integration.research_stream_lambda,
+    aws_api_gateway_integration.research_stream_options
   ]
 }
 
@@ -348,4 +361,141 @@ resource "aws_lambda_permission" "analysis_authorizer_invoke" {
   function_name = var.auth_verify_function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.analysis[0].execution_arn}/authorizers/${aws_api_gateway_authorizer.analysis_jwt[0].id}"
+}
+
+# ============================================================================
+# Investment Research API Resources
+# ============================================================================
+# Provides SSE streaming for cached investment reports from DynamoDB.
+# Uses the same JWT authorization as the analysis endpoints.
+# ============================================================================
+
+# /research resource
+resource "aws_api_gateway_resource" "research" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_rest_api.analysis[0].root_resource_id
+  path_part   = "research"
+}
+
+# /research/report resource
+resource "aws_api_gateway_resource" "research_report" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research[0].id
+  path_part   = "report"
+}
+
+# /research/report/{ticker} resource
+resource "aws_api_gateway_resource" "research_report_ticker" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research_report[0].id
+  path_part   = "{ticker}"
+}
+
+# /research/report/{ticker}/stream resource
+resource "aws_api_gateway_resource" "research_report_stream" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research_report_ticker[0].id
+  path_part   = "stream"
+}
+
+# ============================================================================
+# GET Method with JWT Authorization
+# ============================================================================
+
+resource "aws_api_gateway_method" "research_stream_get" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_stream[0].id
+  http_method   = "GET"
+  authorization = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id = var.enable_authorization ? aws_api_gateway_authorizer.analysis_jwt[0].id : null
+
+  request_parameters = {
+    "method.request.path.ticker"          = true
+    "method.request.header.Authorization" = false
+    "method.request.header.Accept"        = false
+  }
+}
+
+# ============================================================================
+# HTTP_PROXY Integration to Investment Research Lambda Function URL
+# ============================================================================
+
+resource "aws_api_gateway_integration" "research_stream_lambda" {
+  count                   = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id             = aws_api_gateway_rest_api.analysis[0].id
+  resource_id             = aws_api_gateway_resource.research_report_stream[0].id
+  http_method             = aws_api_gateway_method.research_stream_get[0].http_method
+  integration_http_method = "GET"
+  type                    = "HTTP_PROXY"
+
+  # Point to Investment Research Lambda Function URL
+  uri = "${trimsuffix(var.investment_research_function_url, "/")}/report/{ticker}/stream"
+
+  request_parameters = {
+    "integration.request.path.ticker"          = "method.request.path.ticker"
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+    "integration.request.header.Accept"        = "method.request.header.Accept"
+  }
+
+  passthrough_behavior = "WHEN_NO_MATCH"
+  timeout_milliseconds = 29000
+}
+
+# ============================================================================
+# CORS Preflight (OPTIONS) for Research Stream
+# ============================================================================
+
+resource "aws_api_gateway_method" "research_stream_options" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_stream[0].id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "research_stream_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_stream[0].id
+  http_method = aws_api_gateway_method.research_stream_options[0].http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "research_stream_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_stream[0].id
+  http_method = aws_api_gateway_method.research_stream_options[0].http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "research_stream_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_stream[0].id
+  http_method = aws_api_gateway_method.research_stream_options[0].http_method
+  status_code = aws_api_gateway_method_response.research_stream_options[0].status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,Accept'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cloudfront_url != "" ? "'${var.cloudfront_url}'" : "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.research_stream_options]
 }
