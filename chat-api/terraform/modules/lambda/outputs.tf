@@ -126,3 +126,32 @@ output "prediction_ensemble_docker_invoke_arn" {
 
 # Note: prediction_ensemble_docker_function_name and prediction_ensemble_docker_function_url
 # are defined in prediction_ensemble_docker.tf
+
+# ================================================
+# Investment Research Docker Outputs
+# ================================================
+
+output "investment_research_docker_arn" {
+  description = "ARN of the investment research Docker Lambda function"
+  value       = try(aws_lambda_function.investment_research_docker.arn, null)
+}
+
+output "investment_research_docker_ecr_url" {
+  description = "ECR repository URL for investment research"
+  value       = try(aws_ecr_repository.investment_research.repository_url, null)
+}
+
+output "investment_research_docker_invoke_arn" {
+  description = "Invoke ARN of the investment research Docker Lambda function"
+  value       = try(aws_lambda_function.investment_research_docker.invoke_arn, null)
+}
+
+output "investment_research_docker_function_name" {
+  description = "Name of the investment research Docker Lambda function"
+  value       = try(aws_lambda_function.investment_research_docker.function_name, null)
+}
+
+output "investment_research_docker_function_url" {
+  description = "Function URL for the investment research Docker Lambda"
+  value       = try(aws_lambda_function_url.investment_research_docker.function_url, null)
+}
