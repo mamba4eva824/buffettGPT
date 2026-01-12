@@ -25,9 +25,10 @@ INVESTMENT_REPORTS_TABLE = os.environ.get(
 )
 
 # DynamoDB - v2 table (section-per-item storage for progressive loading)
+# Note: Terraform sets INVESTMENT_REPORTS_V2_TABLE, but we also support the alternative naming
 INVESTMENT_REPORTS_TABLE_V2 = os.environ.get(
-    'INVESTMENT_REPORTS_TABLE_V2',
-    f'investment-reports-v2-{ENVIRONMENT}'
+    'INVESTMENT_REPORTS_V2_TABLE',  # Terraform naming
+    os.environ.get('INVESTMENT_REPORTS_TABLE_V2', f'investment-reports-v2-{ENVIRONMENT}')  # Fallback
 )
 
 # Default fiscal year for report lookups

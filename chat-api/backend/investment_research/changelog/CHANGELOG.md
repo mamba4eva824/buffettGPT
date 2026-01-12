@@ -4,6 +4,132 @@ All notable changes to the investment research module are documented here.
 
 ---
 
+## [2026-01-10] V2 Section-Based DynamoDB Schema — Progressive Loading
+
+### Problem
+The v1 DynamoDB schema stored entire reports as a single `report_content` blob (400KB+ per report). This caused:
+- Slow initial load times (entire report fetched before any content displayed)
+- No progressive loading capability
+- Inefficient for mobile/slow connections
+- All-or-nothing data retrieval
+
+### Solution
+Implemented **Pattern B: Single Executive Item** schema for v2:
+
+**New Schema Structure:**
+| section_id | Contents |
+|------------|----------|
+| `00_executive` | ToC + ratings + 5 executive sections (combined for single read) |
+| `06_growth` - `17_realtalk` | 12 individual detailed section items |
+
+**Total: 13 items per report** (down from 18 in original design)
+
+**Key Benefits:**
+1. **Fast Initial Load** — Single DynamoDB GetItem returns ToC + ratings + executive summary
+2. **Progressive Loading** — Detailed sections fetched on-demand
+3. **SSE Streaming** — Stream sections as they're retrieved
+4. **Reduced Latency** — 1 read for initial view vs 1 read for entire 400KB+ blob
+
+### Infrastructure Deployed
+
+**DynamoDB:**
+- Table: `investment-reports-v2-dev`
+- GSIs: `part-index`, `generated-at-index`
+- TTL enabled for automatic expiration
+
+**Lambda:**
+- Function: `buffett-dev-investment-research`
+- ECR: `buffett/investment-research`
+- Image: `v1.0.0`
+- Function URL: With `RESPONSE_STREAM` for SSE
+
+**IAM:**
+- Updated Lambda role with `investment-reports-*` table permissions
+
+### New API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/report/{ticker}/executive` | GET | Combined executive item (ToC + ratings + 5 sections) |
+| `/report/{ticker}/toc` | GET | ToC + ratings only |
+| `/report/{ticker}/section/{section_id}` | GET | Individual section content |
+| `/report/{ticker}/stream` | GET | SSE stream all sections progressively |
+
+### Files Created
+
+**Investment Research Module:**
+- `investment_research/section_parser.py` — Parse reports into sections
+- `investment_research/migrate_to_v2.py` — Migration script v1 → v2
+- `investment_research/tests/test_section_parser.py` — 22 parser tests
+- `investment_research/tests/test_migrate_to_v2.py` — Migration tests
+
+**Lambda:**
+- `lambda/investment_research/app.py` — FastAPI with v2 endpoints
+- `lambda/investment_research/services/report_service.py` — DynamoDB v2 queries
+- `lambda/investment_research/services/streaming.py` — SSE events (executive_event, section_event)
+- `lambda/investment_research/Dockerfile` — Lightweight image (~200MB)
+
+**Terraform:**
+- `modules/dynamodb/reports_table.tf` — v2 table definition
+- `modules/lambda/investment_research_docker.tf` — Lambda + ECR + Function URL
+- `modules/lambda/variables.tf` — `investment_research_image_tag` variable
+- `modules/lambda/outputs.tf` — v2 Lambda outputs
+- `modules/core/main.tf` — IAM policy for `investment-reports-*` tables
+
+### Migration
+
+**Command:**
+```bash
+cd chat-api/backend
+python investment_research/migrate_to_v2.py --execute --env dev
+```
+
+**Results:** 9 tickers migrated to v2 format
+
+### SSE Event Flow (V2)
+
+```
+1. connected     → Connection established
+2. executive     → ToC + ratings + 5 executive sections (single payload)
+3. section (x12) → Detailed sections streamed individually
+4. progress      → Progress updates between batches
+5. complete      → Stream finished with section count
+```
+
+### Verification
+
+**Tested Endpoints:**
+```bash
+# Health check
+curl https://<function-url>/health
+
+# Executive endpoint (combined item)
+curl https://<function-url>/report/NVDA/executive
+# Returns: success, ticker, toc (4 entries), ratings, executive_sections (3), total_word_count
+
+# ToC endpoint
+curl https://<function-url>/report/NVDA/toc
+# Returns: success, ticker, toc, ratings
+
+# Section endpoint
+curl https://<function-url>/report/NVDA/section/11_debt
+# Returns: success, ticker, section_id, title, content, word_count
+```
+
+### Impact
+- **Frontend** — Can now implement progressive loading UI (ToC navigation, lazy section loading)
+- **Performance** — Initial load reduced from full 400KB blob to ~50KB executive item
+- **Mobile UX** — Users see content immediately, detailed sections load on scroll/click
+- **Cost** — Fewer read capacity units consumed for partial report views
+
+### Next Steps (Frontend Phase)
+- [ ] ToC navigation component
+- [ ] Section-level progress indicators
+- [ ] Lazy loading for detailed sections
+- [ ] Skeleton loading states
+
+---
+
 ## [2026-01-09] Report Caching — Single Version Per Ticker
 
 ### Problem
