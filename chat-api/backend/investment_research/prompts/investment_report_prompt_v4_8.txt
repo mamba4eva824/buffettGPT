@@ -98,32 +98,24 @@ Headers, analogies, and insights should ONLY make sense for THIS company.
 
 ---
 
-## DYNAMIC HEADERS (CRITICAL — AVOID REPETITION)
+## SECTION HEADER FORMAT (CRITICAL — ENABLES PARSING)
 
-**Every section header AND table header should be unique to {ticker}'s story.**
+**All section headers MUST use the format: `## Static Keyword: Dynamic Subtitle`**
 
-### Section Header Examples by Situation
+This format ensures reliable parsing while keeping headers unique to {ticker}'s story.
 
-| Section | Generic (BAD) | Dynamic (GOOD) — varies by company |
-|---------|---------------|-----------------------------------|
-| **Growth** | "Growth Analysis" | "From 19% to 12%: The Slowdown Story" (slowing) |
-| | | "The 47% Rocket Ship" (accelerating) |
-| | | "Flatlined at 3%: Is Growth Over?" (stagnant) |
-| **Profitability** | "Profitability Section" | "From Red to Black: The $172M Turnaround" (turnaround) |
-| | | "77% Margins: The Profit Machine" (high margin) |
-| | | "Bleeding Cash: Where Did the Profit Go?" (declining) |
-| **Earnings Quality** | "Earnings Quality" | "The 200% Gap: Real vs Fake Profit" (big gap) |
-| | | "Clean Books: What You See Is What You Get" (small gap) |
-| | | "The 24% Employee Tax" (high SBC) |
-| **Cash Flow** | "Cash Flow Section" | "The $614M Cash Machine" (strong) |
-| | | "Paper Profits, Empty Pockets" (weak cash vs profit) |
-| | | "Where Does $2B/Year Actually Go?" (capital allocation focus) |
-| **Debt** | "Debt Analysis" | "The $2B War Chest" (net cash) |
-| | | "The $50B Mountain" (high debt) |
-| | | "From $2.4B to $423M: The Debt Paydown" (improving) |
-| **Dilution** | "Dilution Section" | "Your Slice Stays Your Slice" (low dilution) |
-| | | "The 24% Employee Tax on Shareholders" (high SBC) |
-| | | "Buying Back Faster Than Printing" (net buybacks) |
+### Section Header Format
+
+| Section | Format | Example |
+|---------|--------|---------|
+| **Quick Health Check** | `## Quick Health Check: {ticker}'s [Year] Report Card` | `## Quick Health Check: NVO's 2026 Report Card` |
+| **Growth** | `## Growth: [X% trend or story]` | `## Growth: From X% to Y% — The Slowdown Story` |
+| **Profitability** | `## Profitability: [Margin % or story]` | `## Profitability: X% Margins — The Profit Machine` |
+| **Valuation** | `## Valuation: [X% vs history]` | `## Valuation: X% Off — Historic Discount` |
+| **Earnings Quality** | `## Earnings Quality: [Gap % or Clean Books]` | `## Earnings Quality: The X% Gap` |
+| **Cash Flow** | `## Cash Flow: [$X or cash story]` | `## Cash Flow: The $XB Cash Machine` |
+| **Debt** | `## Debt: [$X or debt story]` | `## Debt: The $XB War Chest` |
+| **Dilution** | `## Dilution: [Slice story]` | `## Dilution: Your Slice Stays Your Slice` |
 
 ### Table Header Customization
 
@@ -176,8 +168,8 @@ Before writing ANY section, ask yourself:
 - How they make money (subscription? one-time? ads?)
 - Real-world example: "The last time you did X, you probably used their product"
 
-### 3. Quick Health Check
-**Use a dynamic {ticker}-specific header** (e.g., "Okta's 2026 Report Card" or "Is OKTA Actually Healthy?")
+### 3. Quick Health Check: {ticker}'s [Year] Report Card
+**Format:** `## Quick Health Check: {ticker}'s [Fiscal Year] Report Card`
 
 | Question | What's Happening | Flag | What It Means |
 |----------|------------------|------|---------------|
@@ -226,8 +218,14 @@ Before writing ANY section, ask yourself:
 ## PART 2: DETAILED ANALYSIS (For Those Who Want to Dig Deeper)
 ═══════════════════════════════════════════════════════════════
 
-### 6. Growth Section
-**Dynamic header with {ticker}'s actual growth metrics** (e.g., "From 19% to 12%: The Slowdown Story")
+### 6. Growth: [Dynamic Subtitle]
+**Format:** `## Growth: [X% to Y% trend or key insight]`
+
+Examples by situation:
+- Slowing: `## Growth: From X% to Y% — The Slowdown Story`
+- Accelerating: `## Growth: X% and Climbing — The Rocket Ship`
+- Stagnant: `## Growth: Flatlined at X% — Is Growth Over?`
+- Turnaround: `## Growth: From Negative to X% — The Comeback`
 
 **Include (2-3 paragraphs):**
 1. **5-year story table** — customize the last column based on {ticker}'s story:
@@ -241,8 +239,14 @@ Before writing ANY section, ask yourself:
 
 **Bottom line:** +/~/- indicator with one sentence
 
-### 7. Profitability Section
-**Dynamic header** (e.g., "From Red to Black: The $172M Turnaround" or "77% Margins: The Profit Machine")
+### 7. Profitability: [Dynamic Subtitle]
+**Format:** `## Profitability: [Margin % or profit story]`
+
+Examples by situation:
+- High margins: `## Profitability: X% Margins — The Profit Machine`
+- Turnaround: `## Profitability: From Red to Black — The $XM Turnaround`
+- Declining: `## Profitability: X% to Y% — The Margin Squeeze`
+- Stable: `## Profitability: Steady at X% — The Reliable Earner`
 
 **Include (2-3 paragraphs):**
 1. **How much do they keep from each sale?** — customize last column:
@@ -255,13 +259,15 @@ Before writing ANY section, ask yourself:
 
 **Bottom line:** +/~/- indicator
 
-### 8. Valuation Section
-**Dynamic header based on {ticker}'s valuation story:**
-- Trading below 5-yr avg: "30% Off: {ticker}'s Cheapest in 5 Years"
-- Trading above 5-yr avg: "Pricey at 2x Historical: Is {ticker} Worth It?"
-- Near historical avg: "Fair Value? {ticker} Trading at 5-Year Norms"
-- Negative earnings: "No P/E Here: What to Watch When Profits Are Red"
-- Turnaround story: "From Overpriced to On Sale: The Valuation Reset"
+### 8. Valuation: [Dynamic Subtitle]
+**Format:** `## Valuation: [X% vs history or valuation insight]`
+
+Examples by situation:
+- Cheap: `## Valuation: X% Off — {ticker}'s Cheapest in Y Years`
+- Expensive: `## Valuation: X% Premium — Is {ticker} Worth It?`
+- Fair value: `## Valuation: Trading at X-Year Norms`
+- No P/E: `## Valuation: No P/E Here — What to Watch Instead`
+- Reset: `## Valuation: From Overpriced to On Sale — The Reset`
 
 **Include (2-3 paragraphs):**
 
@@ -305,11 +311,13 @@ Before writing ANY section, ask yourself:
 - "~" = Near historical avg OR mixed signals
 - "-" = Trading above historical avg AND/OR declining estimates
 
-### 9. Earnings Quality Section
-**Dynamic header** reflecting GAAP vs Adjusted story:
-- Big gap: "The 200% Gap: Real Profit vs Creative Accounting"
-- High SBC: "The 24% Employee Tax on Your Returns"
-- Clean books: "Clean Books: What You See Is What You Get"
+### 9. Earnings Quality: [Dynamic Subtitle]
+**Format:** `## Earnings Quality: [Gap %, SBC %, or "Clean Books"]`
+
+Examples by situation:
+- Big gap: `## Earnings Quality: The X% Gap — Real vs Adjusted Profit`
+- High SBC: `## Earnings Quality: The X% Employee Tax`
+- Clean books: `## Earnings Quality: Clean Books — What You See Is What You Get`
 
 **Include (2-3 paragraphs):**
 1. **Real Profit vs "Adjusted" Profit** — customize column headers:
@@ -322,11 +330,14 @@ Before writing ANY section, ask yourself:
 
 **Bottom line:** +/~/- indicator
 
-### 10. Cash Flow Section
-**Dynamic header** based on {ticker}'s cash story:
-- Strong cash: "The $614M Cash Machine"
-- Weak cash: "Paper Profits, Empty Pockets"
-- Improving: "Finally Turning Profit Into Cash"
+### 10. Cash Flow: [Dynamic Subtitle]
+**Format:** `## Cash Flow: [$X Cash Machine or cash quality insight]`
+
+Examples by situation:
+- Strong: `## Cash Flow: The $XB Cash Machine`
+- Weak: `## Cash Flow: Paper Profits, Empty Pockets`
+- Improving: `## Cash Flow: Finally Turning Profit Into Cash`
+- Volatile: `## Cash Flow: The Rollercoaster — $XB to $YB`
 
 **Include (2-3 paragraphs):**
 1. **Quarterly cash flow table** — customize last column:
@@ -339,11 +350,14 @@ Before writing ANY section, ask yourself:
 
 **Bottom line:** +/~/- indicator
 
-### 11. Debt Section
-**Dynamic header** based on {ticker}'s balance sheet:
-- Net cash: "The $2B War Chest" or "More Savings Than Debt"
-- High debt: "The $50B Mountain" or "Climbing Out of the Hole"
-- Paying down: "From $2.4B to $423M: The Great Paydown"
+### 11. Debt: [Dynamic Subtitle]
+**Format:** `## Debt: [$X amount or debt situation]`
+
+Examples by situation:
+- Net cash: `## Debt: The $XB War Chest — More Savings Than Debt`
+- High debt: `## Debt: The $XB Mountain`
+- Paying down: `## Debt: From $XB to $YM — The Great Paydown`
+- Increasing: `## Debt: From $XB to $YB — The Debt Climb`
 
 **Include (2-3 paragraphs):**
 1. **5-Year Debt Story Table** — customize headers based on situation:
@@ -356,12 +370,14 @@ Before writing ANY section, ask yourself:
 
 **Bottom line:** +/~/- indicator
 
-### 12. Dilution Section
-**Dynamic header** based on {ticker}'s share count story:
-- Low dilution: "Your Slice Stays Your Slice"
-- High SBC: "The 24% Employee Tax on Shareholders"
-- Buybacks winning: "Buying Back Faster Than They're Printing"
-- Dilution city: "Death by a Thousand Shares"
+### 12. Dilution: [Dynamic Subtitle]
+**Format:** `## Dilution: [Dilution %, buyback status, or slice insight]`
+
+Examples by situation:
+- Low dilution: `## Dilution: Your Slice Stays Your Slice`
+- High SBC: `## Dilution: The X% Employee Tax on Shareholders`
+- Buybacks winning: `## Dilution: Buying Back X% — Shrinking the Pie`
+- High dilution: `## Dilution: Death by a Thousand Shares — X% Annual Dilution`
 
 **Include (2-3 paragraphs):**
 1. **How Much Is Your Slice Changing?** — customize table header:
@@ -440,12 +456,12 @@ Before submitting, verify:
 - [ ] Investment Fit table included in Executive Summary
 - [ ] Warning Signs Checklist and 6-Point Vibe Check both present
 
-**Dynamic Headers (CRITICAL — prevents cookie-cutter reports):**
-- [ ] EVERY section header includes {ticker}'s actual numbers or situation
-- [ ] Section headers would NOT work for a different company (uniqueness test)
+**Section Headers (CRITICAL — enables parsing):**
+- [ ] ALL section headers use format: `## Static Keyword: Dynamic Subtitle`
+- [ ] Quick Health Check: `## Quick Health Check: {ticker}'s [Year] Report Card`
+- [ ] Growth/Profitability/Valuation/etc. start with static keyword followed by colon
+- [ ] Dynamic subtitles include {ticker}'s actual numbers (X%, $XB, etc.)
 - [ ] Table headers are customized to {ticker}'s story (not generic templates)
-- [ ] Example: "The $2B War Chest" not "Debt Section"
-- [ ] Example: `Year | Losses → Profits | The Turnaround` not `Year | Profit | Trend`
 
 **Plain Language:**
 - [ ] Every number has plain English explaining what it means

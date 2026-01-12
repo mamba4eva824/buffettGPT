@@ -30,8 +30,8 @@ from investment_research.index_tickers import get_index_tickers
 from investment_research.section_parser import (
     parse_report_sections,
     extract_ratings_json,
-    build_toc,
-    calculate_total_word_count
+    build_executive_item,
+    get_detailed_section_items
 )
 
 
@@ -333,10 +333,15 @@ class ReportGenerator:
         features: Dict[str, Any] = None
     ) -> None:
         """
-        Save a report as individual section items to DynamoDB v2 table.
+        Save a report as section items to DynamoDB v2 table.
 
-        Enables progressive loading and section-level retrieval for frontend ToC.
-        Each report is stored as 18 items: 1 metadata + 17 sections.
+        V2 Schema (Single Executive Item pattern):
+        - 1 executive item (00_executive): ToC + ratings + 5 executive sections combined
+        - 12 detailed section items (06_growth through 17_realtalk)
+        Total: 13 items per report
+
+        This enables fast initial load (single DynamoDB read for executive)
+        and progressive loading of detailed sections.
 
         Args:
             ticker: Stock symbol
@@ -362,51 +367,44 @@ class ReportGenerator:
         # Delete any existing sections for this ticker (ensures clean state)
         self._delete_existing_sections(ticker)
 
-        # Build ToC from sections
-        toc = build_toc(sections)
-        total_word_count = calculate_total_word_count(sections)
-
-        # Common fields for all items
+        # Common fields
         generated_at = datetime.utcnow().isoformat() + 'Z'
         ttl = int((datetime.utcnow() + timedelta(days=120)).timestamp())
 
-        # Write METADATA item (section_id = '00_metadata')
-        metadata_item = {
-            'ticker': ticker,
-            'section_id': '00_metadata',
-            'fiscal_year': fiscal_year,
-            'toc': json.dumps(toc, cls=DecimalEncoder),
-            'ratings': json.dumps(ratings, cls=DecimalEncoder),
-            'total_word_count': total_word_count,
-            'generated_at': generated_at,
-            'model': 'claude-code',
-            'prompt_version': str(self.prompt_version),
-            'features_snapshot': json.dumps(decimal_to_float(features or {}), cls=DecimalEncoder),
-            'part': 0,  # Metadata is part 0
-            'ttl': ttl
-        }
-        self.reports_table_v2.put_item(Item=metadata_item)
-        print(f"    Saved metadata item for {ticker}")
+        # Build executive item (00_executive): ToC + ratings + Part 1 sections combined
+        executive_item = build_executive_item(
+            sections=sections,
+            ratings=ratings,
+            ticker=ticker,
+            generated_at=generated_at,
+            model='claude-opus-4-5-20251101',
+            prompt_version=f'v{self.prompt_version}',
+            fiscal_year=fiscal_year
+        )
+        executive_item['ttl'] = ttl
 
-        # Batch write all section items
+        # Write executive item
+        self.reports_table_v2.put_item(Item=executive_item)
+        exec_sections_count = len(executive_item.get('executive_sections', []))
+        print(f"    Saved executive item (00_executive) with {exec_sections_count} sections")
+
+        # Get detailed section items (Part 2 & 3)
+        detailed_items = get_detailed_section_items(
+            sections=sections,
+            ticker=ticker,
+            generated_at=generated_at
+        )
+
+        # Batch write detailed section items
         with self.reports_table_v2.batch_writer() as batch:
-            for section in sections:
-                section_item = {
-                    'ticker': ticker,
-                    'section_id': section.section_id,
-                    'content': section.content,
-                    'title': section.title,
-                    'display_order': section.display_order,
-                    'part': section.part,
-                    'icon': section.icon,
-                    'word_count': section.word_count,
-                    'generated_at': generated_at,
-                    'ttl': ttl
-                }
-                batch.put_item(Item=section_item)
+            for item in detailed_items:
+                item['ttl'] = ttl
+                batch.put_item(Item=item)
 
-        print(f"    Saved {len(sections)} section items for {ticker}")
-        print(f"  Report sections saved for {ticker} (v2 schema)")
+        print(f"    Saved {len(detailed_items)} detailed section items")
+        total_items = 1 + len(detailed_items)
+        total_words = executive_item.get('total_word_count', 0)
+        print(f"  Report saved for {ticker} (v2 schema): {total_items} items, {total_words} words")
 
     def _delete_existing_sections(self, ticker: str) -> int:
         """

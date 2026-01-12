@@ -28,41 +28,55 @@ class ParsedSection:
             self.word_count = len(self.content.split())
 
 
-# Section definitions with regex patterns for dynamic headers
+# Section definitions with regex patterns for multiple header formats
 # Format: (pattern, section_id, display_order, part, icon, fallback_title)
+#
+# Supports multiple formats:
+# - v4.8 numbered: "### 1. TL;DR", "### 6. From 37% to 5%: The Growth Story"
+# - Static:Dynamic: "## Growth: From 37% to 5% — The Slowdown Story"
+# - Simple: "## TL;DR"
+#
 SECTION_DEFINITIONS: List[Tuple[str, str, int, int, str, str]] = [
     # Part 1: Executive Summary
-    (r'^##\s*TL;?DR', '01_tldr', 1, 1, 'lightning', 'TL;DR'),
-    (r'^##\s*What Does .+? (?:Actually )?Do\??', '02_business', 2, 1, 'building', 'What Do They Do?'),
-    (r'^##\s*(?:.+?(?:Report Card|Health Check)|Quick Health Check|Is .+? (?:Actually )?Healthy\?)', '03_health', 3, 1, 'clipboard', 'Quick Health Check'),
-    (r'^##\s*Investment Fit(?: Assessment)?', '04_fit', 4, 1, 'target', 'Investment Fit'),
-    (r'^##\s*The Verdict', '05_verdict', 5, 1, 'gavel', 'The Verdict'),
+    # Matches: "### 1. TL;DR", "## TL;DR", "## 1. TL;DR"
+    (r'^#{2,3}\s*(?:\d+\.\s*)?TL;?DR', '01_tldr', 1, 1, 'lightning', 'TL;DR'),
+    # Matches: "### 2. What Does AAPL Actually Do?", "## What Does AAPL Actually Do?"
+    (r'^#{2,3}\s*(?:\d+\.\s*)?What Does .+? (?:Actually )?Do\??', '02_business', 2, 1, 'building', 'What Do They Do?'),
+    # Matches: "### 3. Quick Health Check", "## Quick Health Check:"
+    (r'^#{2,3}\s*(?:\d+\.\s*)?Quick Health Check', '03_health', 3, 1, 'clipboard', 'Quick Health Check'),
+    # Matches: "### 4. Investment Fit Assessment", "## Investment Fit"
+    (r'^#{2,3}\s*(?:\d+\.\s*)?Investment Fit', '04_fit', 4, 1, 'target', 'Investment Fit'),
+    # Matches: "### 5. The Verdict", "## The Verdict"
+    (r'^#{2,3}\s*(?:\d+\.\s*)?The Verdict', '05_verdict', 5, 1, 'gavel', 'The Verdict'),
 
-    # Part 2: Detailed Analysis - Dynamic headers with numbers/narratives
-    # Growth: "From 19% to 12%: The Slowdown Story", "The 47% Rocket Ship", "Flatlined at 3%"
-    (r'^##\s*(?:Growth|From \d+%|The \d+%|Flatlined|Revenue)', '06_growth', 6, 2, 'chart-up', 'Growth'),
-    # Profitability: "From Red to Black", "77% Margins: The Profit Machine", "Bleeding Cash"
-    (r'^##\s*(?:Profitability|From Red|Margins|\d+% Margins|Bleeding|The Profit)', '07_profit', 7, 2, 'piggy-bank', 'Profitability'),
-    # Valuation: "30% Off", "Pricey at 2x", "Fair Value?", "No P/E Here"
-    (r'^##\s*(?:Valuation|\d+% Off|Pricey|Fair Value|No P/E|What You\'re Paying)', '08_valuation', 8, 2, 'calculator', 'Valuation'),
-    # Earnings Quality: "The 200% Gap", "The 24% Employee Tax", "Clean Books"
-    (r'^##\s*(?:Earnings Quality|The \d+% Gap|The \d+% Employee|Clean Books|Real Profit)', '09_earnings', 9, 2, 'eye', 'Earnings Quality'),
-    # Cash Flow: "The $614M Cash Machine", "Paper Profits", "Empty Pockets"
-    (r'^##\s*(?:Cash Flow|The \$[\d.]+[BMK]? Cash|Paper Profits|Empty Pockets|Finally Turning)', '10_cashflow', 10, 2, 'cash', 'Cash Flow'),
-    # Debt: "The $2B War Chest", "The $50B Mountain", "From $2.4B to $423M"
-    (r'^##\s*(?:Debt|The \$[\d.]+[BMK]? (?:War Chest|Mountain)|More Savings|Climbing Out|From \$[\d.]+[BMK]? to)', '11_debt', 11, 2, 'bank', 'Debt'),
-    # Dilution: "Your Slice Stays", "The 24% Employee Tax", "Buying Back Faster", "Death by"
-    (r'^##\s*(?:Dilution|Your Slice|The \d+% Employee Tax on Shareholders|Buying Back|Death by)', '12_dilution', 12, 2, 'pie-chart', 'Dilution'),
-    # Bull/Bear Cases
-    (r'^##\s*Bull Case', '13_bull', 13, 2, 'trending-up', 'Bull Case'),
-    (r'^##\s*Bear Case', '14_bear', 14, 2, 'trending-down', 'Bear Case'),
-    # Warning Signs
-    (r'^##\s*Warning Signs(?: Checklist)?', '15_warnings', 15, 2, 'alert-triangle', 'Warning Signs'),
-    # Vibe Check
-    (r'^##\s*(?:6-Point )?Vibe Check', '16_vibe', 16, 2, 'check-circle', 'Vibe Check'),
+    # Part 2: Detailed Analysis
+    # Matches numbered format "### 6. Title" OR keyword format "## Growth: Title"
+    # Growth - matches "### 6. From 37% to 5%", "## Growth:", or any "### 6." header
+    (r'^#{2,3}\s*(?:6\.\s+|Growth:)', '06_growth', 6, 2, 'chart-up', 'Growth'),
+    # Profitability - matches "### 7. 77% ROE", "## Profitability:"
+    (r'^#{2,3}\s*(?:7\.\s+|Profitability:)', '07_profit', 7, 2, 'piggy-bank', 'Profitability'),
+    # Valuation - matches "### 8. 53% Off", "## Valuation:"
+    (r'^#{2,3}\s*(?:8\.\s+|Valuation:)', '08_valuation', 8, 2, 'calculator', 'Valuation'),
+    # Earnings Quality - matches "### 9. The 62.9% Gap", "## Earnings Quality:"
+    (r'^#{2,3}\s*(?:9\.\s+|Earnings Quality:)', '09_earnings', 9, 2, 'eye', 'Earnings Quality'),
+    # Cash Flow - matches "### 10. The $10.5B Cash Machine", "## Cash Flow:"
+    (r'^#{2,3}\s*(?:10\.\s+|Cash Flow:)', '10_cashflow', 10, 2, 'cash', 'Cash Flow'),
+    # Debt - matches "### 11. From Net Cash to $10.7B", "## Debt:"
+    (r'^#{2,3}\s*(?:11\.\s+|Debt:)', '11_debt', 11, 2, 'bank', 'Debt'),
+    # Dilution - matches "### 12. Your Slice Stays", "## Dilution:"
+    (r'^#{2,3}\s*(?:12\.\s+|Dilution:)', '12_dilution', 12, 2, 'pie-chart', 'Dilution'),
+    # Bull Case - matches "### 13. Bull Case", "## Bull Case"
+    (r'^#{2,3}\s*(?:13\.\s+)?Bull Case', '13_bull', 13, 2, 'trending-up', 'Bull Case'),
+    # Bear Case - matches "### 14. Bear Case", "## Bear Case"
+    (r'^#{2,3}\s*(?:14\.\s+)?Bear Case', '14_bear', 14, 2, 'trending-down', 'Bear Case'),
+    # Warning Signs - matches "### 15. Warning Signs Checklist", "## Warning Signs"
+    (r'^#{2,3}\s*(?:15\.\s+)?Warning Signs', '15_warnings', 15, 2, 'alert-triangle', 'Warning Signs'),
+    # Vibe Check - matches "### 16. 6-Point Vibe Check", "## Vibe Check"
+    (r'^#{2,3}\s*(?:16\.\s+)?(?:6-Point )?Vibe Check', '16_vibe', 16, 2, 'check-circle', 'Vibe Check'),
 
     # Part 3: Real Talk
-    (r'^##\s*Real Talk', '17_realtalk', 17, 3, 'message-circle', 'Real Talk'),
+    # Matches "### 17. Real Talk", "## Real Talk"
+    (r'^#{2,3}\s*(?:17\.\s+)?Real Talk', '17_realtalk', 17, 3, 'message-circle', 'Real Talk'),
 ]
 
 

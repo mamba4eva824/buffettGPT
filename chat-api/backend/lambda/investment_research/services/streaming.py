@@ -339,3 +339,134 @@ def complete_v2_event(ticker: str, section_count: int) -> dict:
             "timestamp": _timestamp()
         })
     }
+
+
+# =============================================================================
+# V2 Chunk Streaming Events (Typewriter Effect)
+# =============================================================================
+
+def executive_meta_event(item: Dict[str, Any]) -> dict:
+    """
+    Executive metadata event - ToC + ratings without section content.
+
+    Sends metadata upfront for initial load, then sections stream
+    via chunk events for typewriter effect.
+
+    Args:
+        item: Combined executive item from DynamoDB (00_executive)
+
+    Returns:
+        Dict with event='executive_meta' and metadata (no section content)
+    """
+    return {
+        "event": "executive_meta",
+        "data": _json_dumps({
+            "type": "executive_meta",
+            "ticker": item.get('ticker'),
+            "toc": item.get('toc', []),
+            "ratings": item.get('ratings', {}),
+            "total_word_count": item.get('total_word_count', 0),
+            "generated_at": item.get('generated_at'),
+            "timestamp": _timestamp()
+        })
+    }
+
+
+def section_start_event(
+    section_id: str,
+    title: str,
+    part: int,
+    icon: str,
+    word_count: int,
+    display_order: int,
+    total_chunks: int
+) -> dict:
+    """
+    Signal start of section streaming - sends metadata without content.
+
+    Emitted before chunk events to provide section context.
+
+    Args:
+        section_id: Section identifier (e.g., '06_growth')
+        title: Section title
+        part: Part number (1=executive, 2=detailed, 3=realtalk)
+        icon: Icon name for UI display
+        word_count: Word count for this section
+        display_order: Order for display (1-17)
+        total_chunks: Expected number of chunks for this section
+
+    Returns:
+        Dict with event='section_start' and section metadata
+    """
+    return {
+        "event": "section_start",
+        "data": _json_dumps({
+            "type": "section_start",
+            "section_id": section_id,
+            "title": title,
+            "part": part,
+            "icon": icon,
+            "word_count": word_count,
+            "display_order": display_order,
+            "total_chunks": total_chunks,
+            "timestamp": _timestamp()
+        })
+    }
+
+
+def section_chunk_event(
+    section_id: str,
+    chunk_index: int,
+    text: str,
+    is_final: bool = False
+) -> dict:
+    """
+    Stream a chunk of section content.
+
+    Emitted multiple times per section for typewriter-style rendering.
+    Each chunk is approximately 256 characters.
+
+    Args:
+        section_id: Section identifier (e.g., '06_growth')
+        chunk_index: Index of this chunk (0-based)
+        text: Chunk text content (~256 characters)
+        is_final: True if this is the last chunk for this section
+
+    Returns:
+        Dict with event='section_chunk' and chunk data
+    """
+    return {
+        "event": "section_chunk",
+        "data": _json_dumps({
+            "type": "section_chunk",
+            "section_id": section_id,
+            "chunk_index": chunk_index,
+            "text": text,
+            "is_final": is_final,
+            "timestamp": _timestamp()
+        })
+    }
+
+
+def section_end_event(section_id: str, total_chunks: int) -> dict:
+    """
+    Signal end of section streaming.
+
+    Emitted after all chunks for a section have been sent.
+
+    Args:
+        section_id: Section identifier (e.g., '06_growth')
+        total_chunks: Total number of chunks that were sent
+
+    Returns:
+        Dict with event='section_end' and completion data
+    """
+    return {
+        "event": "section_end",
+        "data": _json_dumps({
+            "type": "section_end",
+            "section_id": section_id,
+            "total_chunks": total_chunks,
+            "timestamp": _timestamp()
+        })
+    }

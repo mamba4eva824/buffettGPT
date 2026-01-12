@@ -17,10 +17,12 @@ V2 Endpoints (section-based progressive loading):
 """
 
 import os
+import asyncio
 import logging
 from datetime import datetime
-from typing import AsyncGenerator, Optional, List
+from typing import AsyncGenerator, Optional, List, Dict, Any
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
@@ -52,6 +54,11 @@ from services.streaming import (
     section_event,
     progress_event,
     complete_v2_event,
+    # V2 chunk streaming events
+    executive_meta_event,
+    section_start_event,
+    section_chunk_event,
+    section_end_event,
 )
 from models.schemas import HealthResponse, FollowUpRequest
 
@@ -62,6 +69,68 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Thread pool for running blocking DynamoDB calls without blocking the event loop
+_executor = ThreadPoolExecutor(max_workers=4)
+
+
+# =============================================================================
+# Chunk Streaming Configuration
+# =============================================================================
+
+CHUNK_SIZE = 256  # Characters per chunk
+CHUNK_DELAY_SECONDS = 0.01  # 10ms delay between chunks for smooth UX
+
+
+async def stream_section_chunks(section: Dict[str, Any]) -> AsyncGenerator[dict, None]:
+    """
+    Stream a section's content as character chunks for typewriter effect.
+
+    Emits events:
+    1. section_start - metadata without content
+    2. section_chunk (xN) - 256-char chunks with delay
+    3. section_end - completion signal
+
+    Args:
+        section: Section dict with content, section_id, title, etc.
+
+    Yields:
+        SSE event dicts for EventSourceResponse
+    """
+    content = section.get('content', '')
+    section_id = section.get('section_id', '')
+    total_chunks = max(1, (len(content) + CHUNK_SIZE - 1) // CHUNK_SIZE)
+
+    # 1. Send section_start event (metadata without content)
+    yield section_start_event(
+        section_id=section_id,
+        title=section.get('title', ''),
+        part=section.get('part', 0),
+        icon=section.get('icon', ''),
+        word_count=section.get('word_count', 0),
+        display_order=section.get('display_order', 0),
+        total_chunks=total_chunks
+    )
+
+    # 2. Stream content chunks
+    for chunk_idx in range(total_chunks):
+        start = chunk_idx * CHUNK_SIZE
+        end = min(start + CHUNK_SIZE, len(content))
+        chunk_text = content[start:end]
+        is_final = (chunk_idx == total_chunks - 1)
+
+        yield section_chunk_event(
+            section_id=section_id,
+            chunk_index=chunk_idx,
+            text=chunk_text,
+            is_final=is_final
+        )
+
+        # Small delay for smoother streaming (10ms)
+        await asyncio.sleep(CHUNK_DELAY_SECONDS)
+
+    # 3. Send section_end event
+    yield section_end_event(section_id, total_chunks)
 
 
 # =============================================================================
@@ -263,14 +332,16 @@ async def followup_question(request: FollowUpRequest):
 
 async def generate_section_stream(ticker: str) -> AsyncGenerator[dict, None]:
     """
-    Generate SSE events for streaming sections progressively.
+    Generate SSE events for streaming sections with chunk-level typewriter effect.
 
-    V2 Event sequence (Single Executive Item schema):
+    V2 Event sequence (Chunk Streaming):
     1. connected - Initial connection established
-    2. executive - Combined item (ToC + ratings + 5 executive sections)
-    3. section (x12) - Detailed sections (06_growth through 17_realtalk)
-    4. progress - Progress updates between section batches
-    5. complete - Stream finished
+    2. executive_meta - ToC + ratings (no section content)
+    3. progress - "Loading executive summary..."
+    4. section_start/chunk/end (x5) - Executive sections streamed in chunks
+    5. progress - "Loading detailed analysis..."
+    6. section_start/chunk/end (x12) - Detailed sections streamed in chunks
+    7. complete - Stream finished
 
     Args:
         ticker: Stock ticker symbol (uppercase)
@@ -282,8 +353,9 @@ async def generate_section_stream(ticker: str) -> AsyncGenerator[dict, None]:
         # 1. Connection event
         yield connected_event()
 
-        # 2. Get combined executive item (single DynamoDB read)
-        exec_item = get_executive(ticker)
+        # 2. Get combined executive item (single DynamoDB read, run in executor to avoid blocking)
+        loop = asyncio.get_event_loop()
+        exec_item = await loop.run_in_executor(_executor, get_executive, ticker)
 
         if not exec_item:
             yield error_event(
@@ -293,11 +365,21 @@ async def generate_section_stream(ticker: str) -> AsyncGenerator[dict, None]:
             )
             return
 
-        # 3. Send executive event with ToC + ratings + Part 1 sections upfront
-        yield executive_event(exec_item)
+        # 3. Send executive metadata (ToC + ratings, no section content)
+        yield executive_meta_event(exec_item)
 
-        # 4. Get detailed sections (Part 2 & 3) and stream them
-        detailed_sections = get_all_sections(ticker)  # Already filters out 00_executive
+        # 4. Stream executive sections (Part 1) with chunks
+        executive_sections = exec_item.get('executive_sections', [])
+        total_exec = len(executive_sections)
+
+        yield progress_event(0, total_exec, "Loading executive summary...")
+
+        for i, section in enumerate(executive_sections):
+            async for chunk_event in stream_section_chunks(section):
+                yield chunk_event
+
+        # 5. Get detailed sections (Part 2 & 3, run in executor to avoid blocking)
+        detailed_sections = await loop.run_in_executor(_executor, get_all_sections, ticker)
 
         if not detailed_sections:
             yield error_event(
@@ -308,30 +390,22 @@ async def generate_section_stream(ticker: str) -> AsyncGenerator[dict, None]:
 
         total_detailed = len(detailed_sections)
 
-        # 5. Stream detailed sections
+        # 6. Stream detailed sections with chunks
         yield progress_event(0, total_detailed, "Loading detailed analysis...")
 
         for i, section in enumerate(detailed_sections):
-            # Send section event (like chunk event)
-            yield section_event(
-                section_id=section.get('section_id', ''),
-                title=section.get('title', ''),
-                content=section.get('content', ''),
-                part=section.get('part', 0),
-                icon=section.get('icon', ''),
-                word_count=section.get('word_count', 0),
-                display_order=section.get('display_order', 0)
-            )
+            async for chunk_event in stream_section_chunks(section):
+                yield chunk_event
 
-            # Send progress events at key points
+            # Progress updates at key points
             current = i + 1
             if current == 6:  # Halfway through detailed analysis
                 yield progress_event(current, total_detailed, "Deep diving into metrics...")
             elif current == 11:  # Before Real Talk (Part 3)
                 yield progress_event(current, total_detailed, "Almost done...")
 
-        # 6. Completion event (5 exec + 12 detailed = 17 total sections)
-        total_sections = len(exec_item.get('executive_sections', [])) + total_detailed
+        # 7. Completion event (5 exec + 12 detailed = 17 total sections)
+        total_sections = total_exec + total_detailed
         yield complete_v2_event(ticker, total_sections)
 
     except Exception as e:
