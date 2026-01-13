@@ -334,11 +334,11 @@ async def generate_section_stream(ticker: str) -> AsyncGenerator[dict, None]:
     """
     Generate SSE events for streaming sections with chunk-level typewriter effect.
 
-    V2 Event sequence (Chunk Streaming):
+    V2 Event sequence (Chunk Streaming - Merged Executive Summary):
     1. connected - Initial connection established
-    2. executive_meta - ToC + ratings (no section content)
+    2. executive_meta - ToC + ratings (no section content, 13 entries in ToC)
     3. progress - "Loading executive summary..."
-    4. section_start/chunk/end (x5) - Executive sections streamed in chunks
+    4. section_start/chunk/end (x1) - Single merged Executive Summary streamed in chunks
     5. progress - "Loading detailed analysis..."
     6. section_start/chunk/end (x12) - Detailed sections streamed in chunks
     7. complete - Stream finished
@@ -366,16 +366,15 @@ async def generate_section_stream(ticker: str) -> AsyncGenerator[dict, None]:
             return
 
         # 3. Send executive metadata (ToC + ratings, no section content)
+        # ToC now has 13 entries: 1 Executive Summary + 12 Detailed/RealTalk
         yield executive_meta_event(exec_item)
 
-        # 4. Stream executive sections (Part 1) with chunks
-        executive_sections = exec_item.get('executive_sections', [])
-        total_exec = len(executive_sections)
+        # 4. Stream merged Executive Summary (Part 1) as single section
+        executive_summary = exec_item.get('executive_summary', {})
 
-        yield progress_event(0, total_exec, "Loading executive summary...")
-
-        for i, section in enumerate(executive_sections):
-            async for chunk_event in stream_section_chunks(section):
+        if executive_summary:
+            yield progress_event(0, 1, "Loading executive summary...")
+            async for chunk_event in stream_section_chunks(executive_summary):
                 yield chunk_event
 
         # 5. Get detailed sections (Part 2 & 3, run in executor to avoid blocking)
@@ -404,8 +403,8 @@ async def generate_section_stream(ticker: str) -> AsyncGenerator[dict, None]:
             elif current == 11:  # Before Real Talk (Part 3)
                 yield progress_event(current, total_detailed, "Almost done...")
 
-        # 7. Completion event (5 exec + 12 detailed = 17 total sections)
-        total_sections = total_exec + total_detailed
+        # 7. Completion event (1 exec + 12 detailed = 13 total sections)
+        total_sections = 1 + total_detailed
         yield complete_v2_event(ticker, total_sections)
 
     except Exception as e:
@@ -471,19 +470,21 @@ async def get_section(
     ),
     section_id: str = Path(
         ...,
-        description="Section identifier (e.g., 06_growth, 11_debt)",
+        description="Section identifier (e.g., 01_executive_summary, 06_growth, 11_debt)",
         min_length=1,
-        max_length=20
+        max_length=25
     )
 ):
     """
     Get a specific section content.
 
     Enables on-demand section loading for navigation.
+    For 01_executive_summary, returns merged Part 1 content from executive item.
+    For other sections, returns from individual section items.
 
     Args:
         ticker: Stock ticker symbol (1-5 letters)
-        section_id: Section identifier (e.g., '06_growth')
+        section_id: Section identifier (e.g., '01_executive_summary', '06_growth')
 
     Returns:
         JSONResponse with section content and metadata
@@ -497,12 +498,28 @@ async def get_section(
 
     logger.info(f"Fetching section {section_id} for {ticker}")
 
-    section = get_report_section(ticker, section_id)
-    if not section:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Section {section_id} not found for {ticker}."
-        )
+    # Handle merged Executive Summary specially
+    if section_id == '01_executive_summary':
+        exec_item = get_executive(ticker)
+        if not exec_item:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Report not found for {ticker}."
+            )
+        section = exec_item.get('executive_summary')
+        if not section:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Executive summary not found for {ticker}."
+            )
+    else:
+        # Fetch from individual section items (Part 2/3)
+        section = get_report_section(ticker, section_id)
+        if not section:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Section {section_id} not found for {ticker}."
+            )
 
     return JSONResponse(content={
         "success": True,
@@ -528,12 +545,12 @@ async def get_executive_endpoint(
     )
 ):
     """
-    Get combined executive item (ToC + ratings + 5 executive sections).
+    Get combined executive item (ToC + ratings + merged Executive Summary).
 
     Returns everything needed for initial load in a single DynamoDB read:
-    - toc: Full table of contents for all sections
+    - toc: Table of contents (13 entries: 1 Executive Summary + 12 Detailed/RealTalk)
     - ratings: Investment ratings with verdict and conviction
-    - executive_sections: Part 1 sections with content
+    - executive_summary: Merged Part 1 section with all executive content
     - total_word_count: Total words in report
 
     This is the primary endpoint for initial page load.
@@ -565,7 +582,7 @@ async def get_executive_endpoint(
         "ticker": ticker,
         "toc": item.get('toc', []),
         "ratings": item.get('ratings', {}),
-        "executive_sections": item.get('executive_sections', []),
+        "executive_summary": item.get('executive_summary', {}),
         "total_word_count": item.get('total_word_count', 0),
         "generated_at": item.get('generated_at'),
         "timestamp": datetime.utcnow().isoformat() + 'Z'

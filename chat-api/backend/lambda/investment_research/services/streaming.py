@@ -11,16 +11,18 @@ V1 Event Types (single-blob reports):
 - complete: Stream finished
 - error: Error occurred
 
-V2 Event Types (section-based progressive loading with Single Executive Item):
+V2 Event Types (section-based progressive loading with Merged Executive Summary):
 - connected: Initial connection established
-- executive: Combined item (ToC + ratings + 5 executive sections) - sent first for fast initial load
-- section: Individual detailed section content (sent 12 times for Part 2 & 3)
+- executive_meta: ToC + ratings (13 entries: 1 Executive Summary + 12 Detailed/RealTalk)
+- section_start: Section metadata without content (signals start of streaming)
+- section_chunk: 256-char content chunk for typewriter effect
+- section_end: Section complete signal
 - progress: Loading progress indicator
 - complete: Stream finished
 - error: Error occurred
 
-V2 event flow (Single Executive Item schema):
-connected → executive (combined) → section (x12 detailed) → progress → complete
+V2 event flow (Merged Executive Summary schema):
+connected → executive_meta → section_start/chunk/end (x1 exec) → section_start/chunk/end (x12 detailed) → complete
 """
 import json
 from datetime import datetime
