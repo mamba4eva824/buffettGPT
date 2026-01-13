@@ -210,6 +210,84 @@ def build_toc(sections: List[ParsedSection]) -> List[Dict[str, Any]]:
     ]
 
 
+def build_merged_toc(sections: List[ParsedSection]) -> List[Dict[str, Any]]:
+    """
+    Build a table of contents with Part 1 sections merged into single Executive Summary.
+
+    Args:
+        sections: List of ParsedSection objects
+
+    Returns:
+        List of ToC entries with merged Executive Summary (13 entries instead of 17)
+    """
+    # Separate Part 1 and Part 2/3 sections
+    part1_sections = [s for s in sections if s.part == 1]
+    part2_3_sections = [s for s in sections if s.part >= 2]
+
+    # Calculate total word count for merged executive summary
+    executive_word_count = sum(s.word_count for s in part1_sections)
+
+    # Build merged ToC: Single Executive Summary entry + individual Part 2/3 entries
+    toc = [
+        {
+            'section_id': '01_executive_summary',
+            'title': 'Executive Summary',
+            'display_order': 1,
+            'part': 1,
+            'icon': 'lightning',
+            'word_count': executive_word_count
+        }
+    ]
+
+    # Add Part 2/3 sections with adjusted display_order (starting from 2)
+    for i, s in enumerate(sorted(part2_3_sections, key=lambda x: x.display_order)):
+        toc.append({
+            'section_id': s.section_id,
+            'title': s.title,
+            'display_order': i + 2,  # Start from 2 since Executive Summary is 1
+            'part': s.part,
+            'icon': s.icon,
+            'word_count': s.word_count
+        })
+
+    return toc
+
+
+def build_merged_executive_summary(sections: List[ParsedSection]) -> Dict[str, Any]:
+    """
+    Merge Part 1 sections into a single Executive Summary section.
+
+    Args:
+        sections: List of all ParsedSection objects
+
+    Returns:
+        Dictionary with merged executive summary content
+    """
+    # Get Part 1 sections sorted by display order
+    part1_sections = sorted(
+        [s for s in sections if s.part == 1],
+        key=lambda x: x.display_order
+    )
+
+    # Merge content with section headers
+    merged_content = "\n\n".join([
+        f"## {s.title}\n\n{s.content}"
+        for s in part1_sections
+    ])
+
+    total_word_count = sum(s.word_count for s in part1_sections)
+
+    return {
+        'section_id': '01_executive_summary',
+        'title': 'Executive Summary',
+        'content': merged_content,
+        'icon': 'lightning',
+        'word_count': total_word_count,
+        'part': 1,
+        'display_order': 1
+    }
+
+
 def get_sections_by_part(sections: List[ParsedSection], part: int) -> List[ParsedSection]:
     """
     Filter sections by part number.
@@ -279,9 +357,11 @@ def build_executive_item(
     fiscal_year: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    Build a single 00_executive item containing ToC + ratings + Part 1 sections.
+    Build a single 00_executive item containing ToC + ratings + merged Executive Summary.
 
     This creates the combined executive item for fast initial load (single DynamoDB read).
+    Part 1 sections (TL;DR, Business, Health Check, Fit, Verdict) are merged into a single
+    Executive Summary section for streamlined display.
 
     Args:
         sections: All parsed sections from the report
@@ -297,12 +377,17 @@ def build_executive_item(
         {
             'ticker': 'AAPL',
             'section_id': '00_executive',
-            'toc': [...],
+            'toc': [...],  # 13 entries (1 Executive Summary + 12 Detailed/RealTalk)
             'ratings': {...},
-            'executive_sections': [
-                {'section_id': '01_tldr', 'title': '...', 'content': '...', 'icon': '...', 'word_count': N},
-                ...
-            ],
+            'executive_summary': {  # Single merged section
+                'section_id': '01_executive_summary',
+                'title': 'Executive Summary',
+                'content': '## TL;DR\\n\\n...\\n\\n## What Do They Do?\\n\\n...',
+                'icon': 'lightning',
+                'word_count': N,
+                'part': 1,
+                'display_order': 1
+            },
             'total_word_count': N,
             'generated_at': '...',
             'model': '...',
@@ -310,23 +395,11 @@ def build_executive_item(
             'fiscal_year': N
         }
     """
-    # Get Part 1 (executive) sections
-    executive_sections = get_executive_sections(sections)
+    # Build merged ToC (13 entries instead of 17)
+    toc = build_merged_toc(sections)
 
-    # Build full ToC for all sections
-    toc = build_toc(sections)
-
-    # Build executive sections array with content
-    exec_sections_data = [
-        {
-            'section_id': s.section_id,
-            'title': s.title,
-            'content': s.content,
-            'icon': s.icon,
-            'word_count': s.word_count
-        }
-        for s in executive_sections
-    ]
+    # Build merged Executive Summary (single section with all Part 1 content)
+    executive_summary = build_merged_executive_summary(sections)
 
     # Build the combined item
     item = {
@@ -334,7 +407,7 @@ def build_executive_item(
         'section_id': '00_executive',
         'toc': toc,
         'ratings': ratings,
-        'executive_sections': exec_sections_data,
+        'executive_summary': executive_summary,  # Single merged section
         'total_word_count': calculate_total_word_count(sections)
     }
 

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
 import AnalysisView from "./components/analysis/AnalysisView.jsx";
 import StreamingText from "./components/analysis/StreamingText.jsx";
+import { InvestmentResearchView } from "./components/research/index.js";
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
 import { ConversationList } from "./components/ConversationList.jsx";
@@ -690,6 +691,7 @@ function ChatApp() {
   const [input, setInput] = useState("");
   const [selectedMode, setSelectedMode] = useState('buffett');
   const [showAnalysis, setShowAnalysis] = useState(false);
+  const [showInvestmentResearch, setShowInvestmentResearch] = useState(false);
   const [analysisTicker, setAnalysisTicker] = useState('');
   const [savedAnalysisResults, setSavedAnalysisResults] = useState(null);  // For viewing saved analysis from history
   const [analysisComplete, setAnalysisComplete] = useState(false);  // Track when to show follow-up suggestions
@@ -855,13 +857,24 @@ function ChatApp() {
       }
     }
 
-    // Open Deep Value Analysis view (fresh analysis, not from saved results)
     // Extract company/ticker from natural language query
     const extractedCompany = extractCompanyFromQuery(messageText);
-    setSavedAnalysisResults(null);
-    setIsLoadedFromHistory(false);  // This is a new analysis, not loaded from history
     setAnalysisTicker(extractedCompany);
-    setShowAnalysis(true);
+
+    // Mode-based routing: Investment Research vs Buffett (Prediction Ensemble)
+    if (selectedMode === 'investment-research') {
+      // Investment Research mode - uses pre-generated reports from Investment Research Lambda
+      setShowInvestmentResearch(true);
+      setShowAnalysis(false);
+      setSavedAnalysisResults(null);
+      setIsLoadedFromHistory(false);
+    } else {
+      // Buffett mode (default) - uses ML inference via Prediction Ensemble Lambda
+      setShowAnalysis(true);
+      setShowInvestmentResearch(false);
+      setSavedAnalysisResults(null);
+      setIsLoadedFromHistory(false);  // This is a new analysis, not loaded from history
+    }
 
     // For unauthorized users, increment query count and show banner
     if (!isAuthenticated) {
@@ -878,12 +891,13 @@ function ChatApp() {
         setShowRateLimitBanner(false);
       }, 8000);
     }
-  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation]);
+  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, selectedMode]);
 
   const newChat = useCallback(() => {
     // Clear messages and reset analysis view state
     setMessages([]);
     setShowAnalysis(false);
+    setShowInvestmentResearch(false);
     setSavedAnalysisResults(null);
     setAnalysisComplete(false);
     setAnalysisTicker('');
@@ -1017,8 +1031,8 @@ function ChatApp() {
             />
           )}
 
-          {/* Sidebar - Only show for authenticated users */}
-          {isAuthenticated && (
+          {/* Sidebar - Only show for authenticated users, hide in Investment Research mode */}
+          {isAuthenticated && !showInvestmentResearch && (
             <aside className={classNames(
               "shrink-0 border-r border-slate-100 dark:border-slate-700 transition-all duration-300 ease-in-out",
               // Mobile: fixed overlay that slides in from left
@@ -1245,7 +1259,7 @@ function ChatApp() {
             </div>
 
             {/* Dynamic Layout Based on Message State */}
-            {messages.length === 0 && !showAnalysis ? (
+            {messages.length === 0 && !showAnalysis && !showInvestmentResearch ? (
               /* CENTERED LAYOUT - No messages (landing, auth, new chat) */
               <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 pb-24 transition-all duration-300 ease-in-out">
                 <div className="text-center mb-8">
@@ -1268,8 +1282,20 @@ function ChatApp() {
             ) : (
               /* SPLIT LAYOUT - Messages exist (active conversation) */
               <>
-                {/* Analysis View or Messages Area */}
-                {showAnalysis ? (
+                {/* Investment Research View, Analysis View, or Messages Area */}
+                {showInvestmentResearch ? (
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <InvestmentResearchView
+                      key={`research-${analysisTicker}`}
+                      ticker={analysisTicker}
+                      onClose={() => {
+                        setShowInvestmentResearch(false);
+                        setAnalysisTicker('');
+                      }}
+                      token={token}
+                    />
+                  </div>
+                ) : showAnalysis ? (
                   <div className="flex-1 flex flex-col min-h-0 p-4">
                     <AnalysisView
                       key={`analysis-${selectedConversation?.conversation_id || 'new'}-${analysisTicker}`}
@@ -1321,8 +1347,8 @@ function ChatApp() {
                 </div>
                 )}
 
-                {/* Bottom Composer - hide when analysis is showing */}
-                {!showAnalysis && (
+                {/* Bottom Composer - hide when analysis or investment research is showing */}
+                {!showAnalysis && !showInvestmentResearch && (
                 <div className="border-t border-slate-100 dark:border-slate-700 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out">
                   {/* Rate Limit Banner */}
                   {showRateLimitBanner && !isAuthenticated && hasStartedQuerying && (
