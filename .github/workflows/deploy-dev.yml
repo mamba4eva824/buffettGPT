@@ -11,6 +11,21 @@ on:
         required: false
         default: false
         type: boolean
+      build_investment_research:
+        description: 'Build Investment Research Docker Lambda'
+        required: false
+        default: false
+        type: boolean
+      build_prediction_ensemble:
+        description: 'Build Prediction Ensemble Docker Lambda'
+        required: false
+        default: false
+        type: boolean
+      build_all_docker:
+        description: 'Build ALL Docker Lambdas (overrides individual selections)'
+        required: false
+        default: false
+        type: boolean
 
 env:
   AWS_REGION: us-east-1
@@ -18,6 +33,40 @@ env:
   PYTHON_VERSION: '3.11'
 
 jobs:
+  detect-changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      investment_research_changed: ${{ steps.changes.outputs.investment_research }}
+      prediction_ensemble_changed: ${{ steps.changes.outputs.prediction_ensemble }}
+      any_docker_changed: ${{ steps.changes.outputs.any_docker }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for diff
+
+      - name: Detect changed paths
+        id: changes
+        run: |
+          # For push events, compare with previous commit
+          # For workflow_dispatch, default to false (use manual inputs)
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            IR_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/investment_research/" && echo "true" || echo "false")
+            PE_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/prediction_ensemble/" && echo "true" || echo "false")
+          else
+            IR_CHANGED="false"
+            PE_CHANGED="false"
+          fi
+
+          echo "investment_research=$IR_CHANGED" >> $GITHUB_OUTPUT
+          echo "prediction_ensemble=$PE_CHANGED" >> $GITHUB_OUTPUT
+          echo "any_docker=$([[ $IR_CHANGED == 'true' || $PE_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+          echo "Investment Research changed: $IR_CHANGED"
+          echo "Prediction Ensemble changed: $PE_CHANGED"
+
   build-backend:
     name: Build Backend Lambda Functions
     runs-on: ubuntu-latest
@@ -183,15 +232,86 @@ jobs:
           echo "  WebSocket: $WS_ENDPOINT"
 
   build-docker-lambdas:
-    name: Build & Deploy Docker Lambda Images
+    name: Build Docker Lambda - ${{ matrix.lambda.name }}
     runs-on: ubuntu-latest  # x86_64 architecture - correct for Lambda
-    needs: [deploy-infrastructure]  # ECR repo must exist first
+    needs: [deploy-infrastructure, detect-changes]
+    # Only run if any Docker Lambda needs building
+    if: |
+      needs.detect-changes.outputs.any_docker_changed == 'true' ||
+      inputs.build_all_docker == true ||
+      inputs.build_investment_research == true ||
+      inputs.build_prediction_ensemble == true
+    strategy:
+      fail-fast: false  # Continue building other Lambdas if one fails
+      matrix:
+        lambda:
+          - name: investment-research
+            dockerfile_dir: chat-api/backend/lambda/investment_research
+            ecr_repo: buffett/investment-research
+            change_output: investment_research_changed
+            manual_input: build_investment_research
+          - name: prediction-ensemble
+            dockerfile_dir: chat-api/backend/lambda/prediction_ensemble
+            ecr_repo: buffett/prediction-ensemble
+            change_output: prediction_ensemble_changed
+            manual_input: build_prediction_ensemble
 
     steps:
+      - name: Check if this Lambda should be built
+        id: should-build
+        env:
+          LAMBDA_NAME: ${{ matrix.lambda.name }}
+          BUILD_ALL: ${{ inputs.build_all_docker }}
+          BUILD_IR: ${{ inputs.build_investment_research }}
+          BUILD_PE: ${{ inputs.build_prediction_ensemble }}
+          IR_CHANGED: ${{ needs.detect-changes.outputs.investment_research_changed }}
+          PE_CHANGED: ${{ needs.detect-changes.outputs.prediction_ensemble_changed }}
+        run: |
+          # Build if:
+          # 1. build_all_docker is true, OR
+          # 2. This Lambda's manual input is true, OR
+          # 3. This Lambda's path changed (push event)
+
+          SHOULD_BUILD="false"
+
+          # Check build_all_docker
+          if [[ "$BUILD_ALL" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: build_all_docker=true"
+          fi
+
+          # Check manual input for this specific Lambda
+          if [[ "$LAMBDA_NAME" == "investment-research" && "$BUILD_IR" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: manual input selected"
+          fi
+          if [[ "$LAMBDA_NAME" == "prediction-ensemble" && "$BUILD_PE" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: manual input selected"
+          fi
+
+          # Check if path changed (push event)
+          if [[ "$LAMBDA_NAME" == "investment-research" && "$IR_CHANGED" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: path changed"
+          fi
+          if [[ "$LAMBDA_NAME" == "prediction-ensemble" && "$PE_CHANGED" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: path changed"
+          fi
+
+          echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+
+          if [[ "$SHOULD_BUILD" == "false" ]]; then
+            echo "Skipping $LAMBDA_NAME: no changes detected and not manually selected"
+          fi
+
       - name: Checkout code
+        if: steps.should-build.outputs.should_build == 'true'
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
+        if: steps.should-build.outputs.should_build == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -199,22 +319,24 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
+        if: steps.should-build.outputs.should_build == 'true'
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Investment Research Docker image
-        working-directory: chat-api/backend/lambda/investment_research
+      - name: Build Docker image
+        if: steps.should-build.outputs.should_build == 'true'
+        working-directory: ${{ matrix.lambda.dockerfile_dir }}
         run: |
           # Build with git SHA tag for traceability
           docker build \
             --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
             --build-arg GIT_COMMIT=${{ github.sha }} \
-            -t investment-research:${{ github.sha }} \
-            -t investment-research:latest \
+            -t ${{ matrix.lambda.name }}:${{ github.sha }} \
+            -t ${{ matrix.lambda.name }}:latest \
             .
 
           # Verify architecture (should be amd64 on ubuntu-latest)
-          ARCH=$(docker inspect investment-research:${{ github.sha }} --format '{{.Architecture}}')
+          ARCH=$(docker inspect ${{ matrix.lambda.name }}:${{ github.sha }} --format '{{.Architecture}}')
           echo "Built image architecture: $ARCH"
           if [ "$ARCH" != "amd64" ]; then
             echo "ERROR: Image architecture is $ARCH, expected amd64"
@@ -222,59 +344,76 @@ jobs:
           fi
 
       - name: Push to ECR
+        if: steps.should-build.outputs.should_build == 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: buffett/investment-research
+          ECR_REPOSITORY: ${{ matrix.lambda.ecr_repo }}
         run: |
           # Tag for ECR
-          docker tag investment-research:${{ github.sha }} $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
-          docker tag investment-research:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          docker tag ${{ matrix.lambda.name }}:${{ github.sha }} $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
+          docker tag ${{ matrix.lambda.name }}:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
           # Push both tags
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-          echo "Pushed image: $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+          echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
 
       - name: Update Lambda function
+        if: steps.should-build.outputs.should_build == 'true'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: buffett/investment-research
+          ECR_REPOSITORY: ${{ matrix.lambda.ecr_repo }}
         run: |
+          FUNCTION_NAME="buffett-${{ env.ENVIRONMENT }}-${{ matrix.lambda.name }}"
+
           # Update Lambda to use new image
           aws lambda update-function-code \
-            --function-name buffett-${{ env.ENVIRONMENT }}-investment-research \
+            --function-name $FUNCTION_NAME \
             --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} \
             --region ${{ env.AWS_REGION }}
 
           # Wait for update to complete
           aws lambda wait function-updated \
-            --function-name buffett-${{ env.ENVIRONMENT }}-investment-research \
+            --function-name $FUNCTION_NAME \
             --region ${{ env.AWS_REGION }}
 
-          echo "Lambda updated successfully"
+          echo "Lambda $FUNCTION_NAME updated successfully"
 
       - name: Verify Lambda health
+        if: steps.should-build.outputs.should_build == 'true'
         run: |
+          FUNCTION_NAME="buffett-${{ env.ENVIRONMENT }}-${{ matrix.lambda.name }}"
+
           # Get Function URL
           FUNC_URL=$(aws lambda get-function-url-config \
-            --function-name buffett-${{ env.ENVIRONMENT }}-investment-research \
+            --function-name $FUNCTION_NAME \
             --query 'FunctionUrl' --output text)
 
           # Test health endpoint
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${FUNC_URL}health")
 
           if [ "$HTTP_STATUS" = "200" ]; then
-            echo "Health check passed (HTTP $HTTP_STATUS)"
+            echo "Health check passed for $FUNCTION_NAME (HTTP $HTTP_STATUS)"
           else
-            echo "Health check failed (HTTP $HTTP_STATUS)"
+            echo "Health check failed for $FUNCTION_NAME (HTTP $HTTP_STATUS)"
             exit 1
           fi
+
+      - name: Skip notification
+        if: steps.should-build.outputs.should_build == 'false'
+        run: |
+          echo "Skipped ${{ matrix.lambda.name }} - no changes detected and not manually selected"
 
   smoke-tests:
     name: Post-Deployment Smoke Tests
     runs-on: ubuntu-latest
-    needs: [build-docker-lambdas]
+    needs: [build-docker-lambdas, detect-changes]
+    # Always run smoke tests, even if Docker builds were skipped
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      (needs.build-docker-lambdas.result == 'success' || needs.build-docker-lambdas.result == 'skipped')
 
     steps:
       - name: Checkout code
@@ -300,7 +439,7 @@ jobs:
   deployment-summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure, build-docker-lambdas, smoke-tests]
+    needs: [deploy-infrastructure, build-docker-lambdas, smoke-tests, detect-changes]
     if: always()
 
     steps:
@@ -313,8 +452,12 @@ jobs:
           echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
           echo "WebSocket: ${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}"
           echo ""
-          echo "Backend infrastructure deployed"
-          echo "Lambda functions deployed"
+          echo "Docker Lambda Builds:"
+          echo "  Investment Research changed: ${{ needs.detect-changes.outputs.investment_research_changed }}"
+          echo "  Prediction Ensemble changed: ${{ needs.detect-changes.outputs.prediction_ensemble_changed }}"
+          echo "  Build job result: ${{ needs.build-docker-lambdas.result }}"
+          echo ""
+          echo "Smoke Tests: ${{ needs.smoke-tests.result }}"
           echo ""
           echo "Frontend: Run locally with 'npm run dev' in the frontend directory"
           echo ""
