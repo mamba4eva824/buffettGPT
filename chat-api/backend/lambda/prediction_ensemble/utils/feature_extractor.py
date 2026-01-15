@@ -57,6 +57,137 @@ def extract_value(data_list: list, key: str, index: int = 0, default=None):
         return default
 
 
+def decimal_to_float(obj):
+    """
+    Recursively convert Decimal to float in nested structures.
+    DynamoDB returns numbers as Decimal objects which need conversion.
+    """
+    from decimal import Decimal
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: decimal_to_float(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_float(item) for item in obj]
+    return obj
+
+
+def aggregate_annual_data(
+    income_statements: list,
+    balance_sheets: list,
+    cash_flows: list
+) -> dict:
+    """
+    Aggregate quarterly data into true annual figures.
+
+    Flow metrics (revenue, income, cash flows) are SUMMED across all quarters
+    in each fiscal year. Point-in-time metrics (debt, cash, equity) use the
+    most recent quarter's values (typically Q4/year-end).
+
+    Args:
+        income_statements: List of quarterly income statements (most recent first)
+        balance_sheets: List of quarterly balance sheets (most recent first)
+        cash_flows: List of quarterly cash flow statements (most recent first)
+
+    Returns:
+        Dict keyed by fiscal year with aggregated 'income', 'balance', 'cashflow' data
+    """
+    # Flow metrics that should be summed across quarters
+    INCOME_FLOW_METRICS = [
+        'revenue', 'netIncome', 'grossProfit', 'operatingIncome',
+        'costOfRevenue', 'operatingExpenses', 'interestExpense',
+        'incomeBeforeTax', 'incomeTaxExpense', 'ebitda', 'ebitdaratio'
+    ]
+    CASHFLOW_FLOW_METRICS = [
+        'operatingCashFlow', 'freeCashFlow', 'capitalExpenditure',
+        'dividendsPaid', 'commonStockRepurchased', 'netCashUsedForInvestingActivites',
+        'netCashUsedProvidedByFinancingActivities', 'netChangeInCash'
+    ]
+
+    # Group quarters by fiscal year
+    quarters_by_year = {}
+
+    for stmt in income_statements[:20]:
+        stmt = decimal_to_float(stmt)
+        year = stmt.get('fiscalYear') or stmt.get('calendarYear') or (stmt.get('date', 'Unknown')[:4] if stmt.get('date') else 'Unknown')
+        if year == 'Unknown':
+            continue
+        # Convert year to int for consistent sorting
+        try:
+            year = int(year)
+        except (ValueError, TypeError):
+            continue
+        if year not in quarters_by_year:
+            quarters_by_year[year] = {'income': [], 'balance': [], 'cashflow': []}
+        quarters_by_year[year]['income'].append(stmt)
+
+    for bs in balance_sheets[:20]:
+        bs = decimal_to_float(bs)
+        year = bs.get('fiscalYear') or bs.get('calendarYear') or (bs.get('date', 'Unknown')[:4] if bs.get('date') else 'Unknown')
+        try:
+            year = int(year)
+        except (ValueError, TypeError):
+            continue
+        if year in quarters_by_year:
+            quarters_by_year[year]['balance'].append(bs)
+
+    for cf in cash_flows[:20]:
+        cf = decimal_to_float(cf)
+        year = cf.get('fiscalYear') or cf.get('calendarYear') or (cf.get('date', 'Unknown')[:4] if cf.get('date') else 'Unknown')
+        try:
+            year = int(year)
+        except (ValueError, TypeError):
+            continue
+        if year in quarters_by_year:
+            quarters_by_year[year]['cashflow'].append(cf)
+
+    # Build aggregated annual data
+    annual_data = {}
+
+    for year, quarters in quarters_by_year.items():
+        # Sum income statement flow metrics
+        aggregated_income = {}
+        if quarters['income']:
+            # Start with first quarter as template for non-flow fields
+            aggregated_income = dict(quarters['income'][0])
+            # Sum flow metrics across all quarters
+            for metric in INCOME_FLOW_METRICS:
+                total = sum(
+                    q.get(metric, 0) or 0
+                    for q in quarters['income']
+                )
+                aggregated_income[metric] = total
+            # EPS needs special handling - sum quarterly EPS for annual
+            aggregated_income['eps'] = sum(
+                q.get('eps', 0) or 0
+                for q in quarters['income']
+            )
+
+        # Sum cash flow statement flow metrics
+        aggregated_cashflow = {}
+        if quarters['cashflow']:
+            aggregated_cashflow = dict(quarters['cashflow'][0])
+            for metric in CASHFLOW_FLOW_METRICS:
+                total = sum(
+                    q.get(metric, 0) or 0
+                    for q in quarters['cashflow']
+                )
+                aggregated_cashflow[metric] = total
+
+        # Balance sheet uses most recent quarter (point-in-time, not summed)
+        # Quarters are sorted most recent first, so [0] is the latest
+        aggregated_balance = quarters['balance'][0] if quarters['balance'] else {}
+
+        annual_data[year] = {
+            'income': aggregated_income,
+            'balance': aggregated_balance,
+            'cashflow': aggregated_cashflow,
+            'quarters_count': len(quarters['income'])  # Track how many quarters we have
+        }
+
+    return annual_data
+
+
 def extract_debt_metrics(balance_sheet: list, income_statement: list, cashflow: list) -> dict:
     """
     Extract debt-related metrics for the Debt Expert agent.
