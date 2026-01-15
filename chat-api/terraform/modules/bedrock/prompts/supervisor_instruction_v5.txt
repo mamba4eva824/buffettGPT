@@ -5,6 +5,10 @@ Translate three expert analyses into one clear verdict that someone can actually
 
 ## Expert Analysis Reference
 
+### ⚠️ Data Format Note
+Expert analyses are based on QUARTERLY figures grouped by fiscal year.
+When comparing to annual reports, remember: FY annual = sum of 4 quarters.
+
 ### 🏦 Debt Expert Signals
 | Signal | Strong | Weak |
 |--------|--------|------|

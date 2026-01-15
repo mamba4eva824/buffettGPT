@@ -31,7 +31,7 @@ from services.streaming import (
 )
 from services.inference import run_inference
 from utils.fmp_client import get_financial_data
-from utils.feature_extractor import extract_all_features, extract_quarterly_trends
+from utils.feature_extractor import extract_all_features, extract_quarterly_trends, aggregate_annual_data
 from handlers.action_group import extract_value_metrics
 
 logger = logging.getLogger(__name__)
@@ -154,6 +154,110 @@ def _format_value(val, metric: str) -> str:
 
     # Default: 2 decimal places
     return f'{val:.2f}'
+
+
+def format_annual_summary(annual_data: dict, agent_type: str = None) -> str:
+    """
+    Format aggregated annual data as markdown tables for LLM consumption.
+    Shows 5-year trend with summed flow metrics and year-end balance sheet.
+
+    Args:
+        annual_data: Dict keyed by year with 'income', 'balance', 'cashflow' data
+        agent_type: Optional - 'debt', 'cashflow', or 'growth' for specific metrics
+
+    Returns:
+        Markdown formatted string with annual summary tables
+    """
+    if not annual_data:
+        return ""
+
+    # Sort years descending (most recent first)
+    sorted_years = sorted(annual_data.keys(), reverse=True)[:5]
+
+    output = "\n## ANNUAL SUMMARY (5-Year Trend) - TRUE ANNUAL FIGURES\n\n"
+    output += "*Revenue, cash flows, and income figures below are ANNUAL totals (sum of 4 quarters)*\n\n"
+
+    # Define metrics by agent type
+    if agent_type == 'growth':
+        output += "### Revenue & Profitability\n"
+        output += "| Year | Revenue | Gross Profit | Op Income | Net Income | EPS | Gross% | Op% | Net% |\n"
+        output += "|------|---------|--------------|-----------|------------|-----|--------|-----|------|\n"
+        for year in sorted_years:
+            data = annual_data.get(year, {})
+            income = data.get('income', {})
+            rev = income.get('revenue', 0) or 0
+            gp = income.get('grossProfit', 0) or 0
+            op = income.get('operatingIncome', 0) or 0
+            ni = income.get('netIncome', 0) or 0
+            eps = income.get('eps', 0) or 0
+            gm = (gp / rev * 100) if rev else 0
+            om = (op / rev * 100) if rev else 0
+            nm = (ni / rev * 100) if rev else 0
+            q_count = data.get('quarters_count', 4)
+            year_label = f"{year}*" if q_count < 4 else str(year)
+            output += f"| {year_label} | ${rev/1e9:.1f}B | ${gp/1e9:.1f}B | ${op/1e9:.1f}B | ${ni/1e9:.1f}B | ${eps:.2f} | {gm:.1f}% | {om:.1f}% | {nm:.1f}% |\n"
+
+    elif agent_type == 'cashflow':
+        output += "### Cash Flow & Returns\n"
+        output += "| Year | OCF | FCF | CapEx | Dividends | Buybacks | FCF Margin |\n"
+        output += "|------|-----|-----|-------|-----------|----------|------------|\n"
+        for year in sorted_years:
+            data = annual_data.get(year, {})
+            income = data.get('income', {})
+            cf = data.get('cashflow', {})
+            rev = income.get('revenue', 0) or 0
+            ocf = cf.get('operatingCashFlow', 0) or 0
+            fcf = cf.get('freeCashFlow', 0) or 0
+            capex = abs(cf.get('capitalExpenditure', 0) or 0)
+            div = abs(cf.get('dividendsPaid', 0) or 0)
+            buyback = abs(cf.get('commonStockRepurchased', 0) or 0)
+            fcf_margin = (fcf / rev * 100) if rev else 0
+            q_count = data.get('quarters_count', 4)
+            year_label = f"{year}*" if q_count < 4 else str(year)
+            output += f"| {year_label} | ${ocf/1e9:.1f}B | ${fcf/1e9:.1f}B | ${capex/1e9:.1f}B | ${div/1e9:.1f}B | ${buyback/1e9:.1f}B | {fcf_margin:.1f}% |\n"
+
+    elif agent_type == 'debt':
+        output += "### Balance Sheet (Year-End) & Coverage\n"
+        output += "| Year | Total Debt | Cash | Net Debt | Equity | D/E | Interest Exp | EBITDA | Int Coverage |\n"
+        output += "|------|------------|------|----------|--------|-----|--------------|--------|-------------|\n"
+        for year in sorted_years:
+            data = annual_data.get(year, {})
+            bal = data.get('balance', {})
+            income = data.get('income', {})
+            debt = bal.get('totalDebt', 0) or 0
+            cash = bal.get('cashAndCashEquivalents', 0) or 0
+            equity = bal.get('totalStockholdersEquity', 0) or 0
+            net_debt = debt - cash
+            de = (debt / equity) if equity else 0
+            int_exp = income.get('interestExpense', 0) or 0
+            ebitda = income.get('ebitda', 0) or 0
+            int_cov = (ebitda / int_exp) if int_exp else 0
+            q_count = data.get('quarters_count', 4)
+            year_label = f"{year}*" if q_count < 4 else str(year)
+            output += f"| {year_label} | ${debt/1e9:.1f}B | ${cash/1e9:.1f}B | ${net_debt/1e9:.1f}B | ${equity/1e9:.1f}B | {de:.2f}x | ${int_exp/1e9:.1f}B | ${ebitda/1e9:.1f}B | {int_cov:.1f}x |\n"
+
+    else:
+        # Default: show all key metrics
+        output += "### Key Annual Metrics\n"
+        output += "| Year | Revenue | Net Income | FCF | Total Debt | Cash | Buybacks |\n"
+        output += "|------|---------|------------|-----|------------|------|----------|\n"
+        for year in sorted_years:
+            data = annual_data.get(year, {})
+            income = data.get('income', {})
+            cf = data.get('cashflow', {})
+            bal = data.get('balance', {})
+            rev = income.get('revenue', 0) or 0
+            ni = income.get('netIncome', 0) or 0
+            fcf = cf.get('freeCashFlow', 0) or 0
+            debt = bal.get('totalDebt', 0) or 0
+            cash = bal.get('cashAndCashEquivalents', 0) or 0
+            buyback = abs(cf.get('commonStockRepurchased', 0) or 0)
+            q_count = data.get('quarters_count', 4)
+            year_label = f"{year}*" if q_count < 4 else str(year)
+            output += f"| {year_label} | ${rev/1e9:.1f}B | ${ni/1e9:.1f}B | ${fcf/1e9:.1f}B | ${debt/1e9:.1f}B | ${cash/1e9:.1f}B | ${buyback/1e9:.1f}B |\n"
+
+    output += "\n*Years marked with * have incomplete quarterly data*\n\n"
+    return output
 
 
 def format_fiscal_year_data(value_metrics: Dict[str, Any], agent_type: str = None) -> str:
@@ -327,11 +431,20 @@ async def fetch_and_run_inference(ticker: str) -> Dict[str, Any]:
                 # Correct argument order: (quarterly_trends, features, analysis_type)
                 value_metrics[agent_type] = extract_value_metrics(quarterly_trends, features, agent_type)
 
+            # Aggregate quarterly data into annual figures for clear LLM interpretation
+            logger.info(f"[ORCHESTRATOR] Aggregating annual data for {ticker}")
+            annual_data = aggregate_annual_data(
+                raw_financials.get('income_statement', []),
+                raw_financials.get('balance_sheet', []),
+                raw_financials.get('cash_flow', [])
+            )
+
             return {
                 'features': features,
                 'predictions': predictions,
                 'value_metrics': value_metrics,
-                'quarterly_trends': quarterly_trends
+                'quarterly_trends': quarterly_trends,
+                'annual_data': annual_data  # NEW: aggregated annual figures
             }
 
         except Exception as e:
@@ -349,7 +462,8 @@ async def invoke_expert_agent_async(
     fiscal_year: int,
     session_id: str,
     inference_result: dict = None,
-    value_metrics: dict = None
+    value_metrics: dict = None,
+    annual_data: dict = None  # NEW: aggregated annual figures
 ) -> ExpertResult:
     """
     Invoke expert agent to analyze a company.
@@ -415,6 +529,11 @@ Focus on:
 5. Your final verdict with reasoning"""
     else:
         # PRE-COMPUTED MODE: Everything in prompt, no action group call
+        # Include ANNUAL SUMMARY first (aggregated figures), then quarterly detail
+        annual_summary_text = ""
+        if annual_data:
+            annual_summary_text = format_annual_summary(annual_data, agent_type=agent_type)
+
         metrics_text = ""
         if value_metrics:
             metrics_text = format_fiscal_year_data(value_metrics, agent_type=agent_type)
@@ -424,10 +543,11 @@ Focus on:
 DO NOT call the FinancialAnalysis action group - the data has already been retrieved for you below.
 
 {inference_text}
+{annual_summary_text}
 {metrics_text}
 
-Based on this ML prediction and 5-year financial history, provide your expert {agent_type} analysis following your prompt structure. Focus on:
-1. The 5-year narrative arc across all fiscal years (FY2020-FY2024)
+Based on this ML prediction, annual summary, and quarterly detail, provide your expert {agent_type} analysis following your prompt structure. Focus on:
+1. The 5-year narrative arc across all fiscal years - USE THE ANNUAL SUMMARY for revenue/cash flow figures
 2. Business cycle context: pandemic stress test, inflation period, current position
 3. Whether you agree with the ML prediction and why
 4. Year-over-year trends that inform the analysis
@@ -761,9 +881,10 @@ async def orchestrate_supervisor_analysis(
     # ─────────────────────────────────────────────────────────────────────────
     yield status_event("Consulting expert analysts (debt, cashflow, growth)...", "experts")
 
-    # Extract predictions and value metrics to pass to agents
+    # Extract predictions, value metrics, and annual data to pass to agents
     predictions = inference_result.get('predictions', {}) if inference_result else {}
     value_metrics = inference_result.get('value_metrics', {}) if inference_result else {}
+    annual_data = inference_result.get('annual_data', {}) if inference_result else {}
 
     expert_tasks = [
         invoke_expert_agent_async(
@@ -772,7 +893,8 @@ async def orchestrate_supervisor_analysis(
             fiscal_year=fiscal_year,
             session_id=session_id,
             inference_result=predictions.get(agent_type),
-            value_metrics=value_metrics.get(agent_type)
+            value_metrics=value_metrics.get(agent_type),
+            annual_data=annual_data  # Pass aggregated annual figures for clear interpretation
         )
         for agent_type in ['debt', 'cashflow', 'growth']
     ]
