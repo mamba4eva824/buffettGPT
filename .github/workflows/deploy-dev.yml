@@ -323,54 +323,36 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build Docker image
+      - name: Set up Docker Buildx
         if: steps.should-build.outputs.should_build == 'true'
-        working-directory: ${{ matrix.lambda.dockerfile_dir }}
-        run: |
-          # Build with git SHA tag for traceability
-          docker build \
-            --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
-            --build-arg GIT_COMMIT=${{ github.sha }} \
-            -t ${{ matrix.lambda.name }}:${{ github.sha }} \
-            -t ${{ matrix.lambda.name }}:latest \
-            .
+        uses: docker/setup-buildx-action@v3
 
-          # Verify architecture (should be amd64 on ubuntu-latest)
-          ARCH=$(docker inspect ${{ matrix.lambda.name }}:${{ github.sha }} --format '{{.Architecture}}')
-          echo "Built image architecture: $ARCH"
-          if [ "$ARCH" != "amd64" ]; then
-            echo "ERROR: Image architecture is $ARCH, expected amd64"
-            exit 1
-          fi
-
-      - name: Push to ECR
+      - name: Build and push Docker image
         if: steps.should-build.outputs.should_build == 'true'
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ matrix.lambda.ecr_repo }}
-        run: |
-          # Tag for ECR
-          docker tag ${{ matrix.lambda.name }}:${{ github.sha }} $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
-          docker tag ${{ matrix.lambda.name }}:latest $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-          # Push both tags
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
-
-          echo "Pushed: $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.lambda.dockerfile_dir }}
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:latest
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.lambda.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.lambda.name }}
+          provenance: false
 
       - name: Update Lambda function
         if: steps.should-build.outputs.should_build == 'true'
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ matrix.lambda.ecr_repo }}
         run: |
           FUNCTION_NAME="buffett-${{ env.ENVIRONMENT }}-${{ matrix.lambda.name }}"
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:${{ github.sha }}"
 
           # Update Lambda to use new image
           aws lambda update-function-code \
             --function-name $FUNCTION_NAME \
-            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} \
+            --image-uri $IMAGE_URI \
             --region ${{ env.AWS_REGION }}
 
           # Wait for update to complete
@@ -378,7 +360,7 @@ jobs:
             --function-name $FUNCTION_NAME \
             --region ${{ env.AWS_REGION }}
 
-          echo "Lambda $FUNCTION_NAME updated successfully"
+          echo "Lambda $FUNCTION_NAME updated with image: $IMAGE_URI"
 
       - name: Verify Lambda health
         if: steps.should-build.outputs.should_build == 'true'
