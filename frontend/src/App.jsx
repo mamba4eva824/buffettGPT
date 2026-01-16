@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose, RefreshCw, AlertCircle } from "lucide-react";
 import AnalysisView from "./components/analysis/AnalysisView.jsx";
 import StreamingText from "./components/analysis/StreamingText.jsx";
-import { InvestmentResearchView } from "./components/research/index.js";
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
 import { ConversationList } from "./components/ConversationList.jsx";
 import { loadConversationHistory } from "./api/conversationsApi.js";
 import { Avatar } from "./components/Avatar.jsx";
 import logger from "./utils/logger.js";
+import { ResearchProvider, useResearch } from "./contexts/ResearchContext.jsx";
+import SectionCard from "./components/research/SectionCard.jsx";
+import TableOfContents from "./components/research/TableOfContents.jsx";
+import RatingsHeader from "./components/research/RatingsHeader.jsx";
+import StreamingIndicator from "./components/research/StreamingIndicator.jsx";
 
 // Helper to detect if content is analysis output
 function isAnalysisContent(content) {
@@ -689,7 +693,7 @@ function ChatApp() {
   // UI state
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
-  const [selectedMode, setSelectedMode] = useState('buffett');
+  const [selectedMode, setSelectedMode] = useState('investment-research');
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [showInvestmentResearch, setShowInvestmentResearch] = useState(false);
   const [analysisTicker, setAnalysisTicker] = useState('');
@@ -709,6 +713,104 @@ function ChatApp() {
   const [remainingQueries, setRemainingQueries] = useState(() => getRemainingQueries());
   const [hasStartedQuerying, setHasStartedQuerying] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
+
+  // Research mode state - for unified research view
+  const [collapsedSections, setCollapsedSections] = useState([]);
+  const [visibleSections, setVisibleSections] = useState([]); // Sections to display (on-demand via ToC clicks)
+  const [researchTocWidth, setResearchTocWidth] = useState(300);
+  const researchScrollRef = useRef(null);
+
+  // Research context - provides streaming state and actions
+  const {
+    selectedTicker: researchTicker,
+    activeSectionId,
+    isStreaming: isResearchStreaming,
+    streamStatus,
+    reportMeta,
+    streamedContent,
+    error: researchError,
+    currentStreamingSection,
+    startResearch,
+    abortStream,
+    fetchSection,
+    setActiveSection,
+    reset: resetResearch,
+  } = useResearch();
+
+  // Toggle section collapse
+  const toggleSectionCollapse = useCallback((sectionId) => {
+    setCollapsedSections(prev =>
+      prev.includes(sectionId)
+        ? prev.filter(id => id !== sectionId)
+        : [...prev, sectionId]
+    );
+  }, []);
+
+  // Handle ToC section click - add section to visible list and scroll/fetch
+  const handleTocSectionClick = useCallback(async (sectionId) => {
+    setActiveSection(sectionId);
+
+    // Add to visible sections (will render as new card if not already there)
+    setVisibleSections(prev => {
+      if (prev.includes(sectionId)) return prev;
+      return [...prev, sectionId];
+    });
+
+    // Expand section if collapsed
+    setCollapsedSections(prev => prev.filter(id => id !== sectionId));
+
+    // If section already has content, scroll to it after a brief delay for DOM update
+    if (streamedContent[sectionId]?.content) {
+      setTimeout(() => {
+        const sectionEl = document.getElementById(`section-${sectionId}`);
+        if (sectionEl) {
+          sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+      return;
+    }
+
+    // Fetch section on-demand if not available
+    if (!streamedContent[sectionId]?.content && !isResearchStreaming) {
+      try {
+        await fetchSection(analysisTicker, sectionId, token);
+        // Scroll after fetch completes
+        setTimeout(() => {
+          const sectionEl = document.getElementById(`section-${sectionId}`);
+          if (sectionEl) {
+            sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 100);
+      } catch (err) {
+        console.error('Failed to fetch section:', err);
+      }
+    }
+  }, [setActiveSection, streamedContent, isResearchStreaming, fetchSection, analysisTicker, token]);
+
+  // Get ordered sections from ToC for rendering - filtered by visibility (on-demand loading)
+  const orderedSections = useMemo(() => {
+    if (!reportMeta?.toc || !showInvestmentResearch) return [];
+
+    // Only show sections that are in visibleSections (maintains click order)
+    return visibleSections
+      .map(sectionId => {
+        const tocItem = reportMeta.toc.find(t => t.section_id === sectionId);
+        if (!tocItem) return null;
+        return {
+          ...tocItem,
+          ...streamedContent[sectionId],
+          section_id: sectionId,
+        };
+      })
+      .filter(section => section && section.content); // Only show sections with content
+  }, [reportMeta?.toc, streamedContent, visibleSections, showInvestmentResearch]);
+
+  // Calculate progress for streaming indicator
+  const researchProgress = useMemo(() => {
+    const total = reportMeta?.toc?.length || 0;
+    const completed = Object.values(streamedContent).filter(s => s?.isComplete).length;
+    return { current: completed, total };
+  }, [reportMeta?.toc, streamedContent]);
 
   // Use conversations hook for managing chat history
   const {
@@ -864,10 +966,26 @@ function ChatApp() {
     // Mode-based routing: Investment Research vs Buffett (Prediction Ensemble)
     if (selectedMode === 'investment-research') {
       // Investment Research mode - uses pre-generated reports from Investment Research Lambda
+      // Sections render as cards in the unified chat interface
+
+      // Add user query as a message bubble first
+      const userMessage = {
+        id: Date.now().toString(),
+        type: 'user',
+        content: messageText,
+        timestamp: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, userMessage]);
+
       setShowInvestmentResearch(true);
       setShowAnalysis(false);
       setSavedAnalysisResults(null);
       setIsLoadedFromHistory(false);
+      setCollapsedSections([]); // Reset collapsed state for new research
+      setVisibleSections(['01_executive_summary']); // Auto-show executive summary
+
+      // Start the research stream
+      startResearch(extractedCompany, token);
     } else {
       // Buffett mode (default) - uses ML inference via Prediction Ensemble Lambda
       setShowAnalysis(true);
@@ -891,7 +1009,7 @@ function ChatApp() {
         setShowRateLimitBanner(false);
       }, 8000);
     }
-  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, selectedMode]);
+  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, selectedMode, startResearch, token]);
 
   const newChat = useCallback(() => {
     // Clear messages and reset analysis view state
@@ -903,11 +1021,16 @@ function ChatApp() {
     setAnalysisTicker('');
     setIsLoadedFromHistory(false);
 
+    // Reset research state
+    resetResearch();
+    setCollapsedSections([]);
+    setVisibleSections([]);
+
     // Clear selection - conversation will be created in doSend when user submits a company
     setSelectedConversation(null);
     disconnect();
     setTimeout(() => connect(), 50);
-  }, [disconnect, connect, setMessages, setSelectedConversation]);
+  }, [disconnect, connect, setMessages, setSelectedConversation, resetResearch]);
 
   const removeSession = useCallback((id) => {
     setSessions((prev) => {
@@ -1282,20 +1405,8 @@ function ChatApp() {
             ) : (
               /* SPLIT LAYOUT - Messages exist (active conversation) */
               <>
-                {/* Investment Research View, Analysis View, or Messages Area */}
-                {showInvestmentResearch ? (
-                  <div className="flex-1 flex flex-col min-h-0">
-                    <InvestmentResearchView
-                      key={`research-${analysisTicker}`}
-                      ticker={analysisTicker}
-                      onClose={() => {
-                        setShowInvestmentResearch(false);
-                        setAnalysisTicker('');
-                      }}
-                      token={token}
-                    />
-                  </div>
-                ) : showAnalysis ? (
+                {/* Analysis View or Unified Messages + Research Area */}
+                {showAnalysis ? (
                   <div className="flex-1 flex flex-col min-h-0 p-4">
                     <AnalysisView
                       key={`analysis-${selectedConversation?.conversation_id || 'new'}-${analysisTicker}`}
@@ -1316,39 +1427,134 @@ function ChatApp() {
                     />
                   </div>
                 ) : (
-                <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
-                  <div className="mx-auto max-w-3xl space-y-4">
-                    {messages.map((m) => {
-                      // Find the last user message in the entire array
-                      const userMessages = messages.filter(msg => msg.type === 'user');
-                      const lastUserMsg = userMessages[userMessages.length - 1];
-                      const isLastUserMessage = m.type === 'user' && m.id === lastUserMsg?.id;
+                  /* UNIFIED MESSAGES + RESEARCH VIEW */
+                  <div className="flex-1 flex min-h-0">
+                    {/* Scrollable content area - messages and research sections */}
+                    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
+                      <div className="mx-auto max-w-3xl space-y-4">
+                        {/* Research header - only when research mode is active */}
+                        {showInvestmentResearch && reportMeta && (
+                          <div className="mb-4 pb-4 border-b border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center justify-between">
+                              <RatingsHeader
+                                ticker={researchTicker || analysisTicker}
+                                ratings={reportMeta?.ratings}
+                                generatedAt={reportMeta?.generated_at}
+                              />
+                              <button
+                                onClick={() => {
+                                  setShowInvestmentResearch(false);
+                                  setAnalysisTicker('');
+                                  resetResearch();
+                                  setVisibleSections([]);
+                                }}
+                                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+                                title="Close"
+                              >
+                                <X className="h-5 w-5" />
+                              </button>
+                            </div>
 
-                      return (
-                        <MessageBubble
-                          key={m.id}
-                          msg={m}
-                          user={user}
-                          messageRef={isLastUserMessage ? lastUserMessageRef : null}
+                            {/* Streaming indicator */}
+                            {(isResearchStreaming || streamStatus === 'connecting') && (
+                              <div className="mt-3">
+                                <StreamingIndicator
+                                  currentSection={streamedContent[currentStreamingSection]?.title}
+                                  progress={researchProgress.total > 0 ? researchProgress : null}
+                                  isStreaming={isResearchStreaming}
+                                  status={streamStatus}
+                                />
+                              </div>
+                            )}
+
+                            {/* Error state */}
+                            {researchError && (
+                              <div className="mt-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
+                                <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <p className="text-sm text-red-700 dark:text-red-400">{researchError}</p>
+                                </div>
+                                <button
+                                  onClick={() => startResearch(analysisTicker, token)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                  Retry
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* User messages */}
+                        {messages.map((m) => {
+                          const userMessages = messages.filter(msg => msg.type === 'user');
+                          const lastUserMsg = userMessages[userMessages.length - 1];
+                          const isLastUserMessage = m.type === 'user' && m.id === lastUserMsg?.id;
+
+                          return (
+                            <MessageBubble
+                              key={m.id}
+                              msg={m}
+                              user={user}
+                              messageRef={isLastUserMessage ? lastUserMessageRef : null}
+                            />
+                          );
+                        })}
+
+                        {/* Research sections - render after messages when in research mode */}
+                        {showInvestmentResearch && orderedSections.map((section) => (
+                          <div key={section.section_id} id={`section-${section.section_id}`} className="mx-auto w-full max-w-2xl">
+                            <SectionCard
+                              section={section}
+                              isStreaming={currentStreamingSection === section.section_id}
+                              isCollapsed={collapsedSections.includes(section.section_id)}
+                              onToggleCollapse={() => toggleSectionCollapse(section.section_id)}
+                            />
+                          </div>
+                        ))}
+
+                        {/* Loading state when research started but no sections yet */}
+                        {showInvestmentResearch && orderedSections.length === 0 && !researchError && (isResearchStreaming || streamStatus === 'connecting') && (
+                          <div className="flex items-center justify-center h-32 text-slate-400 dark:text-slate-500">
+                            <p>Loading research report...</p>
+                          </div>
+                        )}
+
+                        {/* Evaluating indicator */}
+                        {isEvaluating && (
+                          <div className="flex justify-start">
+                            <div className="ml-11 text-slate-400 dark:text-white text-base fade-pulse-evaluating">
+                              Evaluating...
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Invisible element at the end for auto-scrolling */}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    </div>
+
+                    {/* Table of Contents - right side, only when research mode has content */}
+                    {showInvestmentResearch && reportMeta?.toc?.length > 0 && (
+                      <div
+                        className="hidden md:block flex-shrink-0 border-l border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50"
+                        style={{ width: researchTocWidth }}
+                      >
+                        <TableOfContents
+                          toc={reportMeta.toc}
+                          activeSectionId={activeSectionId}
+                          onSectionClick={handleTocSectionClick}
+                          streamedSections={streamedContent}
+                          currentStreamingSection={currentStreamingSection}
                         />
-                      );
-                    })}
-                    {/* Evaluating indicator */}
-                    {isEvaluating && (
-                      <div className="flex justify-start">
-                        <div className="ml-11 text-slate-400 dark:text-white text-base fade-pulse-evaluating">
-                          Evaluating...
-                        </div>
                       </div>
                     )}
-                    {/* Invisible element at the end for auto-scrolling */}
-                    <div ref={messagesEndRef} />
                   </div>
-                </div>
                 )}
 
-                {/* Bottom Composer - hide when analysis or investment research is showing */}
-                {!showAnalysis && !showInvestmentResearch && (
+                {/* Bottom Composer - always visible except when analysis is showing */}
+                {!showAnalysis && (
                 <div className="border-t border-slate-100 dark:border-slate-700 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out">
                   {/* Rate Limit Banner */}
                   {showRateLimitBanner && !isAuthenticated && hasStartedQuerying && (
@@ -1775,7 +1981,9 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
 export default function App() {
   return (
     <AuthProvider>
-      <ChatApp />
+      <ResearchProvider>
+        <ChatApp />
+      </ResearchProvider>
     </AuthProvider>
   );
 }

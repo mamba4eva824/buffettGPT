@@ -335,6 +335,11 @@ function handleSSEEvent(eventType, data, dispatch) {
       dispatch({ type: ACTIONS.SET_ERROR, error: data.message || 'Unknown error' });
       break;
 
+    case 'progress':
+      // Progress events are informational - no state change needed
+      // StreamingIndicator tracks progress via completed sections
+      break;
+
     default:
       console.warn('Unknown SSE event:', eventType, data);
   }

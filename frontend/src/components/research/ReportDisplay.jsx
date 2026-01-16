@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import useTypewriter from '../../hooks/useTypewriter';
 
 export default function ReportDisplay({
   content = '',
@@ -11,9 +12,16 @@ export default function ReportDisplay({
   const containerRef = useRef(null);
   const lastContentLengthRef = useRef(0);
 
+  // ChatGPT-style streaming effect with natural pacing
+  const { displayText, isTyping } = useTypewriter(content, {
+    speed: 1.5,           // Speed multiplier (1.0 = normal, 2.0 = 2x faster)
+    isActive: isStreaming,
+    alwaysAnimate: true   // Always animate from start on mount
+  });
+
   // Auto-scroll as content streams in
   useEffect(() => {
-    if (isStreaming && content.length > lastContentLengthRef.current && containerRef.current) {
+    if ((isStreaming || isTyping) && displayText.length > lastContentLengthRef.current && containerRef.current) {
       const container = containerRef.current;
       // Smooth scroll to bottom as new content arrives
       container.scrollTo({
@@ -21,8 +29,8 @@ export default function ReportDisplay({
         behavior: 'smooth'
       });
     }
-    lastContentLengthRef.current = content.length;
-  }, [content, isStreaming]);
+    lastContentLengthRef.current = displayText.length;
+  }, [displayText, isStreaming, isTyping]);
 
   // Show placeholder when no content
   if (!content && !isStreaming) {
@@ -48,11 +56,11 @@ export default function ReportDisplay({
       {/* Markdown content with prose styling */}
       <article className="prose dark:prose-invert prose-slate max-w-none prose-headings:font-semibold prose-h2:text-xl prose-h3:text-lg prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-white prose-a:text-indigo-600 dark:prose-a:text-indigo-400">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {content}
+          {displayText}
         </ReactMarkdown>
 
-        {/* Streaming cursor */}
-        {isStreaming && (
+        {/* Streaming cursor - show when typing or streaming */}
+        {(isStreaming || isTyping) && (
           <span className="inline-block w-2 h-5 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
         )}
       </article>

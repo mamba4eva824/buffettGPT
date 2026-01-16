@@ -1,5 +1,5 @@
-import React, { useEffect, useCallback } from 'react';
-import { X, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
+import { X, RefreshCw, AlertCircle, GripVertical } from 'lucide-react';
 import { useResearch, ResearchProvider } from '../../contexts/ResearchContext';
 import RatingsHeader from './RatingsHeader';
 import ReportDisplay from './ReportDisplay';
@@ -23,6 +23,49 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
     setActiveSection,
     reset,
   } = useResearch();
+
+  // Resizable ToC panel state
+  const [tocWidth, setTocWidth] = useState(340); // Default wider to show more text
+  const isResizingRef = useRef(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
+
+  // Handle resize start
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    startXRef.current = e.clientX;
+    startWidthRef.current = tocWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, [tocWidth]);
+
+  // Handle resize move and end
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (!isResizingRef.current) return;
+      // Dragging left increases width (since ToC is on the right)
+      const delta = startXRef.current - e.clientX;
+      const newWidth = Math.min(Math.max(startWidthRef.current + delta, 200), 600);
+      setTocWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Start research when ticker changes
   useEffect(() => {
@@ -137,6 +180,7 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
         {/* Report display - center/left */}
         <div className="flex-1 min-w-0 border-r border-slate-200 dark:border-slate-700">
           <ReportDisplay
+            key={activeSectionId}
             content={activeContent?.content || ''}
             isStreaming={isActiveSectionStreaming}
             sectionTitle={activeContent?.title || ''}
@@ -144,8 +188,26 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
           />
         </div>
 
-        {/* Table of contents - right */}
-        <div className="w-72 flex-shrink-0 border-l border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+        {/* Table of contents - right (resizable) */}
+        <div
+          className="flex-shrink-0 bg-slate-50 dark:bg-slate-800/50 relative"
+          style={{ width: tocWidth }}
+        >
+          {/* Resize handle */}
+          <div
+            onMouseDown={handleResizeStart}
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-indigo-400 active:bg-indigo-500 transition-colors group flex items-center justify-center z-10"
+            title="Drag to resize"
+          >
+            {/* Visible grip indicator on hover */}
+            <div className="absolute left-[-4px] w-3 h-12 rounded bg-slate-300 dark:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <GripVertical className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            </div>
+          </div>
+
+          {/* Border line */}
+          <div className="absolute left-0 top-0 bottom-0 w-px bg-slate-200 dark:bg-slate-700" />
+
           <TableOfContents
             toc={reportMeta?.toc || []}
             activeSectionId={activeSectionId}
