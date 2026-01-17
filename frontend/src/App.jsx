@@ -242,17 +242,26 @@ function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversati
           // live streaming chunk from backend (optional)
           // Clear evaluating state when streaming starts
           setIsEvaluating(false);
-          setMessages((m) => {
-            // append or create a temp assistant message
-            if (!pendingAssistantId) {
-              const id = `asst-${uid8()}`;
-              setPendingAssistantId(id);
-              return [
-                ...m,
-                { id, type: "assistant", content: data.text || "", timestamp: data.timestamp || nowIso(), meta: { streaming: true } },
-              ];
+          setMessages((prevMessages) => {
+            // Find existing streaming message instead of relying on stale pendingAssistantId closure
+            const existingStreamingMsg = prevMessages.find(msg => msg.meta?.streaming === true);
+
+            if (existingStreamingMsg) {
+              // Append to existing streaming message
+              return prevMessages.map((msg) =>
+                msg.id === existingStreamingMsg.id
+                  ? { ...msg, content: (msg.content || "") + (data.text || "") }
+                  : msg
+              );
             }
-            return m.map((msg) => (msg.id === pendingAssistantId ? { ...msg, content: (msg.content || "") + (data.text || "") } : msg));
+
+            // No existing streaming message, create one
+            const id = `asst-${uid8()}`;
+            setPendingAssistantId(id);
+            return [
+              ...prevMessages,
+              { id, type: "assistant", content: data.text || "", timestamp: data.timestamp || nowIso(), meta: { streaming: true } },
+            ];
           });
         } else if (data.type === "chatResponse" || data.action === "message_response") {
           // finalize assistant message - support both message formats
@@ -519,6 +528,10 @@ function ChatApp() {
   const messagesEndRef = useRef(null);
   const lastUserMessageRef = useRef(null);
 
+  // Refs for rate limit banner timeouts (to prevent memory leaks)
+  const showBannerTimeoutRef = useRef(null);
+  const hideBannerTimeoutRef = useRef(null);
+
   // Log environment config only once on component mount
   useEffect(() => {
     logger.log('🌍 Environment Config:', ENV_CONFIG);
@@ -609,6 +622,14 @@ function ChatApp() {
     }
   }, [darkMode]);
 
+  // Cleanup rate limit banner timeouts on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (showBannerTimeoutRef.current) clearTimeout(showBannerTimeoutRef.current);
+      if (hideBannerTimeoutRef.current) clearTimeout(hideBannerTimeoutRef.current);
+    };
+  }, []);
+
   // Auto-scroll behavior: center on user message when evaluating, scroll to bottom when complete
   useEffect(() => {
     // Small delay to ensure DOM is updated
@@ -642,13 +663,22 @@ function ChatApp() {
 
   // Reconnect WebSocket when authentication state changes
   useEffect(() => {
+    let reconnectTimeoutId = null;
+
     if (wsUrl && isAuthenticated && token) {
       logger.log('🔐 Reconnecting WebSocket after authentication...');
       disconnect();
       // Longer delay to ensure clean disconnection before reconnecting
       // This prevents race conditions where the old connection triggers errors
-      setTimeout(() => connect(), 500);
+      reconnectTimeoutId = setTimeout(() => connect(), 500);
     }
+
+    // Cleanup: cancel pending reconnection on unmount or dependency change
+    return () => {
+      if (reconnectTimeoutId) {
+        clearTimeout(reconnectTimeoutId);
+      }
+    };
   }, [isAuthenticated, token, wsUrl, connect, disconnect]);
 
   // Switch conversation context when conversation changes (without reconnecting)
@@ -775,13 +805,17 @@ function ChatApp() {
         setRemainingQueries(newRemaining);
         setHasStartedQuerying(true);
 
+        // Clear any existing timeouts to prevent memory leaks
+        if (showBannerTimeoutRef.current) clearTimeout(showBannerTimeoutRef.current);
+        if (hideBannerTimeoutRef.current) clearTimeout(hideBannerTimeoutRef.current);
+
         // Only show banner after first query and with delay for animation
-        setTimeout(() => {
+        showBannerTimeoutRef.current = setTimeout(() => {
           setShowRateLimitBanner(true);
         }, 500);
 
         // Auto-hide banner after 8 seconds
-        setTimeout(() => {
+        hideBannerTimeoutRef.current = setTimeout(() => {
           setShowRateLimitBanner(false);
         }, 8000);
       }
@@ -868,13 +902,17 @@ function ChatApp() {
       setRemainingQueries(newRemaining);
       setHasStartedQuerying(true);
 
+      // Clear any existing timeouts to prevent memory leaks
+      if (showBannerTimeoutRef.current) clearTimeout(showBannerTimeoutRef.current);
+      if (hideBannerTimeoutRef.current) clearTimeout(hideBannerTimeoutRef.current);
+
       // Only show banner after first query and with delay for animation
-      setTimeout(() => {
+      showBannerTimeoutRef.current = setTimeout(() => {
         setShowRateLimitBanner(true);
       }, 500);
 
       // Auto-hide banner after 8 seconds
-      setTimeout(() => {
+      hideBannerTimeoutRef.current = setTimeout(() => {
         setShowRateLimitBanner(false);
       }, 8000);
     }
