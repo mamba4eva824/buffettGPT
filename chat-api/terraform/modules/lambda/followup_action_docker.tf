@@ -161,6 +161,8 @@ resource "aws_iam_role_policy" "followup_action" {
 # ============================================================================
 
 resource "aws_lambda_function" "followup_action" {
+  count = var.create_followup_action_lambda ? 1 : 0
+
   function_name = "${var.project_name}-${var.environment}-followup-action"
   role          = aws_iam_role.followup_action.arn
 
@@ -224,9 +226,11 @@ resource "aws_cloudwatch_log_group" "followup_action" {
 # ============================================================================
 
 resource "aws_lambda_permission" "bedrock_invoke_followup_action" {
+  count = var.create_followup_action_lambda ? 1 : 0
+
   statement_id  = "AllowBedrockInvoke"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.followup_action.function_name
+  function_name = aws_lambda_function.followup_action[0].function_name
   principal     = "bedrock.amazonaws.com"
 
   # Allow any Bedrock agent in this account to invoke
