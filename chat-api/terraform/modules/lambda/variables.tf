@@ -162,3 +162,9 @@ variable "followup_action_image_tag" {
   type        = string
   default     = "v1.0.0"
 }
+
+variable "create_followup_action_lambda" {
+  description = "Whether to create the followup action Lambda. Set to false on first deploy until Docker image is pushed to ECR."
+  type        = bool
+  default     = false
+}

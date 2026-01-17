@@ -193,6 +193,10 @@ module "lambda" {
   # Prediction Ensemble Docker image version
   # v2.4.6: Fix race condition - cache verification before agent invocation
   prediction_ensemble_image_tag = "v2.4.6"
+
+  # Followup Action Lambda (Bedrock action group handler)
+  # Set to true after first Docker image is pushed to ECR
+  create_followup_action_lambda = false
 }
 
 # ================================================
@@ -363,7 +367,8 @@ module "bedrock" {
 
   # Action Group for Follow-up Agent
   # Uses dedicated followup-action Lambda for report data retrieval
-  enable_followup_action_group         = true
+  # Set to true after first Docker image is pushed to ECR and Lambda is created
+  enable_followup_action_group         = false
   followup_action_lambda_arn           = module.lambda.followup_action_arn
   followup_action_lambda_function_name = module.lambda.followup_action_name
 }

@@ -162,12 +162,12 @@ output "investment_research_docker_function_url" {
 
 output "followup_action_arn" {
   description = "ARN of the followup action Docker Lambda function"
-  value       = try(aws_lambda_function.followup_action.arn, null)
+  value       = try(aws_lambda_function.followup_action[0].arn, null)
 }
 
 output "followup_action_name" {
   description = "Name of the followup action Docker Lambda function"
-  value       = try(aws_lambda_function.followup_action.function_name, null)
+  value       = try(aws_lambda_function.followup_action[0].function_name, null)
 }
 
 output "followup_action_ecr_url" {
@@ -177,5 +177,5 @@ output "followup_action_ecr_url" {
 
 output "followup_action_invoke_arn" {
   description = "Invoke ARN of the followup action Docker Lambda function"
-  value       = try(aws_lambda_function.followup_action.invoke_arn, null)
+  value       = try(aws_lambda_function.followup_action[0].invoke_arn, null)
 }
