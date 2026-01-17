@@ -200,6 +200,13 @@ resource "aws_api_gateway_deployment" "analysis" {
       try(aws_api_gateway_integration.research_stream_lambda[0].uri, ""),
       try(aws_api_gateway_method.research_stream_options[0].id, ""),
       try(aws_api_gateway_integration.research_stream_options[0].id, ""),
+      # Research Follow-up API resources
+      try(aws_api_gateway_resource.research_followup[0].id, ""),
+      try(aws_api_gateway_method.research_followup_post[0].id, ""),
+      try(aws_api_gateway_integration.research_followup_lambda[0].id, ""),
+      try(aws_api_gateway_integration.research_followup_lambda[0].uri, ""),
+      try(aws_api_gateway_method.research_followup_options[0].id, ""),
+      try(aws_api_gateway_integration.research_followup_options[0].id, ""),
     ]))
   }
 
@@ -213,7 +220,9 @@ resource "aws_api_gateway_deployment" "analysis" {
     aws_api_gateway_gateway_response.analysis_default_4xx,
     aws_api_gateway_gateway_response.analysis_default_5xx,
     aws_api_gateway_integration.research_stream_lambda,
-    aws_api_gateway_integration.research_stream_options
+    aws_api_gateway_integration.research_stream_options,
+    aws_api_gateway_integration.research_followup_lambda,
+    aws_api_gateway_integration.research_followup_options
   ]
 }
 
@@ -498,4 +507,102 @@ resource "aws_api_gateway_integration_response" "research_stream_options" {
   }
 
   depends_on = [aws_api_gateway_integration.research_stream_options]
+}
+
+# ============================================================================
+# /research/followup - POST endpoint for follow-up questions
+# ============================================================================
+
+# /research/followup resource
+resource "aws_api_gateway_resource" "research_followup" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research[0].id
+  path_part   = "followup"
+}
+
+# POST Method with JWT Authorization
+resource "aws_api_gateway_method" "research_followup_post" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_followup[0].id
+  http_method   = "POST"
+  authorization = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id = var.enable_authorization ? aws_api_gateway_authorizer.analysis_jwt[0].id : null
+
+  request_parameters = {
+    "method.request.header.Authorization" = false
+    "method.request.header.Content-Type"  = false
+  }
+}
+
+# HTTP_PROXY Integration to Lambda Function URL
+resource "aws_api_gateway_integration" "research_followup_lambda" {
+  count                   = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id             = aws_api_gateway_rest_api.analysis[0].id
+  resource_id             = aws_api_gateway_resource.research_followup[0].id
+  http_method             = aws_api_gateway_method.research_followup_post[0].http_method
+  integration_http_method = "POST"
+  type                    = "HTTP_PROXY"
+
+  uri = "${trimsuffix(var.investment_research_function_url, "/")}/followup"
+
+  request_parameters = {
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+    "integration.request.header.Content-Type"  = "method.request.header.Content-Type"
+  }
+
+  passthrough_behavior = "WHEN_NO_MATCH"
+  timeout_milliseconds = 29000
+}
+
+# CORS Preflight (OPTIONS) for Follow-up
+resource "aws_api_gateway_method" "research_followup_options" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_followup[0].id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "research_followup_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_followup[0].id
+  http_method = aws_api_gateway_method.research_followup_options[0].http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "research_followup_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_followup[0].id
+  http_method = aws_api_gateway_method.research_followup_options[0].http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "research_followup_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_followup[0].id
+  http_method = aws_api_gateway_method.research_followup_options[0].http_method
+  status_code = aws_api_gateway_method_response.research_followup_options[0].status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,Accept'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cloudfront_url != "" ? "'${var.cloudfront_url}'" : "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.research_followup_options]
 }

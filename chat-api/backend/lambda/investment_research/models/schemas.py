@@ -34,12 +34,16 @@ def json_dumps(obj: Any) -> str:
 
 
 class FollowUpRequest(BaseModel):
-    """Request model for follow-up question endpoint (Phase 4 stub)."""
+    """Request model for follow-up question endpoint."""
     ticker: str = Field(..., description="Stock ticker symbol (e.g., AAPL)")
     question: str = Field(..., description="Follow-up question about the report")
     conversation_id: Optional[str] = Field(
         None,
         description="Conversation ID for maintaining context across questions"
+    )
+    section_id: Optional[str] = Field(
+        None,
+        description="Currently active section ID for additional context"
     )
     fiscal_year: Optional[int] = Field(
         None,
