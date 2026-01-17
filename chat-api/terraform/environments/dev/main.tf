@@ -197,6 +197,7 @@ module "lambda" {
   # Followup Action Lambda (Bedrock action group handler)
   # Docker image pushed to ECR - enable Lambda creation
   create_followup_action_lambda = true
+  followup_action_image_tag     = "latest"
 }
 
 # ================================================
