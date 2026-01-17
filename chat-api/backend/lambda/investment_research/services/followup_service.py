@@ -393,7 +393,7 @@ Use your available tools to:
     try:
         if FOLLOWUP_AGENT_ID:
             # Use Bedrock Agent with streaming
-            async for event in _stream_agent_response(context_prompt, session_id):
+            async for event in _stream_agent_response(context_prompt, session_id, ticker):
                 yield event
         else:
             # Use direct converse_stream with Claude Haiku 4.5
@@ -413,12 +413,27 @@ Use your available tools to:
 
 async def _stream_agent_response(
     prompt: str,
-    session_id: str
+    session_id: str,
+    ticker: str
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Stream response from Bedrock Agent.
+
+    Uses followup_* event types for frontend compatibility.
     """
+    import uuid
+    from services.streaming import (
+        followup_start_event,
+        followup_chunk_event,
+        followup_end_event,
+    )
+
+    message_id = str(uuid.uuid4())
+
     try:
+        # Emit start event
+        yield followup_start_event(message_id, ticker)
+
         response = bedrock_agent_runtime.invoke_agent(
             agentId=FOLLOWUP_AGENT_ID,
             agentAliasId=FOLLOWUP_AGENT_ALIAS,
@@ -431,15 +446,10 @@ async def _stream_agent_response(
         for event in response.get('completion', []):
             if 'chunk' in event:
                 chunk_text = event['chunk'].get('bytes', b'').decode('utf-8')
-                yield {
-                    'event': 'chunk',
-                    'data': json.dumps({'text': chunk_text})
-                }
+                yield followup_chunk_event(message_id, chunk_text)
 
-        yield {
-            'event': 'complete',
-            'data': json.dumps({'session_id': session_id})
-        }
+        # Emit end event
+        yield followup_end_event(message_id)
 
     except Exception as e:
         raise
