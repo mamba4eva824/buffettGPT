@@ -50,3 +50,36 @@ output "authorizer_ids" {
     websocket_jwt_authorizer = var.enable_authorization && var.authorizer_function_arn != null ? aws_apigatewayv2_authorizer.websocket_jwt_authorizer[0].id : null
   }
 }
+
+# ============================================================================
+# Analysis Streaming API Outputs
+# ============================================================================
+
+output "analysis_api_id" {
+  description = "ID of the Analysis REST API Gateway"
+  value       = var.enable_analysis_api ? aws_api_gateway_rest_api.analysis[0].id : null
+}
+
+output "analysis_api_endpoint" {
+  description = "Endpoint URL of the Analysis REST API Gateway"
+  value       = var.enable_analysis_api ? "${aws_api_gateway_stage.analysis[0].invoke_url}/analysis" : null
+}
+
+output "analysis_api_execution_arn" {
+  description = "Execution ARN for Analysis REST API Gateway"
+  value       = var.enable_analysis_api ? aws_api_gateway_rest_api.analysis[0].execution_arn : null
+}
+
+output "authorizer_invocation_role_arn" {
+  description = "ARN of the authorizer invocation IAM role"
+  value       = var.enable_authorization ? aws_iam_role.authorizer_invocation_role[0].arn : null
+}
+
+# ============================================================================
+# Investment Research API Outputs
+# ============================================================================
+
+output "research_api_endpoint" {
+  description = "Endpoint URL for Investment Research API (SSE streaming)"
+  value       = var.enable_analysis_api && var.enable_research_api ? "${aws_api_gateway_stage.analysis[0].invoke_url}/research" : null
+}

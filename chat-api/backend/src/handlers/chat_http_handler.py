@@ -259,7 +259,7 @@ def process_chat_message(session_id: str, user_id: str, user_message: str) -> Di
         logger.info(f"Successfully saved user message: {message_id} for session: {session_id}, user: {user_id}")
 
         # Update conversation timestamp for inbox sorting
-        update_conversation_timestamp(session_id, datetime.utcnow().isoformat() + 'Z')
+        update_conversation_timestamp(session_id)
 
     except Exception as e:
         logger.error(f"Failed to save user message to DynamoDB: {str(e)}", exc_info=True)

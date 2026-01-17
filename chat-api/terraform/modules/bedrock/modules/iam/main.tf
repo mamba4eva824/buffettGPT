@@ -5,7 +5,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.25"
     }
   }
 }
@@ -132,6 +132,18 @@ resource "aws_iam_policy" "agent_policy" {
         ]
         Resource = [
           "arn:aws:bedrock:${data.aws_region.current.name}::foundation-model/${var.foundation_model_id}"
+        ]
+      },
+      {
+        Sid    = "InvokeInferenceProfiles"
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:GetInferenceProfile"
+        ]
+        Resource = [
+          "arn:aws:bedrock:*::inference-profile/us.anthropic.*",
+          "arn:aws:bedrock:*:${data.aws_caller_identity.current.account_id}:inference-profile/*"
         ]
       },
       {

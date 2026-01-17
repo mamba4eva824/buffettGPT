@@ -1,0 +1,19 @@
+# Investment Research Lambda Dependencies
+# Lightweight - DynamoDB reads + FastAPI streaming only
+#
+# NO ML packages (xgboost, sklearn, numpy) - reports are pre-cached
+# NO FMP client dependencies - data already in DynamoDB
+
+# AWS SDK (included in Lambda runtime but needed for local testing)
+boto3>=1.34.0
+botocore>=1.34.0
+
+# Web Framework (Lambda Web Adapter)
+fastapi>=0.109.0
+uvicorn>=0.27.0
+
+# SSE Streaming Support
+sse-starlette>=1.6.0
+
+# Data Validation
+pydantic>=2.0.0

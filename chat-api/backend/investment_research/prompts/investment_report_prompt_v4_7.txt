@@ -1,0 +1,411 @@
+Analyze {ticker} for fiscal year {fiscal_year} from a value investing perspective.
+
+{metrics_context}
+
+## Your Task
+Create an **engaging, comprehensive investment analysis report** for Millennials and Gen Z investors — many of whom may be starting with smaller amounts, dealing with student loans, or building their first investment portfolios. Your goal is to **deeply educate while analyzing** — readers should finish feeling like they just took a mini-MBA class on this company AND investing in general.
+
+**IMPORTANT: Depth Over Brevity**
+Each section should be EXTENSIVE — typically 3-5 paragraphs with detailed analysis. Don't just state facts; explain WHY they matter, what caused them, and what they signal about the future. Connect insights to real-world situations your readers face.
+
+Think deeply about:
+1. The 5-year narrative arc and business cycle context
+2. Trend trajectories — improving, stable, or deteriorating
+3. Core value investing: durable advantage, quality management, margin of safety
+4. **Earnings quality** — is profit backed by real cash?
+5. **Debt structure** — when are payments due?
+6. **Shareholder dilution** — is the company printing shares?
+
+---
+
+## WHO YOU'RE WRITING FOR
+
+**Your reader is a 25-35 year old who:**
+- Has $50-500/month to invest (not millions)
+- May be paying off student loans while trying to build wealth
+- Gets their news from TikTok/YouTube but wants to understand things properly
+- Is skeptical of "get rich quick" schemes and wants substance
+- Wonders: "Can I actually build wealth with what I can afford to invest?"
+
+**Write for someone who:**
+- Knows what a stock is but doesn't understand financial statements
+- Has heard terms like "P/E ratio" but couldn't explain them
+- Uses apps like Robinhood, Acorns, or their 401k but doesn't feel confident
+- Wants to know: "Would investing in this company help me build generational wealth?"
+
+---
+
+## THREE CORE PRINCIPLES
+
+### 1. Zero-Tolerance Jargon Policy
+**Every ratio (x, %, pp) MUST include plain English in the SAME sentence.**
+
+**CRITICAL**: After explaining a metric, add a "What this means for you" sentence connecting it to everyday financial decisions.
+
+| Term | Say Instead | Example Pattern | What It Means For You |
+|------|-------------|-----------------|----------------------|
+| Free Cash Flow (FCF) | money left after paying all bills | "$X left after paying all bills" | "This is like YOUR paycheck after rent, food, and loans — what's actually left to save or invest" |
+| FCF Margin | cash keep rate | "keeps X cents of every dollar as actual cash" | "If you kept 20% of your paycheck as savings, you'd be doing great — same idea here" |
+| Operating Cash Flow (OCF) | cash from running the business | "Generated $X from actually selling products" | "This is like your salary — money that actually hit your bank account, not just promises" |
+| OCF/Net Income Ratio | cash quality score | "Collects $X in real cash for every $1 of paper profit" | "You want this above 1x — anything less means profits are stuck in 'pending' status" |
+| Debt-to-Equity (D/E) | borrowing level | "borrowed X cents for every dollar they own" | "Like having $10k in student loans vs $10k saved — that's 1x. Lower = less stressed" |
+| Interest Coverage | debt safety cushion | "earns Xx what they need for loan payments" | "If you earn $4k/month and loans cost $1k, you have 4x cushion. Above 5x is comfortable" |
+| Net Debt | total owed minus savings | "after dipping into savings, they still owe $X" | "Your net debt = student loans minus your savings account. Negative = you're ahead" |
+| Gross Margin | profit per sale (before overhead) | "keeps X cents from every dollar sold" | "Like selling something on eBay for $100 that cost you $40 to buy = 60% margin" |
+| Stock-Based Compensation (SBC) | paying employees in stock | "gave employees $X in stock instead of cash" | "When companies pay in stock instead of cash, they 'print' new shares — your slice gets smaller" |
+
+### TABLE HEADER TRANSLATIONS
+**Use plain English for ALL table column headers:**
+
+| Financial Term | Use This Header Instead |
+|----------------|------------------------|
+| Total Liquidity | Cash & Savings |
+| Net Debt (positive) | Debt After Savings |
+| Net Debt (negative) | Net Cash Position |
+| Debt/Equity | Borrowing Ratio |
+| FCF Margin | Cash Keep Rate |
+| OCF/NI | Cash Quality |
+| Operating CF | Cash from Sales |
+| Free Cash Flow | Money Left Over |
+
+### NET DEBT vs NET CASH DISPLAY (CRITICAL)
+**When a company has MORE cash than debt, display it as a POSITIVE "Net Cash Position" — not a confusing negative number.**
+
+**The calculation:** Net Debt = Total Debt - Cash & Savings
+- If result is **positive** → Company owes more than they have → Use "Debt After Savings" header
+- If result is **negative** → Company has more cash than debt → Use "Net Cash Position" header with **positive number**
+
+**Example — Company with more cash than debt (like Okta):**
+❌ WRONG (confusing):
+| Year | Total Debt | Cash & Savings | Debt After Savings |
+|------|------------|----------------|-------------------|
+| 2026 | $423M | $2.5B | -$2.0B |
+
+✅ CORRECT (clear):
+| Year | Total Debt | Cash & Savings | Net Cash Position |
+|------|------------|----------------|-------------------|
+| 2026 | $423M | $2.5B | **+$2.0B** ✅ |
+
+**Example — Company with more debt than cash (like Disney):**
+| Year | Total Debt | Cash & Savings | Debt After Savings |
+|------|------------|----------------|-------------------|
+| 2025 | $44.9B | $5.7B | $39.2B |
+
+**Rule:** Always show the number as positive with the appropriate header. The header tells the story — "Net Cash Position" = good, "Debt After Savings" = watch it.
+
+---
+
+### 2. DEPTH AND CONTEXT IN EVERY SECTION
+
+**Each section should include:**
+
+1. **The Numbers** — What the data shows
+2. **The Story** — Why it looks this way (industry context, recent events, management decisions)
+3. **The Trajectory** — Getting better, worse, or stable? How fast?
+4. **The Comparison** — How does this compare to industry peers or "normal"?
+5. **What This Means For Small Investors** — Connect to their situation
+
+**Example of GOOD depth:**
+"Amazon's debt-to-equity ratio improved from 0.67x to 0.37x over two years — they borrowed 37 cents for every dollar they own, down from 67 cents. That's like going from having $67k in student loans on a $100k net worth to just $37k. What drove this improvement? Massive cash flow from AWS (their cloud business makes $30B+ per year) combined with discipline in not taking on new debt. For you as a small investor, this matters because companies with lower debt survive recessions better — they're not scrambling to make loan payments when revenue dips. If you're investing money you can't afford to lose, you want companies that can weather storms."
+
+---
+
+### 3. RELATABLE ANALOGIES (MANDATORY)
+
+**Every major concept needs an analogy your reader has experienced:**
+
+| Situation | Analogy Categories |
+|-----------|-------------------|
+| Revenue growth | Side hustle growing, YouTube channel monetization, tips increasing |
+| Profit margins | What's left from paycheck after bills, eBay reselling profit |
+| Debt levels | Student loans vs income, car payments, credit card balance |
+| Cash flow | Paycheck actually depositing vs employer "promising" to pay |
+| Dilution | Splitting a pizza with more people, ownership in group projects |
+| Good business model | Gym memberships, Netflix subscriptions, phone contracts |
+| Bad business model | One-time sales, constantly chasing new customers |
+
+**Category-Specific Analogies:**
+
+| Category | Use For | Example |
+|----------|---------|---------|
+| **Rent/Housing** | Fixed costs, recurring expenses | "Like paying rent — it's due whether you made money this month or not" |
+| **Student Loans** | Debt management, interest coverage | "If your monthly income is 5x your loan payment, you're comfortable. 2x? Sweating every month" |
+| **Side Hustles** | Profitability, scaling | "Like an Etsy shop that finally covers the cost of materials AND your time" |
+| **Subscriptions** | Recurring revenue, pricing power | "Like Spotify raising prices — are you actually going to cancel and lose all your playlists?" |
+| **Savings Rate** | FCF margin, cash generation | "If you save 20% of your paycheck, you're doing better than most people AND companies" |
+
+---
+
+## REQUIRED SECTIONS (in order) — EXTENSIVE ANALYSIS REQUIRED
+
+### 1. TL;DR
+3-4 punchy sentences. Include:
+- One-line on what the company does
+- The key insight (is the business getting better or worse?)
+- Would you tell a friend to look into this? Why or why not?
+- A number that captures the story (e.g., "36% growth" or "$45B in debt")
+
+### 2. Quick Health Check
+**Use a dynamic {ticker}-specific header** (e.g., "Amazon's 2025 Report Card" or "Is AMZN Actually Healthy?")
+
+| The Check | What's Happening | Flag | The Verdict |
+|-----------|------------------|------|-------------|
+| **Growth Speed** | X% → Y% over Z quarters | Flag | Explanation + is this pattern or blip? |
+| **Streak Length** | Revenue [up/down] X quarters straight | Flag | Pattern detection |
+| **Margin Direction** | Margins went from X% to Y% | Flag | Why? Competition? Investment? |
+| **Cash Reality** | Cash quality score: Xx | Flag | Is cash hitting the bank? |
+| **Debt Situation** | Net debt/cash: $X | Flag | Fortress / manageable / concerning? |
+| **Earnings Reality** | GAAP vs Adjusted gap: X% | Flag | Big gap = be skeptical |
+| **Dilution Check** | Shares outstanding: up/down X% | Flag | Printing shares = dilution |
+
+**After the table, add 2-3 sentences explaining the MOST important finding and why it matters.**
+
+### 3. What Does {ticker} Actually Do?
+**4-6 sentences minimum.** Make the business tangible:
+- What do they sell and who buys it?
+- How do they make money (subscription? one-time? ads?)
+- What makes them different from competitors?
+- A real-world example: "The last time you did X, you probably used their product"
+
+### 4. Growth Section — EXTENSIVE
+**Dynamic header with {ticker}'s actual growth metrics**
+
+**Required depth (5+ paragraphs):**
+
+1. **The Big Picture** — 5-year trend table + interpretation
+   - Is this company in growth mode, mature mode, or decline mode?
+   - How does their growth compare to the industry?
+
+2. **What's Happening Now** — Quarterly momentum analysis
+   - Are recent quarters accelerating or decelerating?
+   - What's driving the change?
+
+3. **The Drivers** — Where is growth coming from?
+   - New products? New customers? Higher prices? All three?
+   - Is growth sustainable or a one-time boost?
+
+4. **Context For Small Investors**
+   - Growth stocks are exciting but volatile — is this volatility worth it for your portfolio?
+   - How long might you need to hold to see this growth pay off?
+
+5. **Bottom Line** — Clear +/~/- indicator with one-sentence summary
+
+**Include a "What This Means If You Invest $100/Month" callout:**
+"If {ticker} continues growing at X%, your $100/month investment could become $Y in 5 years (assuming the stock price tracks revenue growth, which isn't guaranteed but historically happens for growing companies)."
+
+### 5. Profitability Section — EXTENSIVE
+**Dynamic header reflecting {ticker}'s profit story**
+
+**Required depth (4+ paragraphs):**
+
+1. **Margin Trends Table** — 5-year view of gross, operating, net margins + EPS
+   - Which margins are improving vs declining?
+   - What's the gap between gross and net margin? (Big gap = lots of overhead)
+
+2. **The Efficiency Story**
+   - Is the company getting more efficient (doing more with less)?
+   - Scale effects: Are they making more money per employee/customer than before?
+
+3. **Industry Context**
+   - How do these margins compare to competitors?
+   - Are low margins a problem or just the nature of this business?
+
+4. **Small Investor Perspective**
+   - High-margin businesses generally make better long-term investments — they have more cushion when things go wrong
+   - A company making 3% net margin is one bad quarter away from losing money; 15%+ has breathing room
+
+### 6. Earnings Quality Section — EXTENSIVE
+**Dynamic header** reflecting the GAAP vs Adjusted story
+
+**Required depth (5+ paragraphs):**
+
+1. **Why This Matters** — Open with a {ticker}-specific hook
+   - "Companies can make their profits look better than reality. Here's how to see through it..."
+
+2. **GAAP to Adjusted Bridge Table**
+   | Step | What They Added Back | Amount | Why It Matters |
+   |------|---------------------|--------|----------------|
+   | 1 | Real profit (GAAP) | $X | "This is the official number" |
+   | 2 | Stock to employees | $X | "Real cost they're hiding" |
+   | 3 | Wear & tear costs | $X | "Legit — equipment does wear out" |
+   | **Total** | **"Adjusted" earnings** | **$X** | **X% gap** |
+
+3. **Stock-Based Compensation Deep Dive**
+   - How much is SBC as % of revenue?
+   - What this means for your ownership: "If they give employees 5% of the company in stock each year, your slice shrinks 5% annually unless you buy more"
+   - Risk scale: Normal (<5%) / Elevated (5-10%) / High (10-20%) / Very High (>20%)
+
+4. **Quality Assessment**
+   - Are these "adjustments" legitimate or are they hiding real costs?
+   - Rule of thumb: D&A adjustments are usually fine; SBC adjustments are concerning
+
+5. **Small Investor Impact**
+   - When earnings quality is poor, the stock price can crash when reality catches up
+   - This is why some stocks "suddenly" drop 30% — the earnings weren't as real as they looked
+
+### 7. Cash Flow Section — EXTENSIVE
+**Dynamic header** capturing {ticker}'s cash story
+
+**Required depth (5+ paragraphs):**
+
+1. **Cash Flow Basics** — Start with an analogy
+   - "Profit on paper is like your employer saying they'll pay you. Cash flow is the money actually hitting your bank account."
+
+2. **Quarterly Cash Flow Table**
+   | Quarter | Cash from Sales | Money Left Over | Cash Keep Rate | Cash Quality |
+
+3. **Cash Quality Analysis**
+   - What's the OCF/NI ratio? What does it tell us?
+   - Is this company generating real cash or paper profits?
+
+4. **Where Does The Cash Go?** — Capital allocation breakdown
+   - How much goes to: Reinvestment? Dividends? Buybacks? Debt paydown? Sitting in the bank?
+   - Is management allocating capital wisely?
+
+5. **Small Investor Perspective**
+   - Strong cash flow = can survive downturns, pay dividends, buy back stock
+   - Weak cash flow = might need to issue more stock (diluting you) or take debt
+
+6. **"Paying Your Bills" Analogy**
+   - "If you earned $5k/month (net income) but only $3k actually deposited (operating cash flow), you'd have a problem. This company's ratio is X — here's what that means..."
+
+### 8. Debt Section — EXTENSIVE
+**Dynamic header** based on {ticker}'s balance sheet
+
+**Required depth (5+ paragraphs):**
+
+1. **The Balance Sheet Story** — Open with {ticker}'s specific situation
+   - Net cash position OR net debt situation
+   - Trajectory: Getting better or worse?
+
+2. **5-Year Debt Trajectory Table**
+   **IMPORTANT: Use correct header based on whether company has net cash or net debt (see NET DEBT vs NET CASH DISPLAY rules above)**
+
+   **If company has MORE CASH than debt (net cash position):**
+   | Year | Total Debt | Cash & Savings | Net Cash Position | Borrowing Ratio | Loan Safety |
+   |------|------------|----------------|-------------------|-----------------|-------------|
+   | 2026 | $423M | $2.5B | **+$2.0B** | 0.06x | 23x ✅ |
+
+   **If company has MORE DEBT than cash (net debt):**
+   | Year | Total Debt | Cash & Savings | Debt After Savings | Borrowing Ratio | Loan Safety |
+   |------|------------|----------------|-------------------|-----------------|-------------|
+   | 2025 | $44.9B | $5.7B | $39.2B | 0.41x | 5.1x |
+
+3. **Debt Maturity Breakdown**
+   - How much is due in <1 year vs >1 year?
+   - Refinancing risk: If >40% due soon, discuss the risk
+
+4. **The Student Loan Analogy**
+   - "If you had $50k in loans and earned $40k/year, that's concerning. {ticker} has $Xb in debt and earns $Yb/year — here's how that compares..."
+
+5. **Small Investor Risk Assessment**
+   - Highly indebted companies get crushed in recessions
+   - For smaller investors who can't afford to lose principal, debt levels matter A LOT
+   - Interest rate sensitivity: When rates rise, debt becomes more expensive
+
+6. **Historical Context**
+   - How did this company handle the 2020 COVID crash? 2022 rate hikes?
+   - Companies with low debt weather storms better
+
+### 9. Dilution Section — EXTENSIVE
+**Dynamic header** reflecting {ticker}'s share count story
+
+**Required depth (4+ paragraphs):**
+
+1. **The Pizza Analogy**
+   - "Imagine you and 3 friends own a pizza shop. If you issue shares to 2 new 'partners,' your 25% ownership becomes 16.7% — your slice got smaller even though you didn't sell anything."
+
+2. **Dilution Metrics Table**
+   | Metric | Value | Plain English |
+   |--------|-------|---------------|
+   | Shares Today | XM | "Total slices of the pie" |
+   | If All Options Convert | XM | "Including promised shares" |
+   | Your Slice Shrinks By | +X% | "Your ownership diluted by X%" |
+   | Stock to Employees | X% of revenue | Risk level |
+
+3. **Buyback Analysis**
+   - Is the company buying back shares (making your slice bigger)?
+   - Net effect: Shares outstanding going up or down over time?
+
+4. **Why This Hits Small Investors Harder**
+   - Big investors can buy more to maintain their ownership %
+   - Small investors often can't — their slice just shrinks
+   - High-dilution companies need to grow faster just to keep your investment flat
+
+### 10. Bull Case — EXTENSIVE (4-5 points)
+Each point should be 2-3 sentences with specific metrics.
+End with: "For the optimist: If everything goes right, here's what your investment could look like..."
+
+### 11. Bear Case — EXTENSIVE (4-5 points)
+Each point should be 2-3 sentences with specific concerns.
+End with: "For the cautious: Here's what could go wrong and how bad it could get..."
+
+### 12. The Verdict — COMPREHENSIVE
+
+**Quick Scorecard:**
+| Category | Rating | Key Reason |
+|----------|--------|------------|
+| Growth | 1-5 | one sentence |
+| Profitability | 1-5 | ... |
+| Earnings Quality | 1-5 | GAAP gap note |
+| Cash Flow | 1-5 | ... |
+| Debt Health | 1-5 | ... |
+| Dilution | 1-5 | SBC impact |
+
+**Investment Fit Assessment:**
+| Investor Type | Should They Consider? | Why |
+|---------------|----------------------|-----|
+| Building first portfolio | Yes/No/Maybe | explanation |
+| Has student debt | Yes/No/Maybe | risk assessment |
+| Investing for 10+ years | Yes/No/Maybe | long-term view |
+| Needs money within 3 years | Yes/No/Maybe | volatility warning |
+
+**Final Verdict:** BUY / HOLD / SELL with conviction level (High/Medium/Low)
+
+**Real Talk:** 3-4 casual sentences with {ticker}-specific recommendation
+- Include: What would make you change this rating?
+- Include: If you can only buy 1 share per month, is this where you'd put it?
+
+---
+
+## Verdict Weighting
+- **50%**: Recent 2-4 quarters (momentum matters most)
+- **30%**: 5-year trajectory
+- **20%**: Balance sheet + earnings quality
+
+A company with deteriorating recent quarters = HOLD or SELL, not BUY.
+High SBC or poor earnings quality = rating adjusted down.
+
+---
+
+## Quality Check
+Before submitting, verify:
+- [ ] Every section is EXTENSIVE (3-5 paragraphs minimum)
+- [ ] Every ratio has plain English in same sentence
+- [ ] Every major concept has a relatable analogy
+- [ ] "What this means for small investors" is addressed in each section
+- [ ] All headers are {ticker}-specific (not generic)
+- [ ] Earnings Quality includes SBC % of revenue and impact on dilution
+- [ ] Debt section includes maturity breakdown and recession resilience
+- [ ] **Debt table uses "Net Cash Position" (positive) for companies with more cash than debt — NOT negative "Debt After Savings"**
+- [ ] Verdict includes "Investment Fit" table for different investor types
+- [ ] "Real Talk" uses {ticker}'s specific numbers and situation
+- [ ] Someone investing their first $500 could understand and act on this analysis
+
+---
+
+**REQUIRED JSON BLOCK** (at the very end):
+```json
+{{
+  "growth": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "profitability": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "earnings_quality": {{"rating": "...", "confidence": "...", "gaap_adjusted_gap_pct": X, "sbc_to_revenue_pct": X, "key_factors": [...]}},
+  "cashflow": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "debt": {{"rating": "...", "confidence": "...", "short_term_debt_pct": X, "key_factors": [...]}},
+  "dilution": {{"rating": "...", "confidence": "...", "dilution_pct": X, "key_factors": [...]}},
+  "overall_verdict": "BUY" | "HOLD" | "SELL",
+  "conviction": "High" | "Medium" | "Low"
+}}
+```
+
+Remember: You're writing for someone who might be deciding whether to invest their rent money into building wealth. Be thorough, be clear, and help them make an informed decision they won't regret. This is education AND analysis.

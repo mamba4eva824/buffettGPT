@@ -7,7 +7,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.25"
     }
   }
 }
@@ -105,42 +105,235 @@ module "guardrails" {
   tags                                 = local.common_tags
 }
 
-# Agent module
-module "agent" {
+# ================================================
+# NOTE: Main BuffettGPT-Investment-Advisor agent deprecated on 2024-12-20
+# The ensemble expert agents are now the primary agents for dev.
+# Staging environment retains the original advisor agent.
+# ================================================
+
+# ================================================
+# Expert Agents for Ensemble Analysis
+# ================================================
+
+module "debt_expert_agent" {
   source = "./modules/agent"
 
-  agent_name                        = var.agent_name
-  agent_description                 = var.agent_description
-  agent_role_arn                   = module.iam.agent_role_arn
-  foundation_model                 = var.foundation_model_id
-  agent_instruction                = var.agent_instruction
-  idle_session_ttl                 = var.idle_session_ttl
-  enable_prompt_override           = var.enable_prompt_override
-  orchestration_prompt_template    = file("${path.module}/prompts/orchestration_formatted.txt")
-  kb_response_prompt_template      = file("${path.module}/prompts/kb_response.txt")
-  post_processing_prompt_template  = var.post_processing_prompt_template
-  pre_processing_prompt_template   = var.pre_processing_prompt_template
-  max_response_length              = var.max_response_length
-  stop_sequences                   = var.stop_sequences
-  temperature                      = var.temperature
-  top_k                           = var.top_k
-  top_p                           = var.top_p
-  parser_mode                     = var.parser_mode
-  prompt_creation_mode            = var.prompt_creation_mode
-  orchestration_prompt_state      = var.orchestration_prompt_state
-  associate_knowledge_base        = var.associate_knowledge_base
-  knowledge_base_id               = module.knowledge_base.knowledge_base_id
-  kb_association_description      = var.kb_association_description
-  knowledge_base_state            = var.knowledge_base_state
-  agent_alias_name                = var.agent_alias_name
-  agent_alias_description         = var.agent_alias_description
-  # Pass guardrails configuration to agent
-  guardrail_configuration = var.enable_guardrails ? {
-    guardrail_identifier = module.guardrails[0].guardrail_id
-    guardrail_version    = module.guardrails[0].guardrail_version
-  } : null
-  create_agent_version            = var.create_agent_version
-  tags                            = local.common_tags
+  agent_name              = "${var.project_name}-${var.environment}-debt-expert"
+  agent_description       = "Value investor debt analysis expert (Buffett/Graham principles)"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "us.anthropic.claude-haiku-4-5-20251001-v1:0"  # Upgraded from Claude 3.5 Haiku
+  agent_instruction       = file("${path.module}/prompts/value_investor_debt_v5.txt")
+  idle_session_ttl        = var.idle_session_ttl
 
-  depends_on = [module.knowledge_base, module.guardrails]
+  # No knowledge base association for expert agents
+  associate_knowledge_base = false
+  knowledge_base_id        = ""
+
+  # No guardrails for expert agents (main agent has them)
+  guardrail_configuration = null
+
+  # Simpler agent config - no prompt override needed
+  enable_prompt_override  = false
+  create_agent_version    = false  # Route alias to DRAFT (which has action groups)
+  agent_alias_name        = "live"
+  agent_alias_description = "Live alias for debt expert agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam]
+}
+
+module "cashflow_expert_agent" {
+  source = "./modules/agent"
+
+  agent_name              = "${var.project_name}-${var.environment}-cashflow-expert"
+  agent_description       = "Value investor cashflow analysis expert (Buffett/Graham principles)"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "us.anthropic.claude-haiku-4-5-20251001-v1:0"  # Upgraded from Claude 3.5 Haiku
+  agent_instruction       = file("${path.module}/prompts/value_investor_cashflow_v5.txt")
+  idle_session_ttl        = var.idle_session_ttl
+
+  associate_knowledge_base = false
+  knowledge_base_id        = ""
+  guardrail_configuration  = null
+  enable_prompt_override   = false
+  create_agent_version     = false  # Route alias to DRAFT (which has action groups)
+  agent_alias_name         = "live"
+  agent_alias_description  = "Live alias for cashflow expert agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam]
+}
+
+module "growth_expert_agent" {
+  source = "./modules/agent"
+
+  agent_name              = "${var.project_name}-${var.environment}-growth-expert"
+  agent_description       = "Value investor growth/income analysis expert (Buffett/Graham principles)"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "us.anthropic.claude-haiku-4-5-20251001-v1:0"  # Upgraded from Claude 3.5 Haiku
+  agent_instruction       = file("${path.module}/prompts/value_investor_growth_v5.txt")
+  idle_session_ttl        = var.idle_session_ttl
+
+  associate_knowledge_base = false
+  knowledge_base_id        = ""
+  guardrail_configuration  = null
+  enable_prompt_override   = false
+  create_agent_version     = false  # Route alias to DRAFT (which has action groups)
+  agent_alias_name         = "live"
+  agent_alias_description  = "Live alias for growth expert agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam]
+}
+
+# ================================================
+# Supervisor Agent (Sonnet 4.5 + Knowledge Base)
+# Synthesizes expert analyses with Buffett's wisdom
+# ================================================
+
+module "supervisor_agent" {
+  source = "./modules/agent"
+
+  agent_name              = "${var.project_name}-${var.environment}-supervisor"
+  agent_description       = "Value investor supervisor - synthesizes expert analyses with Buffett's wisdom"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+  agent_instruction       = file("${path.module}/prompts/supervisor_instruction_v5.txt")
+  idle_session_ttl        = var.idle_session_ttl
+
+  # Knowledge base disabled temporarily
+  associate_knowledge_base   = false
+  knowledge_base_id          = ""
+
+  # No guardrails for supervisor (can be added later if needed)
+  guardrail_configuration = null
+
+  enable_prompt_override  = false
+  create_agent_version    = true
+  agent_alias_name        = "live"
+  agent_alias_description = "Live alias for supervisor agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam, module.knowledge_base]
+}
+
+# ================================================
+# Action Groups for Expert Agents
+# Each expert agent gets access to the Value Investor Analysis action
+# which provides ML predictions and top 10 value metrics per agent
+# ================================================
+
+module "debt_expert_action_group" {
+  count  = var.enable_action_groups && var.action_group_lambda_arn != null ? 1 : 0
+  source = "./modules/action-group"
+
+  agent_id          = module.debt_expert_agent.agent_id
+  agent_version     = "DRAFT"
+  action_group_name = "FinancialAnalysis"
+  description       = "Value investor analysis with ML predictions and top 10 debt metrics (5-year history)"
+
+  lambda_arn           = var.action_group_lambda_arn
+  lambda_function_name = var.action_group_lambda_function_name
+  agent_arn            = module.debt_expert_agent.agent_arn
+  api_schema_content   = file("${path.module}/schemas/value_investor_action.yaml")
+
+  lambda_permission_statement_id = "AllowBedrockInvokeDebtExpert"
+
+  depends_on = [module.debt_expert_agent]
+}
+
+module "cashflow_expert_action_group" {
+  count  = var.enable_action_groups && var.action_group_lambda_arn != null ? 1 : 0
+  source = "./modules/action-group"
+
+  agent_id          = module.cashflow_expert_agent.agent_id
+  agent_version     = "DRAFT"
+  action_group_name = "FinancialAnalysis"
+  description       = "Value investor analysis with ML predictions and top 10 cashflow metrics (5-year history)"
+
+  lambda_arn           = var.action_group_lambda_arn
+  lambda_function_name = var.action_group_lambda_function_name
+  agent_arn            = module.cashflow_expert_agent.agent_arn
+  api_schema_content   = file("${path.module}/schemas/value_investor_action.yaml")
+
+  lambda_permission_statement_id = "AllowBedrockInvokeCashflowExpert"
+
+  depends_on = [module.cashflow_expert_agent]
+}
+
+module "growth_expert_action_group" {
+  count  = var.enable_action_groups && var.action_group_lambda_arn != null ? 1 : 0
+  source = "./modules/action-group"
+
+  agent_id          = module.growth_expert_agent.agent_id
+  agent_version     = "DRAFT"
+  action_group_name = "FinancialAnalysis"
+  description       = "Value investor analysis with ML predictions and top 10 growth metrics (5-year history)"
+
+  lambda_arn           = var.action_group_lambda_arn
+  lambda_function_name = var.action_group_lambda_function_name
+  agent_arn            = module.growth_expert_agent.agent_arn
+  api_schema_content   = file("${path.module}/schemas/value_investor_action.yaml")
+
+  lambda_permission_statement_id = "AllowBedrockInvokeGrowthExpert"
+
+  depends_on = [module.growth_expert_agent]
+}
+
+# ================================================
+# Follow-up Agent for Investment Research Questions
+# Handles follow-up questions about investment reports
+# using action groups to retrieve report sections and metrics
+# ================================================
+
+module "followup_agent" {
+  source = "./modules/agent"
+
+  agent_name              = "${var.project_name}-${var.environment}-followup"
+  agent_description       = "Follow-up research assistant for investment report questions"
+  agent_role_arn          = module.iam.agent_role_arn
+  foundation_model        = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+  agent_instruction       = file("${path.module}/prompts/followup_agent_v1.txt")
+  idle_session_ttl        = var.idle_session_ttl
+
+  # No knowledge base association - uses action groups for data retrieval
+  associate_knowledge_base = false
+  knowledge_base_id        = ""
+
+  # No guardrails for followup agent (can be added later)
+  guardrail_configuration = null
+
+  enable_prompt_override  = false
+  create_agent_version    = false  # Route alias to DRAFT (which has action groups)
+  agent_alias_name        = "live"
+  agent_alias_description = "Live alias for followup agent"
+
+  tags = local.common_tags
+
+  depends_on = [module.iam]
+}
+
+# Action Group for Follow-up Agent
+# Provides access to report sections, ratings, and metrics history
+module "followup_agent_action_group" {
+  count  = var.enable_followup_action_group ? 1 : 0
+  source = "./modules/action-group"
+
+  agent_id          = module.followup_agent.agent_id
+  agent_version     = "DRAFT"
+  action_group_name = "ReportResearch"
+  description       = "Actions for retrieving investment report sections, ratings, and metrics"
+
+  lambda_arn           = var.followup_action_lambda_arn
+  lambda_function_name = var.followup_action_lambda_function_name
+  agent_arn            = module.followup_agent.agent_arn
+  api_schema_content   = file("${path.module}/schemas/followup_action.yaml")
+
+  lambda_permission_statement_id = "AllowBedrockInvokeFollowup"
+
+  depends_on = [module.followup_agent]
 }

@@ -5,7 +5,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.25"
     }
   }
 }
@@ -74,6 +74,11 @@ resource "aws_bedrockagent_agent" "main" {
     Purpose   = "Bedrock Agent for Warren Buffett Investment Advice"
     Component = "Bedrock Agent"
   })
+
+  # Workaround for AWS provider bug that causes guardrail_configuration to be null after apply
+  lifecycle {
+    ignore_changes = [guardrail_configuration]
+  }
 }
 
 # Agent Knowledge Base Association
@@ -91,14 +96,10 @@ resource "aws_bedrockagent_agent_alias" "main" {
   agent_id         = aws_bedrockagent_agent.main.id
   description      = var.agent_alias_description
 
-  # Only configure routing when create_agent_version is false
-  # When true, routing is handled by the separate agent version resource
-  dynamic "routing_configuration" {
-    for_each = var.create_agent_version ? [] : [1]
-    content {
-      agent_version = "DRAFT"
-    }
-  }
+  # Note: When create_agent_version = false, we use TSTALIASID in Lambda env vars
+  # to route to DRAFT (which has action groups). Custom aliases cannot route to DRAFT
+  # so we omit routing_configuration entirely and let AWS manage version routing.
+  # When create_agent_version = true, routing is set by the version resource.
 
   tags = merge(var.tags, {
     Name      = var.agent_alias_name
