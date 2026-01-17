@@ -472,3 +472,77 @@ def section_end_event(section_id: str, total_chunks: int) -> dict:
             "timestamp": _timestamp()
         })
     }
+
+
+# =============================================================================
+# Follow-Up Chat SSE Events
+# =============================================================================
+
+def followup_start_event(message_id: str, ticker: str) -> dict:
+    """
+    Signal start of follow-up response streaming.
+
+    Emitted when the assistant begins generating a response to a follow-up question.
+
+    Args:
+        message_id: Unique identifier for this response message
+        ticker: Stock ticker being discussed
+
+    Returns:
+        Dict with event='followup_start' and message metadata
+    """
+    return {
+        "event": "followup_start",
+        "data": _json_dumps({
+            "type": "followup_start",
+            "message_id": message_id,
+            "ticker": ticker,
+            "timestamp": _timestamp()
+        })
+    }
+
+
+def followup_chunk_event(message_id: str, text: str) -> dict:
+    """
+    Stream a chunk of follow-up response text.
+
+    Emitted multiple times as the LLM generates tokens.
+
+    Args:
+        message_id: Unique identifier for this response message
+        text: Text chunk from the LLM response
+
+    Returns:
+        Dict with event='followup_chunk' and text content
+    """
+    return {
+        "event": "followup_chunk",
+        "data": _json_dumps({
+            "type": "followup_chunk",
+            "message_id": message_id,
+            "text": text,
+            "timestamp": _timestamp()
+        })
+    }
+
+
+def followup_end_event(message_id: str) -> dict:
+    """
+    Signal end of follow-up response streaming.
+
+    Emitted when the assistant has finished generating the response.
+
+    Args:
+        message_id: Unique identifier for this response message
+
+    Returns:
+        Dict with event='followup_end' and completion data
+    """
+    return {
+        "event": "followup_end",
+        "data": _json_dumps({
+            "type": "followup_end",
+            "message_id": message_id,
+            "timestamp": _timestamp()
+        })
+    }

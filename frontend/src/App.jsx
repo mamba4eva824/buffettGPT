@@ -735,6 +735,11 @@ function ChatApp() {
     fetchSection,
     setActiveSection,
     reset: resetResearch,
+    // Follow-up chat
+    followUpMessages,
+    isFollowUpStreaming,
+    sendFollowUp,
+    clearFollowUp,
   } = useResearch();
 
   // Toggle section collapse
@@ -959,6 +964,20 @@ function ChatApp() {
       }
     }
 
+    // Check if we're in follow-up mode (viewing a completed research report)
+    const isInFollowUpMode = showInvestmentResearch &&
+                             streamStatus === 'complete' &&
+                             researchTicker;
+
+    if (isInFollowUpMode) {
+      // Follow-up question about the current report
+      sendFollowUp(messageText, token);
+      if (!overrideText) {
+        setInput("");
+      }
+      return;
+    }
+
     // Extract company/ticker from natural language query
     const extractedCompany = extractCompanyFromQuery(messageText);
     setAnalysisTicker(extractedCompany);
@@ -967,6 +986,9 @@ function ChatApp() {
     if (selectedMode === 'investment-research') {
       // Investment Research mode - uses pre-generated reports from Investment Research Lambda
       // Sections render as cards in the unified chat interface
+
+      // Clear any previous follow-up messages when starting new research
+      clearFollowUp();
 
       // Add user query as a message bubble first
       const userMessage = {
@@ -1009,7 +1031,7 @@ function ChatApp() {
         setShowRateLimitBanner(false);
       }, 8000);
     }
-  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, selectedMode, startResearch, token]);
+  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, selectedMode, startResearch, token, showInvestmentResearch, streamStatus, researchTicker, sendFollowUp, clearFollowUp]);
 
   const newChat = useCallback(() => {
     // Clear messages and reset analysis view state
@@ -1021,7 +1043,7 @@ function ChatApp() {
     setAnalysisTicker('');
     setIsLoadedFromHistory(false);
 
-    // Reset research state
+    // Reset research state (includes clearing follow-up)
     resetResearch();
     setCollapsedSections([]);
     setVisibleSections([]);
@@ -1521,6 +1543,60 @@ function ChatApp() {
                           </div>
                         )}
 
+                        {/* Follow-up conversation - render after research sections */}
+                        {showInvestmentResearch && followUpMessages.length > 0 && (
+                          <div className="mx-auto w-full max-w-2xl mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                            <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-4 px-4">
+                              Follow-up Questions
+                            </div>
+                            {followUpMessages.map((msg) => (
+                              <div key={msg.id} className="mb-4 px-4">
+                                {msg.type === 'user' ? (
+                                  <div className="flex justify-end">
+                                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full text-sm max-w-[80%]">
+                                      {msg.content}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-3">
+                                    <div className="h-7 w-7 shrink-0">
+                                      <img
+                                        src="/buffett-memoji.png"
+                                        alt="Assistant"
+                                        className="w-full h-full rounded-full"
+                                      />
+                                    </div>
+                                    <div className="flex-1 bg-slate-50 dark:bg-slate-700 rounded-xl p-4 text-sm prose prose-sm dark:prose-invert max-w-none">
+                                      {msg.content}
+                                      {msg.isStreaming && (
+                                        <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Follow-up streaming indicator */}
+                        {showInvestmentResearch && isFollowUpStreaming && followUpMessages.length === 0 && (
+                          <div className="mx-auto w-full max-w-2xl mt-4 px-4">
+                            <div className="flex gap-3">
+                              <div className="h-7 w-7 shrink-0">
+                                <img
+                                  src="/buffett-memoji.png"
+                                  alt="Assistant"
+                                  className="w-full h-full rounded-full"
+                                />
+                              </div>
+                              <div className="text-slate-400 dark:text-slate-500 text-sm">
+                                Thinking...
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Evaluating indicator */}
                         {isEvaluating && (
                           <div className="flex justify-start">
@@ -1572,6 +1648,7 @@ function ChatApp() {
                     isConnecting={isConnecting}
                     selectedMode={selectedMode}
                     onModeChange={setSelectedMode}
+                    isFollowUpMode={showInvestmentResearch && streamStatus === 'complete' && !!researchTicker}
                   />
                 </div>
                 )}
@@ -1738,9 +1815,17 @@ function SearchComposer({
   onSuggestionClick,
   suggestionsLoading = false,
   selectedMode = 'buffett',
-  onModeChange
+  onModeChange,
+  isFollowUpMode = false
 }) {
   const inputRef = useRef(null);
+
+  // Determine placeholder text
+  const placeholderText = isConnecting
+    ? "Connecting..."
+    : isFollowUpMode
+      ? "Ask a follow-up question about the report..."
+      : "Enter a company name or ticker...";
 
   return (
     <div className="mx-auto max-w-3xl px-2 md:px-0">
@@ -1750,7 +1835,7 @@ function SearchComposer({
         <input
           ref={inputRef}
           type="text"
-          placeholder={isConnecting ? "Connecting..." : "Enter a company name or ticker..."}
+          placeholder={placeholderText}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {

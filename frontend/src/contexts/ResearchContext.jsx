@@ -13,6 +13,10 @@ const initialState = {
   streamedContent: {}, // { [section_id]: { title, content, isComplete, part, icon, word_count } }
   error: null,
   currentStreamingSection: null, // Track which section is currently streaming
+  // Follow-up chat state
+  followUpMessages: [], // [{id, type:'user'|'assistant', content, isStreaming, timestamp}]
+  isFollowUpStreaming: false,
+  currentFollowUpMessageId: null,
 };
 
 // Action types
@@ -27,6 +31,13 @@ const ACTIONS = {
   SET_SECTION: 'SET_SECTION',
   SET_ERROR: 'SET_ERROR',
   RESET: 'RESET',
+  // Follow-up chat actions
+  FOLLOWUP_USER_MESSAGE: 'FOLLOWUP_USER_MESSAGE',
+  FOLLOWUP_START: 'FOLLOWUP_START',
+  FOLLOWUP_CHUNK: 'FOLLOWUP_CHUNK',
+  FOLLOWUP_END: 'FOLLOWUP_END',
+  FOLLOWUP_ERROR: 'FOLLOWUP_ERROR',
+  CLEAR_FOLLOWUP: 'CLEAR_FOLLOWUP',
 };
 
 // Reducer
@@ -131,6 +142,77 @@ function researchReducer(state, action) {
     case ACTIONS.RESET:
       return initialState;
 
+    // Follow-up chat actions
+    case ACTIONS.FOLLOWUP_USER_MESSAGE:
+      return {
+        ...state,
+        followUpMessages: [
+          ...state.followUpMessages,
+          {
+            id: action.messageId,
+            type: 'user',
+            content: action.content,
+            isStreaming: false,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+
+    case ACTIONS.FOLLOWUP_START:
+      return {
+        ...state,
+        isFollowUpStreaming: true,
+        currentFollowUpMessageId: action.messageId,
+        followUpMessages: [
+          ...state.followUpMessages,
+          {
+            id: action.messageId,
+            type: 'assistant',
+            content: '',
+            isStreaming: true,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+
+    case ACTIONS.FOLLOWUP_CHUNK:
+      return {
+        ...state,
+        followUpMessages: state.followUpMessages.map((msg) =>
+          msg.id === action.messageId
+            ? { ...msg, content: msg.content + action.text }
+            : msg
+        ),
+      };
+
+    case ACTIONS.FOLLOWUP_END:
+      return {
+        ...state,
+        isFollowUpStreaming: false,
+        currentFollowUpMessageId: null,
+        followUpMessages: state.followUpMessages.map((msg) =>
+          msg.id === action.messageId
+            ? { ...msg, isStreaming: false }
+            : msg
+        ),
+      };
+
+    case ACTIONS.FOLLOWUP_ERROR:
+      return {
+        ...state,
+        isFollowUpStreaming: false,
+        currentFollowUpMessageId: null,
+        error: action.error,
+      };
+
+    case ACTIONS.CLEAR_FOLLOWUP:
+      return {
+        ...state,
+        followUpMessages: [],
+        isFollowUpStreaming: false,
+        currentFollowUpMessageId: null,
+      };
+
     default:
       return state;
   }
@@ -143,12 +225,21 @@ const ResearchContext = createContext(null);
 export function ResearchProvider({ children }) {
   const [state, dispatch] = useReducer(researchReducer, initialState);
   const abortControllerRef = useRef(null);
+  const followUpAbortRef = useRef(null);
 
   // Abort current stream
   const abortStream = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+    }
+  }, []);
+
+  // Abort follow-up stream
+  const abortFollowUp = useCallback(() => {
+    if (followUpAbortRef.current) {
+      followUpAbortRef.current.abort();
+      followUpAbortRef.current = null;
     }
   }, []);
 
@@ -252,8 +343,83 @@ export function ResearchProvider({ children }) {
   // Reset state
   const reset = useCallback(() => {
     abortStream();
+    abortFollowUp();
     dispatch({ type: ACTIONS.RESET });
-  }, [abortStream]);
+  }, [abortStream, abortFollowUp]);
+
+  // Clear follow-up messages
+  const clearFollowUp = useCallback(() => {
+    abortFollowUp();
+    dispatch({ type: ACTIONS.CLEAR_FOLLOWUP });
+  }, [abortFollowUp]);
+
+  // Send follow-up question
+  const sendFollowUp = useCallback(async (question, token = null) => {
+    if (!state.selectedTicker || state.isFollowUpStreaming) return;
+
+    // Add user message immediately
+    const userMessageId = `user-${Date.now()}`;
+    dispatch({
+      type: ACTIONS.FOLLOWUP_USER_MESSAGE,
+      messageId: userMessageId,
+      content: question,
+    });
+
+    // Abort any existing follow-up stream
+    abortFollowUp();
+    followUpAbortRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`${API_BASE}/research/followup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          ticker: state.selectedTicker,
+          question: question,
+          section_id: state.activeSectionId,
+        }),
+        signal: followUpAbortRef.current.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEvent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              handleSSEEvent(currentEvent, data, dispatch);
+            } catch (e) {
+              console.warn('Failed to parse follow-up SSE data:', e);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+      console.error('Follow-up error:', error);
+      dispatch({ type: ACTIONS.FOLLOWUP_ERROR, error: error.message });
+    }
+  }, [state.selectedTicker, state.activeSectionId, state.isFollowUpStreaming, abortFollowUp]);
 
   const value = {
     ...state,
@@ -262,6 +428,10 @@ export function ResearchProvider({ children }) {
     fetchSection,
     setActiveSection,
     reset,
+    // Follow-up methods
+    sendFollowUp,
+    clearFollowUp,
+    abortFollowUp,
   };
 
   return (
@@ -338,6 +508,29 @@ function handleSSEEvent(eventType, data, dispatch) {
     case 'progress':
       // Progress events are informational - no state change needed
       // StreamingIndicator tracks progress via completed sections
+      break;
+
+    // Follow-up chat events
+    case 'followup_start':
+      dispatch({
+        type: ACTIONS.FOLLOWUP_START,
+        messageId: data.message_id,
+      });
+      break;
+
+    case 'followup_chunk':
+      dispatch({
+        type: ACTIONS.FOLLOWUP_CHUNK,
+        messageId: data.message_id,
+        text: data.text,
+      });
+      break;
+
+    case 'followup_end':
+      dispatch({
+        type: ACTIONS.FOLLOWUP_END,
+        messageId: data.message_id,
+      });
       break;
 
     default:

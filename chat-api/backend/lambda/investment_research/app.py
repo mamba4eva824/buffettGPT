@@ -61,6 +61,12 @@ from services.streaming import (
     section_end_event,
 )
 from models.schemas import HealthResponse, FollowUpRequest
+from services.followup_service import (
+    invoke_followup_agent,
+    get_report_ratings,
+    get_available_reports,
+    get_section_id_from_name,
+)
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -292,38 +298,127 @@ async def get_report(
 @app.post("/followup")
 async def followup_question(request: FollowUpRequest):
     """
-    Handle follow-up questions about a report.
+    Handle follow-up questions about a report via SSE streaming.
 
-    STUB IMPLEMENTATION - Phase 4 will integrate with Bedrock agent.
+    Uses Claude Haiku 4.5 to provide streaming responses to user
+    questions about investment research reports.
 
-    The eventual implementation will:
-    1. Fetch the relevant report via action group
-    2. Pass question + report context to Bedrock agent
-    3. Stream the agent's response back
+    SSE Event Types:
+    - connected: Initial connection established
+    - followup_start: Response generation started (includes message_id)
+    - followup_chunk: Text chunk from Claude response
+    - followup_end: Response complete
+    - error: Error occurred
 
     Args:
-        request: FollowUpRequest with ticker, question, conversation_id
+        request: FollowUpRequest with ticker, question, section_id, conversation_id
 
     Returns:
-        JSONResponse with stub message (for now)
+        EventSourceResponse with SSE stream
     """
-    logger.info(
-        f"Follow-up stub called for {request.ticker}: "
-        f"{request.question[:50]}..."
+    ticker = request.ticker.upper().strip()
+
+    if not validate_ticker(ticker):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid ticker format: {ticker}. Must be 1-5 letters."
+        )
+
+    logger.info(f"Follow-up question for {ticker}: {request.question[:100]}...")
+
+    return EventSourceResponse(
+        generate_followup_stream(
+            ticker,
+            request.question,
+            request.conversation_id,
+            request.section_id
+        ),
+        media_type="text/event-stream"
     )
 
-    return JSONResponse(
-        content={
-            "status": "stub",
-            "message": "Follow-up functionality coming in Phase 4. "
-                       "This endpoint will integrate with Bedrock agent.",
-            "ticker": request.ticker,
-            "question_received": request.question,
-            "fiscal_year": request.fiscal_year or DEFAULT_FISCAL_YEAR,
-            "conversation_id": request.conversation_id,
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
-        }
+
+async def generate_followup_stream(
+    ticker: str,
+    question: str,
+    session_id: str = None,
+    section_id: str = None
+) -> AsyncGenerator[dict, None]:
+    """
+    Generate SSE events for streaming follow-up responses.
+
+    Args:
+        ticker: Stock ticker symbol
+        question: User's follow-up question
+        session_id: Optional session ID for conversation continuity
+        section_id: Optional section ID for additional context
+
+    Yields:
+        SSE event dicts for EventSourceResponse
+    """
+    try:
+        # 1. Connection event
+        yield connected_event()
+
+        # 2. Stream Claude Haiku 4.5 response
+        async for event in invoke_followup_agent(ticker, question, session_id, section_id):
+            yield event
+
+    except Exception as e:
+        logger.error(f"Follow-up stream error for {ticker}: {e}", exc_info=True)
+        yield error_event(str(e), code="FOLLOWUP_ERROR")
+
+
+@app.get("/reports")
+async def list_available_reports():
+    """
+    List all available investment reports.
+
+    Returns list of tickers with reports for search dropdown.
+    Includes company_name for display.
+    """
+    result = get_available_reports()
+
+    return JSONResponse(content={
+        "success": result.get('success', False),
+        "count": result.get('count', 0),
+        "reports": result.get('reports', []),
+        "timestamp": datetime.utcnow().isoformat() + 'Z'
+    })
+
+
+@app.get("/reports/search")
+async def search_reports_by_company(
+    q: str = Query(
+        ...,
+        description="Search query for company name or ticker",
+        min_length=1,
+        max_length=100
     )
+):
+    """
+    Search for reports by company name or ticker.
+
+    Uses static company_names dictionary for prefix matching.
+    Allows users to type "Apple" and find AAPL reports.
+
+    Args:
+        q: Search query (matches company name or ticker, case insensitive)
+
+    Returns:
+        JSONResponse with matching ticker/name pairs
+    """
+    from investment_research.company_names import search_companies
+
+    # Get matching companies from static dictionary
+    matches = search_companies(q, limit=10)
+
+    return JSONResponse(content={
+        "success": True,
+        "query": q,
+        "count": len(matches),
+        "results": matches,
+        "timestamp": datetime.utcnow().isoformat() + 'Z'
+    })
 
 
 # =============================================================================
