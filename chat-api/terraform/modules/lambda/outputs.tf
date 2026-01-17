@@ -155,3 +155,27 @@ output "investment_research_docker_function_url" {
   description = "Function URL for the investment research Docker Lambda"
   value       = try(aws_lambda_function_url.investment_research_docker.function_url, null)
 }
+
+# ================================================
+# Followup Action Docker Outputs (Bedrock Action Group Handler)
+# ================================================
+
+output "followup_action_arn" {
+  description = "ARN of the followup action Docker Lambda function"
+  value       = try(aws_lambda_function.followup_action.arn, null)
+}
+
+output "followup_action_name" {
+  description = "Name of the followup action Docker Lambda function"
+  value       = try(aws_lambda_function.followup_action.function_name, null)
+}
+
+output "followup_action_ecr_url" {
+  description = "ECR repository URL for followup action"
+  value       = try(aws_ecr_repository.followup_action.repository_url, null)
+}
+
+output "followup_action_invoke_arn" {
+  description = "Invoke ARN of the followup action Docker Lambda function"
+  value       = try(aws_lambda_function.followup_action.invoke_arn, null)
+}

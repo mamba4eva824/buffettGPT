@@ -572,3 +572,25 @@ variable "enable_action_groups" {
   type        = bool
   default     = false
 }
+
+# ================================================
+# Followup Agent Action Group Variables
+# ================================================
+
+variable "enable_followup_action_group" {
+  description = "Whether to create action group for followup agent"
+  type        = bool
+  default     = false
+}
+
+variable "followup_action_lambda_arn" {
+  description = "ARN of the Lambda function that handles followup action group invocations"
+  type        = string
+  default     = null
+}
+
+variable "followup_action_lambda_function_name" {
+  description = "Name of the Lambda function that handles followup action group invocations"
+  type        = string
+  default     = null
+}

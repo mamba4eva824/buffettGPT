@@ -84,6 +84,10 @@ locals {
     ORCHESTRATION_MODE     = "supervisor"
     USE_ACTION_GROUP_MODE  = "true"  # Hybrid mode: agents call action groups with skip_inference=true
 
+    # Follow-up Agent Configuration (for investment research follow-up questions)
+    FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
+    FOLLOWUP_AGENT_ALIAS = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
+
     # FMP API Configuration (Ensemble Analysis)
     FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
     FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
@@ -356,6 +360,12 @@ module "bedrock" {
   enable_action_groups              = true
   action_group_lambda_arn           = module.lambda.ensemble_prediction_data_fetcher_action_arn
   action_group_lambda_function_name = module.lambda.ensemble_prediction_data_fetcher_action_name
+
+  # Action Group for Follow-up Agent
+  # Uses dedicated followup-action Lambda for report data retrieval
+  enable_followup_action_group         = true
+  followup_action_lambda_arn           = module.lambda.followup_action_arn
+  followup_action_lambda_function_name = module.lambda.followup_action_name
 }
 
 # ================================================
