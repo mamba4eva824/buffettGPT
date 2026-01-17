@@ -1,0 +1,314 @@
+openapi: 3.0.0
+info:
+  title: Investment Research Follow-up API
+  version: 1.0.0
+  description: |
+    API for answering follow-up questions about investment reports.
+    Provides access to report sections, ratings, and historical metrics
+    for the Follow-up Research Assistant agent.
+
+paths:
+  /getReportSection:
+    post:
+      operationId: getReportSection
+      summary: Get a specific section from an investment report
+      description: |
+        Retrieves a specific section from an investment report by ticker and section ID.
+        Use this to get detailed analysis for topics like growth, debt, valuation, etc.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ticker
+                - section_id
+              properties:
+                ticker:
+                  type: string
+                  description: Stock ticker symbol (e.g., AAPL, MSFT, NVDA)
+                  example: "AAPL"
+                section_id:
+                  type: string
+                  description: |
+                    Section identifier. Available sections:
+                    - 01_executive_summary: Overview with key findings and verdict
+                    - 06_growth: Revenue and earnings growth analysis
+                    - 07_profit: Profitability and margin analysis
+                    - 08_valuation: Valuation metrics and comparison
+                    - 09_earnings: Earnings quality assessment
+                    - 10_cashflow: Cash flow generation and conversion
+                    - 11_debt: Debt levels and leverage analysis
+                    - 12_dilution: Shareholder dilution trends
+                    - 13_bull: Bull case and positive catalysts
+                    - 14_bear: Bear case and risks
+                    - 15_warnings: Red flags and warning signs
+                    - 16_vibe: Overall sentiment and vibe check
+                    - 17_realtalk: Candid assessment and bottom line
+                  enum:
+                    - 01_executive_summary
+                    - 06_growth
+                    - 07_profit
+                    - 08_valuation
+                    - 09_earnings
+                    - 10_cashflow
+                    - 11_debt
+                    - 12_dilution
+                    - 13_bull
+                    - 14_bear
+                    - 15_warnings
+                    - 16_vibe
+                    - 17_realtalk
+                  example: "11_debt"
+      responses:
+        '200':
+          description: Section retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportSectionResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /getReportRatings:
+    post:
+      operationId: getReportRatings
+      summary: Get investment ratings for a ticker
+      description: |
+        Retrieves all investment ratings including debt, cashflow, growth,
+        earnings, dilution scores, overall verdict, and conviction level.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ticker
+              properties:
+                ticker:
+                  type: string
+                  description: Stock ticker symbol
+                  example: "AAPL"
+      responses:
+        '200':
+          description: Ratings retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportRatingsResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /getMetricsHistory:
+    post:
+      operationId: getMetricsHistory
+      summary: Get historical metrics data
+      description: |
+        Retrieves historical financial metrics for a ticker.
+        Can filter by metric category and number of quarters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ticker
+              properties:
+                ticker:
+                  type: string
+                  description: Stock ticker symbol
+                  example: "AAPL"
+                metric_type:
+                  type: string
+                  description: |
+                    Category of metrics to retrieve:
+                    - revenue_profit: Revenue, margins, profitability
+                    - cashflow: Operating cash flow, FCF, capital allocation
+                    - balance_sheet: Assets, liabilities, equity
+                    - debt_leverage: Debt ratios, coverage, liquidity
+                    - earnings_quality: GAAP vs adjusted earnings, SBC
+                    - dilution: Share counts, dilution trends
+                    - valuation: P/E, P/B, EV/EBITDA, ROE, ROIC
+                    - all: All categories (default)
+                  enum:
+                    - revenue_profit
+                    - cashflow
+                    - balance_sheet
+                    - debt_leverage
+                    - earnings_quality
+                    - dilution
+                    - valuation
+                    - all
+                  default: all
+                  example: "debt_leverage"
+                quarters:
+                  type: integer
+                  description: Number of quarters of history to retrieve (default 20 = 5 years)
+                  minimum: 1
+                  maximum: 40
+                  default: 20
+                  example: 20
+      responses:
+        '200':
+          description: Metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsHistoryResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /getAvailableReports:
+    post:
+      operationId: getAvailableReports
+      summary: List all available investment reports
+      description: |
+        Returns a list of all tickers that have investment reports available.
+        Useful for validating if a report exists before querying sections.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: Report list retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailableReportsResponse'
+
+components:
+  schemas:
+    ReportSectionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the request was successful
+        ticker:
+          type: string
+          description: Stock ticker symbol
+        section_id:
+          type: string
+          description: Section identifier
+        title:
+          type: string
+          description: Section title
+        content:
+          type: string
+          description: Full markdown content of the section
+        part:
+          type: integer
+          description: Report part number (1=executive, 2=detailed, 3=realtalk)
+        word_count:
+          type: integer
+          description: Word count of the section
+        error:
+          type: string
+          description: Error message if success is false
+
+    ReportRatingsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        ticker:
+          type: string
+        ratings:
+          type: object
+          description: Investment ratings object with scores and verdicts
+          properties:
+            debt_rating:
+              type: string
+              description: Debt assessment rating (STRONG, NEUTRAL, WEAK)
+            debt_confidence:
+              type: number
+              description: Confidence score 0-100
+            cashflow_rating:
+              type: string
+            cashflow_confidence:
+              type: number
+            growth_rating:
+              type: string
+            growth_confidence:
+              type: number
+            overall_verdict:
+              type: string
+              description: Overall investment verdict (BUY, HOLD, AVOID)
+            conviction:
+              type: number
+              description: Conviction level 0-100
+        generated_at:
+          type: string
+          description: ISO timestamp when report was generated
+        error:
+          type: string
+
+    MetricsHistoryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        ticker:
+          type: string
+        metric_type:
+          type: string
+          description: Category of metrics returned
+        quarters_requested:
+          type: integer
+        available_metrics:
+          type: object
+          description: Available metrics by category
+        note:
+          type: string
+          description: Implementation note
+        error:
+          type: string
+
+    AvailableReportsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        count:
+          type: integer
+          description: Number of available reports
+        reports:
+          type: array
+          items:
+            type: object
+            properties:
+              ticker:
+                type: string
+              company_name:
+                type: string
+              generated_at:
+                type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: Error message

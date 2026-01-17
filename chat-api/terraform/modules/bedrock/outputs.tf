@@ -164,6 +164,22 @@ output "supervisor_agent_arn" {
   value       = module.supervisor_agent.agent_arn
 }
 
+# Follow-up Agent
+output "followup_agent_id" {
+  description = "ID of the Follow-up Agent"
+  value       = module.followup_agent.agent_id
+}
+
+output "followup_agent_alias_id" {
+  description = "Alias ID of the Follow-up Agent"
+  value       = module.followup_agent.agent_alias_id
+}
+
+output "followup_agent_arn" {
+  description = "ARN of the Follow-up Agent"
+  value       = module.followup_agent.agent_arn
+}
+
 # Configuration Summary
 output "configuration_summary" {
   description = "Summary of the deployed configuration"

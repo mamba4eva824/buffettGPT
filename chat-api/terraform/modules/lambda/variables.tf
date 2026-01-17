@@ -155,3 +155,10 @@ variable "investment_research_image_tag" {
   type        = string
   default     = "v1.0.0"
 }
+
+# Followup Action Variables
+variable "followup_action_image_tag" {
+  description = "Docker image tag for followup action Lambda (Bedrock action group handler)"
+  type        = string
+  default     = "v1.0.0"
+}
