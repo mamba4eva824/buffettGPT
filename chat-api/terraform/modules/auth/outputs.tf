@@ -39,3 +39,8 @@ output "users_table_arn" {
   description = "ARN of the DynamoDB users table"
   value       = aws_dynamodb_table.users.arn
 }
+
+output "jwt_secret_arn" {
+  description = "ARN of the JWT secret in AWS Secrets Manager"
+  value       = aws_secretsmanager_secret.jwt_secret.arn
+}

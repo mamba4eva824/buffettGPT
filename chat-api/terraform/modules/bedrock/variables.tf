@@ -186,9 +186,9 @@ variable "agent_description" {
 }
 
 variable "foundation_model_id" {
-  description = "Foundation model for the agent"
+  description = "Foundation model for the agent (use inference profile for on-demand)"
   type        = string
-  default     = "anthropic.claude-3-5-haiku-20241022-v1:0"
+  default     = "us.anthropic.claude-3-5-haiku-20241022-v1:0"  # Inference profile required for Claude 3.5 Haiku
 }
 
 variable "agent_instruction" {
@@ -549,4 +549,48 @@ variable "create_agent_version" {
   description = "Whether to create a version snapshot of the agent after deployment"
   type        = bool
   default     = false
+}
+
+# ================================================
+# Action Group Variables (for Expert Agents)
+# ================================================
+
+variable "action_group_lambda_arn" {
+  description = "ARN of the Lambda function that handles action group invocations (ensemble analyzer)"
+  type        = string
+  default     = null
+}
+
+variable "action_group_lambda_function_name" {
+  description = "Name of the Lambda function that handles action group invocations"
+  type        = string
+  default     = null
+}
+
+variable "enable_action_groups" {
+  description = "Whether to create action groups for expert agents"
+  type        = bool
+  default     = false
+}
+
+# ================================================
+# Followup Agent Action Group Variables
+# ================================================
+
+variable "enable_followup_action_group" {
+  description = "Whether to create action group for followup agent"
+  type        = bool
+  default     = false
+}
+
+variable "followup_action_lambda_arn" {
+  description = "ARN of the Lambda function that handles followup action group invocations"
+  type        = string
+  default     = null
+}
+
+variable "followup_action_lambda_function_name" {
+  description = "Name of the Lambda function that handles followup action group invocations"
+  type        = string
+  default     = null
 }

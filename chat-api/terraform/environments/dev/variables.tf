@@ -14,13 +14,15 @@ variable "aws_region" {
 
 # Bedrock Configuration
 variable "bedrock_agent_id" {
-  description = "Bedrock agent ID"
+  description = "Bedrock agent ID (optional - will be created by module)"
   type        = string
+  default     = ""
 }
 
 variable "bedrock_agent_alias" {
-  description = "Bedrock agent alias"
+  description = "Bedrock agent alias (optional - will be created by module)"
   type        = string
+  default     = ""
 }
 
 variable "bedrock_region" {
@@ -100,7 +102,10 @@ variable "bedrock_agent_description" {
 variable "bedrock_foundation_model" {
   description = "Foundation model for Bedrock agent"
   type        = string
-  default     = "anthropic.claude-3-5-haiku-20241022-v1:0"
+  # Note: Claude 4.5 Sonnet (anthropic.claude-sonnet-4-5-20250929-v1:0) is not compatible
+  # with KB response generation prompt override. Using Claude 3.5 Haiku for now.
+  # IMPORTANT: Must use inference profile (us. prefix) for on-demand throughput
+  default     = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
 }
 
 variable "bedrock_agent_instruction" {

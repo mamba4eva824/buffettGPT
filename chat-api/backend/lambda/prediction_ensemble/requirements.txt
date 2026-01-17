@@ -1,0 +1,48 @@
+# Ensemble Analyzer Lambda Dependencies
+# Optimized for AWS Lambda container deployment with ML inference
+# Uses Lambda Web Adapter + FastAPI for response streaming
+
+# ============================================================================
+# ML/Data Science
+# ============================================================================
+
+xgboost>=2.0.0          # XGBoost model inference
+scikit-learn>=1.3.0     # StandardScaler and ML utilities
+numpy>=1.24.0,<2.0.0    # Numerical operations
+joblib>=1.3.0           # Model serialization (used by sklearn)
+
+# ============================================================================
+# AWS SDK
+# ============================================================================
+
+# Note: boto3/botocore are included in Lambda Python runtime
+# Specified for local Docker testing
+boto3>=1.34.0
+botocore>=1.34.0
+
+# ============================================================================
+# Web Framework & Streaming (Lambda Web Adapter)
+# ============================================================================
+
+fastapi>=0.109.0        # Web framework with async support
+uvicorn>=0.27.0         # ASGI server for FastAPI
+sse-starlette>=1.6.0    # Server-Sent Events for streaming responses
+lwa-fastapi-middleware-bedrock-agent>=0.0.4  # Bedrock Agent event handling for Lambda Web Adapter
+
+# ============================================================================
+# HTTP/API
+# ============================================================================
+
+httpx>=0.27.0           # Async HTTP client for FMP API
+
+# ============================================================================
+# Authentication
+# ============================================================================
+
+PyJWT>=2.8.0            # JWT token validation
+
+# ============================================================================
+# Utilities
+# ============================================================================
+
+python-dateutil>=2.8.0  # Date parsing

@@ -276,7 +276,8 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
             )
         
         user_id = connection_data['user_id']
-        session_id = connection_data['session_id']
+        # Use conversation_id from message if provided, otherwise fall back to session_id
+        session_id = message_data.get('conversation_id') or connection_data['session_id']
         user_message = message_data['message']
         message_id = str(uuid.uuid4())
         current_time = datetime.utcnow()
@@ -299,7 +300,7 @@ def handle_chat_message(connection_id: str, message_data: Dict[str, Any], contex
         messages_table.put_item(Item=message_record)
 
         # Update conversation timestamp for inbox sorting (creates if doesn't exist)
-        update_conversation_timestamp(session_id, datetime.utcnow().isoformat() + 'Z', user_id)
+        update_conversation_timestamp(session_id, user_id=user_id)
 
         # Queue message for processing
         queue_message = {

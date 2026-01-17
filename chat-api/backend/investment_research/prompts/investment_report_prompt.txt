@@ -1,0 +1,237 @@
+Analyze {ticker} for fiscal year {fiscal_year} from a value investing perspective.
+
+{metrics_context}
+
+## Your Task
+Create an **engaging, dynamic investment analysis report** for Millennials and Gen Z investors who may not have formal finance backgrounds. Your goal is to educate while analyzing.
+
+Think deeply about:
+1. The 5-year narrative arc across all fiscal years
+2. Business cycle context (pandemic stress test, inflation period, current position)
+3. Trend trajectories - improving, stable, or deteriorating
+4. Core value investing principles: durable competitive advantage, quality management, margin of safety
+
+## CRITICAL: Recent Trend Analysis (MANDATORY)
+
+**Before giving ANY rating, you MUST explicitly analyze recent trends. Use your judgment to assess severity based on context.**
+
+### 1. Growth Momentum Check
+- Compare YoY growth rate of most recent quarter vs 4 quarters ago
+- State clearly: "Growth is [accelerating/stable/decelerating] - from X% to Y%"
+- **Assess severity based on context:**
+  - Consider industry norms (tech expects higher growth than utilities)
+  - Consider company stage (mature companies naturally slow)
+  - Consider if deceleration is from an unsustainably high base
+  - A 30% to 20% slowdown may be fine; 30% to 5% is more concerning
+
+### 2. Sequential Revenue Check
+- Count consecutive quarters of QoQ revenue decline
+- State clearly: "Revenue has [grown/declined] for X consecutive quarters"
+- **Assess severity based on context:**
+  - Consider seasonality (Q1 dips may be normal for some industries)
+  - Consider macro environment (broad slowdowns vs company-specific)
+  - 2 quarters could be a blip; 4+ quarters is a pattern
+
+### 3. Margin Compression Check
+- Compare current gross margin to same quarter last year
+- State clearly: "Margins are [expanding/stable/compressing] - from X% to Y%"
+- **Assess severity based on context:**
+  - Consider if compression is from investment in growth
+  - Consider competitive dynamics (price wars vs structural issues)
+  - Consider one-time costs vs ongoing margin erosion
+
+### Severity Scale (Use Your Judgment)
+| Severity | Indicator | Typical Rating Impact |
+|----------|-----------|----------------------|
+| Yellow Flag | Moderate change, worth monitoring | May still warrant Strong rating with explanation |
+| Red Flag | Significant deterioration | Should impact rating; explain why BUY is still justified (if it is) |
+| Critical | Severe, sustained deterioration | Likely warrants downgrade to HOLD or SELL |
+
+### Rating Guidance (Flexible, Not Rigid)
+- If you see concerning trends but still recommend BUY, **explain your reasoning**
+- Recent momentum (last 2-4 quarters) should be weighted heavily, but not mechanically
+- Multiple warning signs together are more concerning than any single metric
+- Context matters: a cyclical company in a downturn is different from a growth company losing steam
+
+## Writing Style Guidelines
+
+**CRITICAL**: Write for someone who knows what a stock is but isn't a finance expert.
+
+1. **Plain English First**: When you use financial terms, immediately explain them in simple language. VARY your explanations - never use the same analogy twice across reports. Be creative with how you break down concepts like:
+   - Debt-to-equity ratio
+   - Free cash flow
+   - Operating margins
+   - Interest coverage
+   - Return on equity
+
+2. **Use Fresh, Relatable Analogies**: Compare financial concepts to everyday situations, but ALWAYS create NEW analogies unique to this report. Draw from diverse contexts: personal finance, sports, cooking, gaming, streaming subscriptions, dating apps, road trips, etc. Make each report feel like a fresh conversation.
+
+3. **Dynamic, Contextual Headers**: Create section titles that reflect THIS company's specific situation, not generic templates. Make headers catchy, informative, and specific to what the data reveals about {ticker}.
+
+4. **Visual Indicators**: Use these for quick scanning:
+   - Strong/positive: "+"
+   - Concerning/weak: "-"
+   - Neutral/mixed: "~"
+
+5. **Conversational Tone**: Write like you're explaining to a smart friend over coffee, not presenting to a boardroom
+
+6. **Standalone Reports**: Each report must be 100% self-contained. Users read reports independently, so:
+   - NEVER reference other reports or previous analyses
+   - NEVER use phrases like "as I mentioned before", "remember when I said", or "like we discussed"
+   - Explain every concept fresh within THIS report - assume the reader has never seen another report
+   - Treat this as the reader's FIRST and ONLY investment report they'll ever read
+
+7. **Valuation Context**: You may comment on whether the stock appears cheap or expensive based on the historical financial data provided (EPS trends, margin expansion/contraction, growth trajectory). Use the 5-year data to provide valuation context rather than citing specific P/E multiples.
+
+8. **Pairing Data with Varied Analogies**: When you spot concerning trends, show the technical data FOLLOWED BY a relatable analogy.
+
+   Pattern: [Technical metric + change] -> [Relatable analogy]
+
+   **VARY YOUR ANALOGIES** - You can reuse analogy TYPES (e.g., coffee shop, road trip, gym), but vary the DETAILS each time to keep reports fresh:
+
+   GOOD - Same type, different details:
+   - Report A: "...like a coffee shop that used to pocket $3 from your $5 latte, now only keeping $2.20"
+   - Report B: "...like a coffee shop that raised prices but now has to offer discounts to compete"
+
+   AVOID - Exact repetition:
+   - Using the identical analogy word-for-word across multiple reports
+
+   **Analogy sources** (mix it up based on what fits):
+   - Everyday purchases & subscriptions
+   - Sports & fitness
+   - Road trips & transportation
+   - Social media & streaming
+   - Personal finance & budgeting
+   - Gaming & entertainment
+
+   **Rules:**
+   - Avoid exact repetition of analogies in batch report generation
+   - Vary the specific details even when using similar analogy types
+   - Match the analogy to the magnitude of change (small dip vs major drop)
+   - Keep it relatable to Gen Z/Millennial everyday experiences
+
+   This gives financially-savvy users the hard numbers while helping newer investors understand what those numbers actually mean.
+
+## Required Report Sections
+
+Structure your report with these sections, but make ALL headers dynamic and contextual to {ticker}:
+
+### 1. TL;DR
+[2-3 punchy sentences. The elevator pitch. Would you tell a friend to look into this stock?]
+
+### 2. What Does {ticker} Actually Do?
+[1-2 sentences: How does this company make money? How do they fit into daily life? Make it tangible.]
+
+---
+
+### 3. Debt Health Section
+**Create a dynamic header** that captures {ticker}'s specific debt story - don't use generic titles
+
+Include:
+- Key metrics with plain-English explanations (use fresh analogies)
+- The 5-year trajectory (getting better or worse?)
+- How they handled stress periods (2020 pandemic, 2022 rate hikes)
+- **Bottom Line**: 1-2 sentence takeaway with +/~/- indicator
+
+---
+
+### 4. Cash Flow Section
+**Create a dynamic header** that captures {ticker}'s cash generation story
+
+Include:
+- Explain why cash flow matters more than just revenue/profit (fresh analogy)
+- Key metrics with plain-English explanations
+- How they allocate cash (dividends? buybacks? reinvestment? hoarding?)
+- **Bottom Line**: 1-2 sentence takeaway with +/~/- indicator
+
+---
+
+### 5. Growth Section
+**Create a dynamic header** that captures {ticker}'s growth narrative
+
+Include:
+- Revenue and profit trajectory
+- Margin trends (are they keeping more of each dollar?)
+- Is growth sustainable or a one-time bump?
+- **Bottom Line**: 1-2 sentence takeaway with +/~/- indicator
+
+---
+
+### 6. The Bull Case (Why Buy)
+Create an engaging header specific to {ticker}, then list 3-4 strengths with specific metrics
+
+### 7. The Bear Case (Why Pass)
+Create an engaging header specific to {ticker}, then list 3-4 risks with specific concerns
+
+---
+
+### 8. Warning Signs Check (REQUIRED)
+
+Before your verdict, complete this checklist:
+
+| Check | Status | Details |
+|-------|--------|---------|
+| Growth Momentum | [checkmark] or [warning] | [accelerating/stable/decelerating] X% -> Y% |
+| Sequential Revenue | [checkmark] or [warning] | [growing/declining] for X quarters |
+| Margin Trend | [checkmark] or [warning] | [expanding/stable/compressing] X% -> Y% |
+| Debt Trend | [checkmark] or [warning] | [stable/improving/deteriorating] |
+| Cash Flow Trend | [checkmark] or [warning] | [stable/improving/deteriorating] |
+| Overall Flags | X of 5 | [summary] |
+
+**If ANY items show warnings, explain how this affects your verdict.**
+
+---
+
+### 9. The Verdict
+**Create a dynamic header** that summarizes your view on {ticker}
+
+Include:
+- Rating breakdown using the 5-point scale:
+  | Rating | Meaning |
+  |--------|---------|
+  | Very Strong | Best-in-class, sleep-well-at-night quality |
+  | Strong | Better than most, solid with minor concerns |
+  | Stable | Average, nothing special or scary |
+  | Weak | Below average, yellow flags, needs watching |
+  | Very Weak | Red flags, significant concerns |
+
+- Who is this stock right for? (growth investors? income seekers? risk-tolerant?)
+- Final conviction statement
+
+## Verdict Weighting (IMPORTANT)
+
+Weight your final verdict as follows:
+- **50%**: Most recent 2-4 quarters (momentum is the leading indicator!)
+- **30%**: 5-year trajectory (long-term foundation)
+- **20%**: Balance sheet strength (stability buffer)
+
+A company with great 5-year history but deteriorating recent quarters
+should be HOLD or SELL, not BUY. Do not let historical strength
+mask current weakness.
+
+---
+
+**REQUIRED JSON BLOCK** (place at the very end, after all narrative content):
+```json
+{{
+  "debt": {{
+    "rating": "Very Strong" | "Strong" | "Stable" | "Weak" | "Very Weak",
+    "confidence": "High" | "Medium" | "Low",
+    "key_factors": ["factor1", "factor2", "factor3"]
+  }},
+  "cashflow": {{
+    "rating": "Very Strong" | "Strong" | "Stable" | "Weak" | "Very Weak",
+    "confidence": "High" | "Medium" | "Low",
+    "key_factors": ["factor1", "factor2", "factor3"]
+  }},
+  "growth": {{
+    "rating": "Very Strong" | "Strong" | "Stable" | "Weak" | "Very Weak",
+    "confidence": "High" | "Medium" | "Low",
+    "key_factors": ["factor1", "factor2", "factor3"]
+  }},
+  "overall_verdict": "BUY" | "HOLD" | "SELL",
+  "conviction": "High" | "Medium" | "Low"
+}}
+```
+
+Remember: Interpret holistically. High debt with strong cash flow = potentially fine. Slow growth with fat margins = potentially great. Make this report feel unique to {ticker}, not like a template.

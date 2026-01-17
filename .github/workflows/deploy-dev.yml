@@ -5,14 +5,78 @@ on:
     branches:
       - dev  # Auto-deploy when pushing to dev
   workflow_dispatch:  # Allow manual trigger
+    inputs:
+      test_smoke_failure:
+        description: 'Force smoke test failure (for testing CI/CD gate)'
+        required: false
+        default: false
+        type: boolean
+      build_investment_research:
+        description: 'Build Investment Research Docker Lambda'
+        required: false
+        default: false
+        type: boolean
+      build_prediction_ensemble:
+        description: 'Build Prediction Ensemble Docker Lambda'
+        required: false
+        default: false
+        type: boolean
+      build_followup_action:
+        description: 'Build Followup Action Docker Lambda (Bedrock action group handler)'
+        required: false
+        default: false
+        type: boolean
+      build_all_docker:
+        description: 'Build ALL Docker Lambdas (overrides individual selections)'
+        required: false
+        default: false
+        type: boolean
 
 env:
   AWS_REGION: us-east-1
   ENVIRONMENT: dev
-  NODE_VERSION: '18'
   PYTHON_VERSION: '3.11'
 
 jobs:
+  detect-changes:
+    name: Detect Changed Paths
+    runs-on: ubuntu-latest
+    outputs:
+      investment_research_changed: ${{ steps.changes.outputs.investment_research }}
+      prediction_ensemble_changed: ${{ steps.changes.outputs.prediction_ensemble }}
+      followup_action_changed: ${{ steps.changes.outputs.followup_action }}
+      any_docker_changed: ${{ steps.changes.outputs.any_docker }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for diff
+
+      - name: Detect changed paths
+        id: changes
+        run: |
+          # For push events, compare with previous commit
+          # For workflow_dispatch, default to false (use manual inputs)
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            IR_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/investment_research/" && echo "true" || echo "false")
+            PE_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/prediction_ensemble/" && echo "true" || echo "false")
+            FA_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/followup_action/" && echo "true" || echo "false")
+          else
+            IR_CHANGED="false"
+            PE_CHANGED="false"
+            FA_CHANGED="false"
+          fi
+
+          echo "investment_research=$IR_CHANGED" >> $GITHUB_OUTPUT
+          echo "prediction_ensemble=$PE_CHANGED" >> $GITHUB_OUTPUT
+          echo "followup_action=$FA_CHANGED" >> $GITHUB_OUTPUT
+          echo "any_docker=$([[ $IR_CHANGED == 'true' || $PE_CHANGED == 'true' || $FA_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+          echo "Investment Research changed: $IR_CHANGED"
+          echo "Prediction Ensemble changed: $PE_CHANGED"
+          echo "Followup Action changed: $FA_CHANGED"
+
   build-backend:
     name: Build Backend Lambda Functions
     runs-on: ubuntu-latest
@@ -37,6 +101,18 @@ jobs:
         run: |
           chmod +x scripts/build_lambdas.sh
           ./scripts/build_lambdas.sh
+
+      - name: Build ML Layer
+        working-directory: chat-api/backend
+        run: |
+          chmod +x scripts/build_ml_layer.sh
+          ./scripts/build_ml_layer.sh
+
+      - name: Build Data Fetcher Action Lambda
+        working-directory: chat-api/backend
+        run: |
+          chmod +x scripts/build_data_fetcher_action.sh
+          ./scripts/build_data_fetcher_action.sh
 
       - name: Upload Lambda packages
         uses: actions/upload-artifact@v4
@@ -109,7 +185,7 @@ jobs:
             --secret-string "${{ secrets.PINECONE_API_KEY }}" \
             --region ${{ env.AWS_REGION }}
 
-          echo "✅ AWS Secrets Manager secrets created/updated successfully"
+          echo "AWS Secrets Manager secrets created/updated successfully"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -130,6 +206,7 @@ jobs:
         run: |
           set +e
           terraform plan -out=tfplan \
+            -var="enable_authentication=true" \
             -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
             -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
@@ -160,64 +237,204 @@ jobs:
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
           echo "websocket_api_endpoint=$WS_ENDPOINT" >> $GITHUB_OUTPUT
 
-          echo "📡 API Endpoints:"
+          echo "API Endpoints:"
           echo "  HTTP API: $HTTP_ENDPOINT"
           echo "  WebSocket: $WS_ENDPOINT"
 
-  build-frontend:
-    name: Build Frontend
+  build-docker-lambdas:
+    name: Build Docker Lambda - ${{ matrix.lambda.name }}
+    runs-on: ubuntu-latest  # x86_64 architecture - correct for Lambda
+    needs: [deploy-infrastructure, detect-changes]
+    # Only run if any Docker Lambda needs building
+    if: |
+      needs.detect-changes.outputs.any_docker_changed == 'true' ||
+      inputs.build_all_docker == true ||
+      inputs.build_investment_research == true ||
+      inputs.build_prediction_ensemble == true ||
+      inputs.build_followup_action == true
+    strategy:
+      fail-fast: false  # Continue building other Lambdas if one fails
+      matrix:
+        lambda:
+          - name: investment-research
+            dockerfile_dir: chat-api/backend/lambda/investment_research
+            ecr_repo: buffett/investment-research
+            change_output: investment_research_changed
+            manual_input: build_investment_research
+            has_health_endpoint: true
+          - name: prediction-ensemble
+            dockerfile_dir: chat-api/backend/lambda/prediction_ensemble
+            ecr_repo: buffett/prediction-ensemble
+            change_output: prediction_ensemble_changed
+            manual_input: build_prediction_ensemble
+            has_health_endpoint: true
+          - name: followup-action
+            dockerfile_dir: chat-api/backend/lambda/followup_action
+            ecr_repo: buffett/followup-action
+            change_output: followup_action_changed
+            manual_input: build_followup_action
+            has_health_endpoint: false  # Action group Lambda, no HTTP endpoint
+
+    steps:
+      - name: Check if this Lambda should be built
+        id: should-build
+        env:
+          LAMBDA_NAME: ${{ matrix.lambda.name }}
+          BUILD_ALL: ${{ inputs.build_all_docker }}
+          BUILD_IR: ${{ inputs.build_investment_research }}
+          BUILD_PE: ${{ inputs.build_prediction_ensemble }}
+          BUILD_FA: ${{ inputs.build_followup_action }}
+          IR_CHANGED: ${{ needs.detect-changes.outputs.investment_research_changed }}
+          PE_CHANGED: ${{ needs.detect-changes.outputs.prediction_ensemble_changed }}
+          FA_CHANGED: ${{ needs.detect-changes.outputs.followup_action_changed }}
+        run: |
+          # Build if:
+          # 1. build_all_docker is true, OR
+          # 2. This Lambda's manual input is true, OR
+          # 3. This Lambda's path changed (push event)
+
+          SHOULD_BUILD="false"
+
+          # Check build_all_docker
+          if [[ "$BUILD_ALL" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: build_all_docker=true"
+          fi
+
+          # Check manual input for this specific Lambda
+          if [[ "$LAMBDA_NAME" == "investment-research" && "$BUILD_IR" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: manual input selected"
+          fi
+          if [[ "$LAMBDA_NAME" == "prediction-ensemble" && "$BUILD_PE" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: manual input selected"
+          fi
+          if [[ "$LAMBDA_NAME" == "followup-action" && "$BUILD_FA" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: manual input selected"
+          fi
+
+          # Check if path changed (push event)
+          if [[ "$LAMBDA_NAME" == "investment-research" && "$IR_CHANGED" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: path changed"
+          fi
+          if [[ "$LAMBDA_NAME" == "prediction-ensemble" && "$PE_CHANGED" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: path changed"
+          fi
+          if [[ "$LAMBDA_NAME" == "followup-action" && "$FA_CHANGED" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: path changed"
+          fi
+
+          echo "should_build=$SHOULD_BUILD" >> $GITHUB_OUTPUT
+
+          if [[ "$SHOULD_BUILD" == "false" ]]; then
+            echo "Skipping $LAMBDA_NAME: no changes detected and not manually selected"
+          fi
+
+      - name: Checkout code
+        if: steps.should-build.outputs.should_build == 'true'
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: steps.should-build.outputs.should_build == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: steps.should-build.outputs.should_build == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        if: steps.should-build.outputs.should_build == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        if: steps.should-build.outputs.should_build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.lambda.dockerfile_dir }}
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:latest
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.lambda.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.lambda.name }}
+          provenance: false
+
+      - name: Update Lambda function
+        if: steps.should-build.outputs.should_build == 'true'
+        run: |
+          FUNCTION_NAME="buffett-${{ env.ENVIRONMENT }}-${{ matrix.lambda.name }}"
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:${{ github.sha }}"
+
+          # Update Lambda to use new image
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --image-uri $IMAGE_URI \
+            --region ${{ env.AWS_REGION }}
+
+          # Wait for update to complete
+          aws lambda wait function-updated \
+            --function-name $FUNCTION_NAME \
+            --region ${{ env.AWS_REGION }}
+
+          echo "Lambda $FUNCTION_NAME updated with image: $IMAGE_URI"
+
+      - name: Verify Lambda health
+        if: steps.should-build.outputs.should_build == 'true' && matrix.lambda.has_health_endpoint == true
+        run: |
+          FUNCTION_NAME="buffett-${{ env.ENVIRONMENT }}-${{ matrix.lambda.name }}"
+
+          # Get Function URL
+          FUNC_URL=$(aws lambda get-function-url-config \
+            --function-name $FUNCTION_NAME \
+            --query 'FunctionUrl' --output text)
+
+          # Test health endpoint
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${FUNC_URL}health")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "Health check passed for $FUNCTION_NAME (HTTP $HTTP_STATUS)"
+          else
+            echo "Health check failed for $FUNCTION_NAME (HTTP $HTTP_STATUS)"
+            exit 1
+          fi
+
+      - name: Skip health check (action group Lambda)
+        if: steps.should-build.outputs.should_build == 'true' && matrix.lambda.has_health_endpoint == false
+        run: |
+          echo "Skipping health check for ${{ matrix.lambda.name }} - Bedrock action group Lambda (no HTTP endpoint)"
+          echo "Lambda will be tested via Bedrock agent invocation"
+
+      - name: Skip notification
+        if: steps.should-build.outputs.should_build == 'false'
+        run: |
+          echo "Skipped ${{ matrix.lambda.name }} - no changes detected and not manually selected"
+
+  smoke-tests:
+    name: Post-Deployment Smoke Tests
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure]
+    needs: [build-docker-lambdas, detect-changes]
+    # Always run smoke tests, even if Docker builds were skipped
+    if: |
+      always() &&
+      needs.detect-changes.result == 'success' &&
+      (needs.build-docker-lambdas.result == 'success' || needs.build-docker-lambdas.result == 'skipped')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm install
-
-      - name: Create dev environment file
-        working-directory: frontend
-        run: |
-          cat > .env.dev << EOF
-          VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
-          VITE_WEBSOCKET_URL=${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}
-          VITE_ENVIRONMENT=dev
-          VITE_ENABLE_DEBUG_LOGS=true
-          VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          EOF
-
-          echo "✅ Created .env.dev with API endpoints"
-          cat .env.dev
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build -- --mode dev
-
-      - name: Upload frontend artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
-          retention-days: 1
-
-  deploy-frontend:
-    name: Deploy Frontend to S3 + CloudFront
-    runs-on: ubuntu-latest
-    needs: [build-frontend]
-
-    steps:
-      - name: Download frontend artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -226,65 +443,41 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Sync HTML files to S3 (no cache)
+      - name: Run smoke tests
+        working-directory: chat-api/backend
         run: |
-          aws s3 sync frontend/dist s3://${{ secrets.DEV_S3_FRONTEND_BUCKET }}/ \
-            --exclude "*" \
-            --include "*.html" \
-            --cache-control "public, max-age=0, must-revalidate" \
-            --metadata-directive REPLACE
-
-          echo "✅ HTML files synced with no-cache headers"
-
-      - name: Sync static assets to S3 (long-term cache)
-        run: |
-          aws s3 sync frontend/dist s3://${{ secrets.DEV_S3_FRONTEND_BUCKET }}/ \
-            --exclude "*.html" \
-            --cache-control "public, max-age=31536000, immutable" \
-            --metadata-directive REPLACE
-
-          echo "✅ Static assets synced with long-term cache headers"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.DEV_CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
-
-          echo "✅ CloudFront cache invalidation initiated"
-
-      - name: Print deployment URL
-        run: |
-          echo "🚀 Frontend deployed successfully!"
-          echo "📡 URL: ${{ secrets.DEV_CLOUDFRONT_URL }}"
-          echo ""
-          echo "Note: CloudFront cache invalidation may take 1-2 minutes to complete."
+          chmod +x scripts/smoke_test.sh
+          if [[ "${{ inputs.test_smoke_failure }}" == "true" ]]; then
+            ./scripts/smoke_test.sh ${{ env.ENVIRONMENT }} --test-failure
+          else
+            ./scripts/smoke_test.sh ${{ env.ENVIRONMENT }}
+          fi
 
   deployment-summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure, build-frontend, deploy-frontend]
+    needs: [deploy-infrastructure, build-docker-lambdas, smoke-tests, detect-changes]
     if: always()
 
     steps:
       - name: Print deployment summary
         run: |
-          echo "🚀 Dev Deployment Summary"
+          echo "Dev Deployment Summary"
           echo "=============================="
           echo ""
           echo "Environment: dev"
           echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
           echo "WebSocket: ${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}"
-          echo "Frontend: ${{ secrets.DEV_CLOUDFRONT_URL }}"
           echo ""
-          echo "✅ Backend infrastructure deployed"
-          echo "✅ Lambda functions deployed"
-          echo "✅ Frontend built and deployed to CloudFront"
+          echo "Docker Lambda Builds:"
+          echo "  Investment Research changed: ${{ needs.detect-changes.outputs.investment_research_changed }}"
+          echo "  Prediction Ensemble changed: ${{ needs.detect-changes.outputs.prediction_ensemble_changed }}"
+          echo "  Followup Action changed: ${{ needs.detect-changes.outputs.followup_action_changed }}"
+          echo "  Build job result: ${{ needs.build-docker-lambdas.result }}"
           echo ""
-          echo "📋 Next Steps:"
-          echo "1. Visit ${{ secrets.DEV_CLOUDFRONT_URL }} to test the application"
-          echo "2. Check CloudWatch logs for any issues"
-          echo "3. When ready, merge to staging branch for staging deployment"
+          echo "Smoke Tests: ${{ needs.smoke-tests.result }}"
           echo ""
-          echo "🔍 To check deployment:"
+          echo "Frontend: Run locally with 'npm run dev' in the frontend directory"
+          echo ""
+          echo "To check deployment:"
           echo "   curl ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}/health"

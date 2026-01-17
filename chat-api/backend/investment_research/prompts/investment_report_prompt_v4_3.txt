@@ -1,0 +1,216 @@
+Analyze {ticker} for fiscal year {fiscal_year} from a value investing perspective.
+
+{metrics_context}
+
+## Your Task
+Create an **engaging, accessible investment analysis report** for Millennials and Gen Z investors. Your goal is to **educate while analyzing** — every reader should finish feeling smarter about investing.
+
+Think deeply about:
+1. The 5-year narrative arc and business cycle context
+2. Trend trajectories — improving, stable, or deteriorating
+3. Core value investing: durable advantage, quality management, margin of safety
+4. **Earnings quality** — is profit backed by real cash?
+5. **Debt structure** — when are payments due?
+6. **Shareholder dilution** — is the company printing shares?
+
+---
+
+## THREE CORE PRINCIPLES
+
+### 1. Zero-Tolerance Jargon Policy
+**Every ratio (x, %, pp) MUST include plain English in the SAME sentence.**
+
+❌ "OCF/NI ratio is 4.68x"
+✅ "Their cash quality score is 4.68x — they collect $4.68 in real cash for every $1 of paper profit"
+
+❌ "D/E ratio improved to 0.06x"
+✅ "Their borrowing level dropped to just 0.06x — they borrowed only 6 cents for every dollar they own"
+
+**Use this translation reference (substitute actual numbers for X, Y, Z):**
+| Term | Say Instead | Example Pattern |
+|------|-------------|-----------------|
+| Free Cash Flow (FCF) | money left after paying all bills | "$X left after paying all bills" |
+| FCF Margin | cash keep rate | "keeps X cents of every dollar as actual cash" |
+| Operating Cash Flow (OCF) | cash from running the business | "Generated $X from actually selling products" |
+| OCF/Net Income Ratio | cash quality score | "Collects $X in real cash for every $1 of paper profit" |
+| Debt-to-Equity (D/E) | borrowing level | "borrowed X cents for every dollar they own" |
+| Interest Coverage | debt safety cushion | "earns Xx what they need for loan payments" |
+| Net Debt | total owed minus savings | "after dipping into savings, they still owe $X" |
+| Net Cash Position | savings minus debt | "Has $X more in the bank than they owe" |
+| Total Liquidity | cash and savings combined | "has $X in cash and savings they can tap quickly" |
+| Gross Margin | profit per sale (before overhead) | "keeps X cents from every dollar sold" |
+| Operating Margin | profit from core business | "keeps X cents after running day-to-day operations" |
+| Net Margin | actual take-home profit | "takes home X cents per dollar of sales" |
+| EBITDA | operating profits (before loans & accounting) | "made $X before loans and accounting adjustments" |
+| ROE | return on owner's money | "shareholders earned X% on their investment" |
+| ROIC | return on all invested money | "generated X% return on total capital invested" |
+| CapEx | money spent on equipment/growth | "invested $X in equipment and growth" |
+| Working Capital | cash tied up in daily operations | "has $X locked up in inventory and unpaid bills" |
+| FCF Yield | cash return vs stock price | "generates X% of its market value in cash yearly" |
+| Current Ratio | short-term bill-paying power | "has $X for every $1 due soon" |
+| YoY | vs. last year | "revenue up X% vs. last year" |
+| QoQ | vs. last quarter | "changed X% vs. last quarter" |
+| TTM | last 12 months | "Over the last 12 months, they earned $X" |
+| pp (percentage points) | points | "Changed X points from Y% to Z%" |
+| EPS | profit per share you own | "earned $X for each share you own" |
+| GAAP | official accounting rules | "under official rules, they made $X" |
+| Non-GAAP/Adjusted | company's own math | "by their own math, they made $X" |
+| Stock-Based Compensation (SBC) | paying employees in stock | "gave employees $X in stock instead of cash" |
+| Dilution | your slice gets smaller | "your ownership shrinks by X%" |
+| Short-term Debt | bills due soon (within a year) | "$X in loans due within 12 months" |
+| Long-term Debt | bills due later | "$X in loans spread over many years" |
+
+### 2. Everything Must Be Unique to {ticker}
+**Headers, analogies, and insights should ONLY make sense for THIS company.**
+
+Uniqueness test: "Would this work for any company?" If yes, rewrite with {ticker}'s specific metrics.
+
+- Section headers must include {ticker}'s actual numbers or narrative
+- Analogies must connect to {ticker}'s industry, situation, or story
+- Draw from: streaming (Netflix/Spotify), payment apps (Venmo), side hustles, gaming
+
+### 3. Real Talk Over Formal Language
+Write like you're explaining to a smart friend, not presenting to a boardroom.
+- Conversational tone throughout
+- Each section ends with a plain-language callout (vary the header each time)
+- Verdict includes a casual "Real Talk" summary
+
+---
+
+## REQUIRED SECTIONS (in order)
+
+### 1. TLDR
+2-3 punchy sentences. Would you tell a friend to look into this stock?
+
+### 2. Quick Health Dashboard
+| Area | Status | One-Liner |
+|------|--------|-----------|
+| Growth Trend | emoji | {ticker}-specific insight |
+| Profitability | emoji | ... |
+| Earnings Quality | emoji | GAAP vs Adjusted gap |
+| Cash Generation | emoji | ... |
+| Debt Level | emoji | ... |
+| Dilution Risk | emoji | SBC impact |
+| Recent Momentum | emoji | ... |
+
+### 3. What Does {ticker} Actually Do?
+2-3 sentences making the business tangible for someone who's never heard of them.
+
+### 4. Growth Section
+- Dynamic header with {ticker}'s actual growth metrics
+- 5-year trend table + recent quarterly momentum
+- Plain-language callout with unique analogy
+- Bottom line: +/~/- indicator
+
+### 5. Profitability Section
+- Dynamic header reflecting {ticker}'s profit story
+- Margin trends table (gross, operating, net, ROE, EPS)
+- Plain-language callout
+- Bottom line
+
+### 6. Earnings Quality Section
+**GAAP to Adjusted Bridge:**
+| Step | Description | Amount |
+|------|-------------|--------|
+| 1 | GAAP Net Income | $X |
+| 2 | + Stock-Based Compensation | $X |
+| 3 | + D&A | $X |
+| **Total** | **Adjusted Earnings** | **$X** |
+
+- Show the gap percentage and explain what it means
+- SBC as % of revenue with risk assessment
+- Plain-language callout
+
+### 7. Cash Flow Section
+- Quarterly cash flow table (OCF, FCF, FCF margin)
+- Cash quality score (OCF/NI ratio) with explanation
+- Plain-language callout
+- Bottom line
+
+### 8. Debt Section
+- Debt trajectory table (5-year trend)
+- Key metrics: D/E, interest coverage, current ratio
+- **Total Liquidity** = Cash + Short-term Investments (savings they can tap quickly) — use this for "fortress" assessments
+- **Debt maturity breakdown** (short-term vs long-term)
+- Plain-language callout
+- Bottom line
+
+### 9. Dilution Section
+| Metric | Value | Meaning |
+|--------|-------|---------|
+| Basic Shares | XM | "shares that exist" |
+| Diluted Shares | XM | "if all options convert" |
+| Dilution % | +X% | "your slice shrinks by X%" |
+| SBC % of Revenue | X% | risk level |
+
+- Plain-language callout
+- Bottom line
+
+### 10. Bull Case (3-4 points with metrics)
+
+### 11. Bear Case (3-4 points with concerns)
+
+### 12. Warning Signs Checklist
+| Check | Status | Details |
+|-------|--------|---------|
+| Revenue Growth | emoji | trend |
+| Profit Margins | emoji | trend |
+| Earnings Quality | emoji | GAAP gap |
+| Cash Generation | emoji | strength |
+| Cash Conversion | emoji | quality |
+| Debt Level | emoji | trend |
+| Debt Maturity | emoji | structure |
+| Dilution Risk | emoji | SBC level |
+
+### 13. The Verdict
+**Rating Table:**
+| Category | Rating | Key Reason |
+|----------|--------|------------|
+| Growth | rating | one sentence |
+| Profitability | rating | ... |
+| Earnings Quality | rating | ... |
+| Cash Flow | rating | ... |
+| Debt Health | rating | ... |
+
+- Who should consider / avoid this stock
+- Final conviction statement
+
+**Real Talk:** (1-2 casual sentences with {ticker}-specific recommendation)
+
+---
+
+## Verdict Weighting
+- **50%**: Recent 2-4 quarters (momentum matters most)
+- **30%**: 5-year trajectory
+- **20%**: Balance sheet + earnings quality
+
+A company with deteriorating recent quarters = HOLD or SELL, not BUY.
+High SBC or poor earnings quality = rating adjusted down.
+
+---
+
+## Quality Check
+Before submitting, verify:
+- [ ] Every ratio has plain English in same sentence
+- [ ] All headers are {ticker}-specific (not generic)
+- [ ] Analogies connect to {ticker}'s actual situation
+- [ ] Each section has a varied plain-language callout
+- [ ] "Real Talk" verdict uses {ticker}'s specific numbers
+- [ ] A non-finance friend could understand 90%+
+
+---
+
+**REQUIRED JSON BLOCK** (at the very end):
+```json
+{{
+  "growth": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "profitability": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "earnings_quality": {{"rating": "...", "confidence": "...", "gaap_adjusted_gap_pct": X, "sbc_to_revenue_pct": X, "key_factors": [...]}},
+  "cashflow": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "debt": {{"rating": "...", "confidence": "...", "short_term_debt_pct": X, "key_factors": [...]}},
+  "overall_verdict": "BUY" | "HOLD" | "SELL",
+  "conviction": "High" | "Medium" | "Low"
+}}
+```
+
+Remember: Make this feel like a conversation, not a lecture. Accessible language AND audit-grade rigor. The reader should finish feeling informed and empowered.
