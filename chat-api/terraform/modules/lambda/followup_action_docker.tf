@@ -112,6 +112,7 @@ resource "aws_iam_role_policy" "followup_action" {
         Resource = "arn:aws:logs:*:*:*"
       },
       # DynamoDB - Investment Reports V2 (read-only)
+      # Uses table ARN passed from dynamodb module output for correct naming
       {
         Effect = "Allow"
         Action = [
@@ -119,20 +120,26 @@ resource "aws_iam_role_policy" "followup_action" {
           "dynamodb:Query",
           "dynamodb:Scan"
         ]
-        Resource = [
-          "arn:aws:dynamodb:*:*:table/${var.project_name}-${var.environment}-investment-reports-v2",
-          "arn:aws:dynamodb:*:*:table/${var.project_name}-${var.environment}-investment-reports-v2/index/*"
+        Resource = var.investment_reports_v2_table_arn != "" ? [
+          var.investment_reports_v2_table_arn,
+          "${var.investment_reports_v2_table_arn}/index/*"
+        ] : [
+          "arn:aws:dynamodb:*:*:table/investment-reports-v2-*",
+          "arn:aws:dynamodb:*:*:table/investment-reports-v2-*/index/*"
         ]
       },
       # DynamoDB - Financial Data Cache (read-only, for future metrics history)
+      # Uses table ARN passed from dynamodb module output for correct naming
       {
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem",
           "dynamodb:Query"
         ]
-        Resource = [
-          "arn:aws:dynamodb:*:*:table/${var.project_name}-${var.environment}-financial-data-cache"
+        Resource = var.financial_data_cache_table_arn != "" ? [
+          var.financial_data_cache_table_arn
+        ] : [
+          "arn:aws:dynamodb:*:*:table/financial-data-cache-*"
         ]
       },
       # X-Ray Tracing

@@ -198,6 +198,11 @@ module "lambda" {
   # Docker image pushed to ECR - enable Lambda creation
   create_followup_action_lambda = true
   followup_action_image_tag     = "latest"
+
+  # DynamoDB table ARNs for followup-action Lambda IAM policy
+  # These use the actual table ARNs from the dynamodb module to ensure correct permissions
+  investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
+  financial_data_cache_table_arn  = module.dynamodb.financial_data_cache_table_arn
 }
 
 # ================================================

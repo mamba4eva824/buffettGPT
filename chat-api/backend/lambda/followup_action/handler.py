@@ -11,6 +11,7 @@ No Lambda Web Adapter needed - returns Bedrock action group format directly.
 import json
 import logging
 import os
+from decimal import Decimal
 from typing import Any, Dict
 
 from services.report_service import (
@@ -23,6 +24,18 @@ from services.report_service import (
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles Decimal types from DynamoDB."""
+
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            # Convert Decimal to int or float as appropriate
+            if obj % 1 == 0:
+                return int(obj)
+            return float(obj)
+        return super().default(obj)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -162,7 +175,7 @@ def format_success_response(
             'httpStatusCode': 200,
             'responseBody': {
                 'application/json': {
-                    'body': json.dumps(result)
+                    'body': json.dumps(result, cls=DecimalEncoder)
                 }
             }
         }

@@ -168,3 +168,15 @@ variable "create_followup_action_lambda" {
   type        = bool
   default     = false
 }
+
+variable "investment_reports_v2_table_arn" {
+  description = "ARN of the investment reports v2 DynamoDB table for followup-action Lambda IAM policy"
+  type        = string
+  default     = ""
+}
+
+variable "financial_data_cache_table_arn" {
+  description = "ARN of the financial data cache DynamoDB table for followup-action Lambda IAM policy"
+  type        = string
+  default     = ""
+}
