@@ -17,6 +17,7 @@ V2 Endpoints (section-based progressive loading):
 """
 
 import os
+import json
 import asyncio
 import logging
 from datetime import datetime
@@ -24,7 +25,7 @@ from typing import AsyncGenerator, Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -296,7 +297,7 @@ async def get_report(
 
 
 @app.post("/followup")
-async def followup_question(request: FollowUpRequest):
+async def followup_question(raw_request: Request):
     """
     Handle follow-up questions about a report via SSE streaming.
 
@@ -316,6 +317,32 @@ async def followup_question(request: FollowUpRequest):
     Returns:
         EventSourceResponse with SSE stream
     """
+    # Debug: Log raw request body to diagnose double-encoding issues
+    raw_body = await raw_request.body()
+    logger.info(f"[DEBUG] Raw body type: {type(raw_body)}, content: {raw_body[:500] if raw_body else 'empty'}")
+
+    # Parse the JSON body manually to handle potential double-encoding
+    try:
+        body_str = raw_body.decode("utf-8")
+        body_data = json.loads(body_str)
+
+        # Check if body is double-encoded (parsed result is a string)
+        if isinstance(body_data, str):
+            logger.info(f"[DEBUG] Detected double-encoded JSON, re-parsing")
+            body_data = json.loads(body_data)
+
+        logger.info(f"[DEBUG] Parsed body: {body_data}")
+
+        # Validate with Pydantic model
+        request = FollowUpRequest(**body_data)
+
+    except json.JSONDecodeError as e:
+        logger.error(f"[DEBUG] JSON decode error: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+    except Exception as e:
+        logger.error(f"[DEBUG] Request parsing error: {e}")
+        raise HTTPException(status_code=422, detail=f"Validation error: {str(e)}")
+
     ticker = request.ticker.upper().strip()
 
     if not validate_ticker(ticker):
