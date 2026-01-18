@@ -185,8 +185,9 @@ resource "aws_lambda_function" "followup_action" {
     variables = merge(
       var.common_env_vars,
       {
-        INVESTMENT_REPORTS_TABLE_V2 = "${var.project_name}-${var.environment}-investment-reports-v2"
-        FINANCIAL_DATA_CACHE_TABLE  = "${var.project_name}-${var.environment}-financial-data-cache"
+        # Use table names from dynamodb module outputs for correct naming
+        INVESTMENT_REPORTS_TABLE_V2 = var.investment_reports_v2_table_name != "" ? var.investment_reports_v2_table_name : "investment-reports-v2-${var.environment}"
+        FINANCIAL_DATA_CACHE_TABLE  = var.financial_data_cache_table_name != "" ? var.financial_data_cache_table_name : "financial-data-cache-${var.environment}"
         LOG_LEVEL                   = "INFO"
       }
     )

@@ -180,3 +180,15 @@ variable "financial_data_cache_table_arn" {
   type        = string
   default     = ""
 }
+
+variable "investment_reports_v2_table_name" {
+  description = "Name of the investment reports v2 DynamoDB table for followup-action Lambda env var"
+  type        = string
+  default     = ""
+}
+
+variable "financial_data_cache_table_name" {
+  description = "Name of the financial data cache DynamoDB table for followup-action Lambda env var"
+  type        = string
+  default     = ""
+}
