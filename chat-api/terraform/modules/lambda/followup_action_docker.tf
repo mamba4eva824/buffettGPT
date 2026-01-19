@@ -142,6 +142,23 @@ resource "aws_iam_role_policy" "followup_action" {
           "arn:aws:dynamodb:*:*:table/financial-data-cache-*"
         ]
       },
+      # DynamoDB - Metrics History Cache (read-only, for pre-computed metrics by category)
+      # Uses table ARN passed from dynamodb module output for correct naming
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:Query",
+          "dynamodb:Scan"
+        ]
+        Resource = var.metrics_history_cache_table_arn != "" ? [
+          var.metrics_history_cache_table_arn,
+          "${var.metrics_history_cache_table_arn}/index/*"
+        ] : [
+          "arn:aws:dynamodb:*:*:table/metrics-history-*",
+          "arn:aws:dynamodb:*:*:table/metrics-history-*/index/*"
+        ]
+      },
       # X-Ray Tracing
       {
         Effect = "Allow"
@@ -186,9 +203,10 @@ resource "aws_lambda_function" "followup_action" {
       var.common_env_vars,
       {
         # Use table names from dynamodb module outputs for correct naming
-        INVESTMENT_REPORTS_TABLE_V2 = var.investment_reports_v2_table_name != "" ? var.investment_reports_v2_table_name : "investment-reports-v2-${var.environment}"
-        FINANCIAL_DATA_CACHE_TABLE  = var.financial_data_cache_table_name != "" ? var.financial_data_cache_table_name : "financial-data-cache-${var.environment}"
-        LOG_LEVEL                   = "INFO"
+        INVESTMENT_REPORTS_TABLE_V2  = var.investment_reports_v2_table_name != "" ? var.investment_reports_v2_table_name : "investment-reports-v2-${var.environment}"
+        FINANCIAL_DATA_CACHE_TABLE   = var.financial_data_cache_table_name != "" ? var.financial_data_cache_table_name : "financial-data-cache-${var.environment}"
+        METRICS_HISTORY_CACHE_TABLE  = var.metrics_history_cache_table_name != "" ? var.metrics_history_cache_table_name : "metrics-history-${var.environment}"
+        LOG_LEVEL                    = "INFO"
       }
     )
   }

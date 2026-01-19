@@ -25,7 +25,7 @@ from src.utils.fmp_client import (
     fetch_financial_ratios_ttm,
     fetch_analyst_estimates
 )
-from src.utils.feature_extractor import extract_all_features, extract_quarterly_trends
+from src.utils.feature_extractor import extract_all_features, extract_quarterly_trends, prepare_metrics_for_cache
 from investment_research.index_tickers import get_index_tickers
 from investment_research.section_parser import (
     parse_report_sections,
@@ -168,6 +168,10 @@ class ReportGenerator:
         table_name_v2 = os.environ.get('INVESTMENT_REPORTS_TABLE_V2', 'investment-reports-v2-dev')
         self.reports_table_v2 = self.dynamodb.Table(table_name_v2)
 
+        # Metrics history cache table (for follow-up agent queries)
+        metrics_table_name = os.environ.get('METRICS_HISTORY_CACHE_TABLE', 'metrics-history-dev')
+        self.metrics_history_table = self.dynamodb.Table(metrics_table_name)
+
     def _get_prompt_description(self) -> str:
         """Return human-readable description of current prompt version."""
         descriptions = {
@@ -231,6 +235,15 @@ class ReportGenerator:
         )
 
         print(f"  Data prepared for {ticker}")
+        # 5. Cache metrics by category for follow-up agent (async-safe, non-blocking)
+        cache_key = financial_data.get('cache_key', f'v3:{ticker}:{fiscal_year}')
+        self._batch_write_metrics_cache(
+            ticker=ticker,
+            quarterly_trends=quarterly_trends,
+            currency=currency_info.get('code', 'USD'),
+            source_cache_key=cache_key
+        )
+
         return {
             'ticker': ticker,
             'fiscal_year': fiscal_year,
@@ -240,6 +253,55 @@ class ReportGenerator:
             'currency_info': currency_info,
             'valuation_data': valuation_data
         }
+
+    def _batch_write_metrics_cache(
+        self,
+        ticker: str,
+        quarterly_trends: Dict[str, Any],
+        currency: str = "USD",
+        source_cache_key: str = ""
+    ) -> None:
+        """
+        Batch write metrics items to metrics-history-cache table.
+
+        This populates the category-partitioned metrics cache that enables
+        the follow-up agent to query specific metric categories efficiently
+        (~85% token savings vs querying all metrics).
+
+        Args:
+            ticker: Stock symbol
+            quarterly_trends: Dict from extract_quarterly_trends()
+            currency: Currency code
+            source_cache_key: Cache key from financial data cache
+        """
+        try:
+            # Prepare cache items (7 categories × N quarters)
+            items = prepare_metrics_for_cache(
+                ticker=ticker,
+                quarterly_trends=quarterly_trends,
+                currency=currency,
+                source_cache_key=source_cache_key
+            )
+
+            if not items:
+                print(f"  No metrics to cache for {ticker}")
+                return
+
+            # Batch write to DynamoDB (handles 25-item limit internally)
+            with self.metrics_history_table.batch_writer() as batch:
+                for item in items:
+                    # Convert floats to Decimal for DynamoDB
+                    item_decimal = json.loads(
+                        json.dumps(item),
+                        parse_float=Decimal
+                    )
+                    batch.put_item(Item=item_decimal)
+
+            print(f"  Cached {len(items)} metric items for {ticker} (7 categories × {len(quarterly_trends.get('quarters', []))} quarters)")
+
+        except Exception as e:
+            # Non-blocking - log error but don't fail report generation
+            print(f"  Warning: Failed to cache metrics for {ticker}: {e}")
 
     def save_report(
         self,

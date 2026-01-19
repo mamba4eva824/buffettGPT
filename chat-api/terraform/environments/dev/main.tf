@@ -96,6 +96,7 @@ locals {
     # Investment Research Tables
     INVESTMENT_REPORTS_TABLE    = try(module.dynamodb.investment_reports_table_name, "")
     INVESTMENT_REPORTS_V2_TABLE = try(module.dynamodb.investment_reports_v2_table_name, "")
+    METRICS_HISTORY_CACHE_TABLE = try(module.dynamodb.metrics_history_cache_table_name, "")
 
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
@@ -208,6 +209,10 @@ module "lambda" {
   # These use the actual table names from the dynamodb module (not project-prefixed)
   investment_reports_v2_table_name = module.dynamodb.investment_reports_v2_table_name
   financial_data_cache_table_name  = module.dynamodb.financial_data_cache_table_name
+
+  # Metrics History Cache table for followup-action Lambda
+  metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
+  metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
 }
 
 # ================================================

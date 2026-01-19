@@ -192,3 +192,15 @@ variable "financial_data_cache_table_name" {
   type        = string
   default     = ""
 }
+
+variable "metrics_history_cache_table_arn" {
+  description = "ARN of the metrics history cache DynamoDB table for followup-action Lambda IAM policy"
+  type        = string
+  default     = ""
+}
+
+variable "metrics_history_cache_table_name" {
+  description = "Name of the metrics history cache DynamoDB table for followup-action Lambda env var"
+  type        = string
+  default     = ""
+}
