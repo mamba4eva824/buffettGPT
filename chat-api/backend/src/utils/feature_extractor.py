@@ -1619,8 +1619,22 @@ def prepare_agent_payload(ticker: str, fiscal_year: int, model_inference: dict,
 
 
 # =============================================================================
-# METRICS HISTORY CACHE - Category-based partitioning for follow-up agent
+# METRICS HISTORY CACHE - Quarter-based schema with embedded categories
 # =============================================================================
+#
+# Optimized schema: 20 items per ticker (one per quarter) instead of 140.
+# Each item contains all 7 metric categories, filtered at query time.
+#
+# Schema:
+#   PK: ticker (e.g., "AAPL")
+#   SK: fiscal_date (e.g., "2025-09-27") - human-readable, sorts chronologically
+#
+# Benefits:
+#   - 7x fewer DynamoDB items (20 vs 140)
+#   - Simpler writes (1 batch vs 6)
+#   - No GSIs needed
+#   - Easy to query "all categories for N quarters"
+#   - Client-side filtering for specific categories (~85% token savings preserved)
 
 # Mapping from category to metric names in quarterly_trends
 CATEGORY_METRICS = {
@@ -1673,11 +1687,11 @@ def prepare_metrics_for_cache(
     source_cache_key: str = ""
 ) -> List[Dict[str, Any]]:
     """
-    Transform quarterly_trends into category-partitioned items for metrics-history-cache.
+    Transform quarterly_trends into quarter-based items for metrics-history-cache.
 
-    This function takes the 60+ metric time series from quarterly_trends and partitions
-    them into 7 categories, creating one DynamoDB item per category per quarter.
-    This allows the follow-up agent to query only the metrics it needs (~85% token savings).
+    Creates one DynamoDB item per quarter with all 7 metric categories embedded.
+    This optimized schema reduces items from 140 to 20 per ticker while preserving
+    the ability to filter by category at query time (~85% token savings).
 
     Args:
         ticker: Stock symbol (e.g., "AAPL")
@@ -1687,8 +1701,24 @@ def prepare_metrics_for_cache(
 
     Returns:
         List of items ready for DynamoDB batch_write_item.
-        Each item represents one category for one quarter.
-        Expected: 7 categories × 20 quarters = 140 items per ticker.
+        Each item represents one quarter with all categories.
+        Expected: 20 items per ticker (one per quarter).
+
+    Item structure:
+        {
+            "ticker": "AAPL",
+            "fiscal_date": "2025-09-27",  # Sort key - human-readable
+            "fiscal_year": 2025,
+            "fiscal_quarter": "Q1",       # e.g., Q1, Q2, Q3, Q4
+            "revenue_profit": { ... },    # ~18 metrics
+            "cashflow": { ... },          # ~18 metrics
+            "balance_sheet": { ... },     # ~10 metrics
+            "debt_leverage": { ... },     # ~16 metrics
+            "earnings_quality": { ... },  # ~8 metrics
+            "dilution": { ... },          # ~4 metrics
+            "valuation": { ... },         # ~8 metrics
+            ...
+        }
     """
     items = []
     quarters = quarterly_trends.get('quarters', [])
@@ -1698,36 +1728,70 @@ def prepare_metrics_for_cache(
         logger.warning(f"No quarters found in quarterly_trends for {ticker}")
         return items
 
+    if not period_dates:
+        logger.warning(f"No period_dates found in quarterly_trends for {ticker}")
+        return items
+
     now = int(time.time())
     expires_at = now + (90 * 24 * 60 * 60)  # 90 days TTL
 
     for q_idx, quarter in enumerate(quarters):
         fiscal_date = period_dates[q_idx] if q_idx < len(period_dates) else None
-        fiscal_year = int(quarter.split('-')[0]) if '-' in quarter else None
 
+        if not fiscal_date:
+            logger.warning(f"Skipping quarter {quarter} for {ticker}: no fiscal_date")
+            continue
+
+        # Extract fiscal year and quarter from the date
+        # fiscal_date format: "2025-09-27"
+        try:
+            year = int(fiscal_date[:4])
+            month = int(fiscal_date[5:7])
+            # Determine fiscal quarter based on month
+            # Most companies: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec
+            # Apple (Sep fiscal year end): Q1=Oct-Dec, Q2=Jan-Mar, Q3=Apr-Jun, Q4=Jul-Sep
+            # For simplicity, use calendar quarters
+            if month <= 3:
+                fiscal_quarter = "Q1"
+            elif month <= 6:
+                fiscal_quarter = "Q2"
+            elif month <= 9:
+                fiscal_quarter = "Q3"
+            else:
+                fiscal_quarter = "Q4"
+        except (ValueError, IndexError):
+            year = None
+            fiscal_quarter = None
+
+        # Build item with all categories embedded
+        item = {
+            'ticker': ticker,
+            'fiscal_date': fiscal_date,  # Sort key - human-readable date
+            'fiscal_year': year,
+            'fiscal_quarter': fiscal_quarter,
+            'cached_at': now,
+            'expires_at': expires_at,
+            'currency': currency,
+            'source_cache_key': source_cache_key
+        }
+
+        # Embed each category's metrics
+        has_any_metrics = False
         for category, metric_names in CATEGORY_METRICS.items():
-            metrics = {}
+            category_metrics = {}
             for metric_name in metric_names:
                 if metric_name in quarterly_trends:
                     values = quarterly_trends[metric_name]
                     if q_idx < len(values) and values[q_idx] is not None:
-                        metrics[metric_name] = values[q_idx]
+                        category_metrics[metric_name] = values[q_idx]
 
-            if metrics:  # Only create item if we have metrics
-                item = {
-                    'ticker': ticker,
-                    'category_quarter': f"{category}#{quarter}",
-                    'category': category,
-                    'quarter': quarter,
-                    'fiscal_date': fiscal_date,
-                    'fiscal_year': fiscal_year,
-                    'cached_at': now,
-                    'expires_at': expires_at,
-                    'metrics': metrics,
-                    'currency': currency,
-                    'source_cache_key': source_cache_key
-                }
-                items.append(item)
+            if category_metrics:
+                item[category] = category_metrics
+                has_any_metrics = True
 
-    logger.info(f"Prepared {len(items)} cache items for {ticker} ({len(quarters)} quarters × {len(CATEGORY_METRICS)} categories)")
+        # Only add item if we have at least one category with metrics
+        if has_any_metrics:
+            items.append(item)
+
+    logger.info(f"Prepared {len(items)} cache items for {ticker} (1 item per quarter, 7 categories embedded)")
     return items

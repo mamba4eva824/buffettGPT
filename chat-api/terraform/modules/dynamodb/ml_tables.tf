@@ -193,19 +193,41 @@ resource "aws_dynamodb_table" "idempotency_cache" {
 }
 
 # =============================================================================
-# Metrics History Cache - Pre-computed metrics by category for follow-up agent
+# Metrics History Cache - Pre-computed metrics for follow-up agent
 # =============================================================================
-# Optimized schema for getMetricsHistory action group:
-# - Category-based partitioning reduces read size
-# - Pre-computed ratios eliminate query-time calculations
+# Optimized quarter-based schema for getMetricsHistory action group:
+# - 20 items per ticker (one per quarter) instead of 140
+# - All 7 metric categories embedded in each item
+# - fiscal_date sort key for human-readable chronological queries
+# - No GSIs needed - simple ticker + fiscal_date queries
 # - TTL matches financial-data-cache (90 days)
+#
+# Schema:
+#   PK: ticker (e.g., "AAPL")
+#   SK: fiscal_date (e.g., "2025-09-27") - sorts chronologically
+#
+# Item structure:
+#   {
+#     "ticker": "AAPL",
+#     "fiscal_date": "2025-09-27",
+#     "fiscal_year": 2025,
+#     "fiscal_quarter": "Q3",
+#     "revenue_profit": { revenue, net_income, margins, ... },
+#     "cashflow": { operating_cash_flow, free_cash_flow, ... },
+#     "balance_sheet": { total_debt, cash_position, ... },
+#     "debt_leverage": { debt_to_equity, current_ratio, ... },
+#     "earnings_quality": { gaap_net_income, sbc_actual, ... },
+#     "dilution": { basic_shares, diluted_shares, ... },
+#     "valuation": { roa, roic, roe, ... },
+#     ...
+#   }
 
 resource "aws_dynamodb_table" "metrics_history_cache" {
   name         = "metrics-history-${var.environment}"
   billing_mode = "PAY_PER_REQUEST"
 
   hash_key  = "ticker"
-  range_key = "category_quarter"
+  range_key = "fiscal_date"
 
   attribute {
     name = "ticker"
@@ -213,33 +235,11 @@ resource "aws_dynamodb_table" "metrics_history_cache" {
   }
 
   attribute {
-    name = "category_quarter"
+    name = "fiscal_date"
     type = "S"
   }
 
-  attribute {
-    name = "category"
-    type = "S"
-  }
-
-  attribute {
-    name = "quarter"
-    type = "S"
-  }
-
-  global_secondary_index {
-    name            = "ticker-category-index"
-    hash_key        = "ticker"
-    range_key       = "category"
-    projection_type = "ALL"
-  }
-
-  global_secondary_index {
-    name            = "ticker-quarter-index"
-    hash_key        = "ticker"
-    range_key       = "quarter"
-    projection_type = "ALL"
-  }
+  # No GSIs needed - simple queries by ticker with fiscal_date ordering
 
   ttl {
     attribute_name = "expires_at"
@@ -261,7 +261,7 @@ resource "aws_dynamodb_table" "metrics_history_cache" {
     var.common_tags,
     {
       Name    = "metrics-history-${var.environment}"
-      Purpose = "Pre-computed metrics by category for follow-up agent"
+      Purpose = "Pre-computed metrics by quarter for follow-up agent"
       TTL     = "90 days"
     }
   )

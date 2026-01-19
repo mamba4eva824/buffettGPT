@@ -213,7 +213,8 @@ def get_metrics_history(
     """
     Retrieve pre-computed metrics from metrics-history-cache table.
 
-    Queries category-partitioned metrics for efficient follow-up questions.
+    Uses optimized quarter-based schema: 20 items per ticker with all 7 categories
+    embedded in each item. Filters to requested category(s) before returning.
     ~85% token savings vs querying all raw financial data.
 
     Args:
@@ -223,7 +224,7 @@ def get_metrics_history(
         quarters: Number of quarters to retrieve (max 20)
 
     Returns:
-        Dict with metrics organized by category and quarter
+        Dict with metrics organized by category and quarter, sorted most recent first
     """
     from boto3.dynamodb.conditions import Key
 
@@ -236,6 +237,17 @@ def get_metrics_history(
         'earnings_quality', 'dilution', 'valuation'
     ]
 
+    # Category descriptions for agent context
+    category_descriptions = {
+        'revenue_profit': 'Revenue & Profitability Metrics',
+        'cashflow': 'Cash Flow Metrics',
+        'balance_sheet': 'Balance Sheet Metrics',
+        'debt_leverage': 'Debt & Leverage Ratios',
+        'earnings_quality': 'Earnings Quality Metrics',
+        'dilution': 'Share Dilution Metrics',
+        'valuation': 'Valuation & Returns Metrics'
+    }
+
     if metric_type != 'all' and metric_type not in valid_categories:
         return {
             'success': False,
@@ -243,22 +255,17 @@ def get_metrics_history(
             'available_types': valid_categories
         }
 
+    # Determine which categories to include in response
+    categories_to_include = valid_categories if metric_type == 'all' else [metric_type]
+
     try:
-        if metric_type == 'all':
-            # Query all categories for this ticker
-            response = table.query(
-                KeyConditionExpression=Key('ticker').eq(ticker),
-                Limit=quarters * len(valid_categories)  # 7 categories × N quarters
-            )
-        else:
-            # Query specific category using begins_with on sort key
-            response = table.query(
-                KeyConditionExpression=(
-                    Key('ticker').eq(ticker) &
-                    Key('category_quarter').begins_with(f"{metric_type}#")
-                ),
-                Limit=quarters
-            )
+        # Query by ticker, sorted by fiscal_date (most recent first)
+        # New schema: fiscal_date is the sort key, categories are embedded
+        response = table.query(
+            KeyConditionExpression=Key('ticker').eq(ticker),
+            Limit=quarters,
+            ScanIndexForward=False  # Descending order (most recent first)
+        )
 
         items = response.get('Items', [])
 
@@ -270,57 +277,59 @@ def get_metrics_history(
                 'metric_type': metric_type
             }
 
-        # Organize results by category
+        # Build result with requested categories only
         result = {
             'success': True,
             'ticker': ticker,
             'metric_type': metric_type,
             'quarters_requested': quarters,
-            'quarters_available': len(set(item.get('quarter') for item in items)),
-            'categories_available': len(set(item.get('category') for item in items)),
+            'quarters_available': len(items),
+            'categories_returned': categories_to_include,
             'data': {}
         }
 
-        # Category descriptions for context
-        category_descriptions = {
-            'revenue_profit': 'Revenue & Profitability Metrics',
-            'cashflow': 'Cash Flow Metrics',
-            'balance_sheet': 'Balance Sheet Metrics',
-            'debt_leverage': 'Debt & Leverage Ratios',
-            'earnings_quality': 'Earnings Quality Metrics',
-            'dilution': 'Share Dilution Metrics',
-            'valuation': 'Valuation & Returns Metrics'
-        }
+        # Initialize category containers
+        for category in categories_to_include:
+            result['data'][category] = {
+                'description': category_descriptions.get(category, category),
+                'quarters': []
+            }
 
+        # Process each quarter item
         for item in items:
-            category = item.get('category')
-            quarter = item.get('quarter')
+            fiscal_date = item.get('fiscal_date')
+            fiscal_year = item.get('fiscal_year')
+            fiscal_quarter = item.get('fiscal_quarter')
 
-            if category not in result['data']:
-                result['data'][category] = {
-                    'description': category_descriptions.get(category, category),
-                    'quarters': []
-                }
+            # Extract only the requested categories from this quarter
+            for category in categories_to_include:
+                category_metrics = item.get(category, {})
 
-            # Convert Decimal to float for JSON serialization
-            metrics = item.get('metrics', {})
-            metrics_float = {k: float(v) if hasattr(v, '__float__') else v for k, v in metrics.items()}
+                if category_metrics:
+                    # Convert Decimal to float for JSON serialization
+                    metrics_float = {
+                        k: float(v) if hasattr(v, '__float__') else v
+                        for k, v in category_metrics.items()
+                    }
 
-            result['data'][category]['quarters'].append({
-                'quarter': quarter,
-                'fiscal_date': item.get('fiscal_date'),
-                'fiscal_year': item.get('fiscal_year'),
-                'metrics': metrics_float
-            })
+                    result['data'][category]['quarters'].append({
+                        'fiscal_date': fiscal_date,
+                        'fiscal_year': fiscal_year,
+                        'fiscal_quarter': fiscal_quarter,
+                        'metrics': metrics_float
+                    })
 
-        # Sort quarters within each category (most recent first)
-        for category in result['data']:
-            result['data'][category]['quarters'].sort(
-                key=lambda x: x['quarter'],
-                reverse=True
-            )
+        # Count total metrics returned for logging
+        total_metrics = sum(
+            len(q['metrics'])
+            for cat_data in result['data'].values()
+            for q in cat_data['quarters']
+        )
 
-        logger.info(f"Retrieved {len(items)} metric items for {ticker} (type={metric_type})")
+        logger.info(
+            f"Retrieved {len(items)} quarters for {ticker} "
+            f"(categories={categories_to_include}, metrics={total_metrics})"
+        )
         return result
 
     except Exception as e:
