@@ -15,7 +15,8 @@ This module now includes:
 The full v3.6.5 feature set (163 features) is used for model inference.
 """
 
-from typing import Optional, List, Dict, Tuple
+import time
+from typing import Optional, List, Dict, Tuple, Any
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -1615,3 +1616,118 @@ def prepare_agent_payload(ticker: str, fiscal_year: int, model_inference: dict,
             'include_emojis': True
         }
     }
+
+
+# =============================================================================
+# METRICS HISTORY CACHE - Category-based partitioning for follow-up agent
+# =============================================================================
+
+# Mapping from category to metric names in quarterly_trends
+CATEGORY_METRICS = {
+    'revenue_profit': [
+        'revenue', 'net_income', 'gross_profit', 'operating_income', 'eps',
+        'gross_margin', 'operating_margin', 'net_margin', 'revenue_growth_yoy',
+        'revenue_growth_qoq', 'roe', 'ebitda', 'eps_growth_yoy', 'net_income_growth_yoy',
+        'gross_margin_change_1yr', 'operating_margin_change_1yr', 'net_margin_change_1yr',
+        'is_margin_expanding'
+    ],
+    'cashflow': [
+        'operating_cash_flow', 'free_cash_flow', 'fcf_margin', 'ocf_to_revenue',
+        'capex', 'capex_intensity', 'dividends_paid', 'share_buybacks',
+        'fcf_to_net_income', 'working_capital', 'reinvestment_rate',
+        'shareholder_payout', 'fcf_payout_ratio', 'working_capital_to_revenue',
+        'total_capital_return', 'fcf_change_yoy', 'ocf_change_yoy', 'capex_change_yoy'
+    ],
+    'balance_sheet': [
+        'total_debt', 'cash_position', 'net_debt', 'total_equity',
+        'total_assets', 'working_capital', 'current_assets', 'current_liabilities',
+        'short_term_debt', 'long_term_debt'
+    ],
+    'debt_leverage': [
+        'debt_to_equity', 'debt_to_assets', 'interest_coverage',
+        'current_ratio', 'quick_ratio', 'short_term_debt', 'long_term_debt',
+        'short_term_debt_pct', 'net_debt_to_ebitda', 'fcf_to_debt',
+        'debt_to_equity_change_1yr', 'debt_to_equity_change_2yr',
+        'current_ratio_change_1yr', 'is_deleveraging', 'interest_expense',
+        'equity_multiplier'
+    ],
+    'earnings_quality': [
+        'gaap_net_income', 'sbc_actual', 'd_and_a', 'adjusted_earnings',
+        'sbc_to_revenue_pct', 'gaap_adjusted_gap_pct', 'other_non_cash_items',
+        'non_cash_adjustments'
+    ],
+    'dilution': [
+        'basic_shares', 'diluted_shares', 'dilution_pct', 'share_buybacks'
+    ],
+    'valuation': [
+        'roa', 'roic', 'roe', 'asset_turnover', 'equity_multiplier',
+        'roic_growth', 'roe_change_2yr', 'capital_return_yield'
+    ]
+}
+
+
+def prepare_metrics_for_cache(
+    ticker: str,
+    quarterly_trends: Dict[str, Any],
+    currency: str = "USD",
+    source_cache_key: str = ""
+) -> List[Dict[str, Any]]:
+    """
+    Transform quarterly_trends into category-partitioned items for metrics-history-cache.
+
+    This function takes the 60+ metric time series from quarterly_trends and partitions
+    them into 7 categories, creating one DynamoDB item per category per quarter.
+    This allows the follow-up agent to query only the metrics it needs (~85% token savings).
+
+    Args:
+        ticker: Stock symbol (e.g., "AAPL")
+        quarterly_trends: Dict from extract_quarterly_trends() with metric arrays
+        currency: Currency code (e.g., "USD", "EUR")
+        source_cache_key: Cache key from financial data cache (for traceability)
+
+    Returns:
+        List of items ready for DynamoDB batch_write_item.
+        Each item represents one category for one quarter.
+        Expected: 7 categories × 20 quarters = 140 items per ticker.
+    """
+    items = []
+    quarters = quarterly_trends.get('quarters', [])
+    period_dates = quarterly_trends.get('period_dates', [])
+
+    if not quarters:
+        logger.warning(f"No quarters found in quarterly_trends for {ticker}")
+        return items
+
+    now = int(time.time())
+    expires_at = now + (90 * 24 * 60 * 60)  # 90 days TTL
+
+    for q_idx, quarter in enumerate(quarters):
+        fiscal_date = period_dates[q_idx] if q_idx < len(period_dates) else None
+        fiscal_year = int(quarter.split('-')[0]) if '-' in quarter else None
+
+        for category, metric_names in CATEGORY_METRICS.items():
+            metrics = {}
+            for metric_name in metric_names:
+                if metric_name in quarterly_trends:
+                    values = quarterly_trends[metric_name]
+                    if q_idx < len(values) and values[q_idx] is not None:
+                        metrics[metric_name] = values[q_idx]
+
+            if metrics:  # Only create item if we have metrics
+                item = {
+                    'ticker': ticker,
+                    'category_quarter': f"{category}#{quarter}",
+                    'category': category,
+                    'quarter': quarter,
+                    'fiscal_date': fiscal_date,
+                    'fiscal_year': fiscal_year,
+                    'cached_at': now,
+                    'expires_at': expires_at,
+                    'metrics': metrics,
+                    'currency': currency,
+                    'source_cache_key': source_cache_key
+                }
+                items.append(item)
+
+    logger.info(f"Prepared {len(items)} cache items for {ticker} ({len(quarters)} quarters × {len(CATEGORY_METRICS)} categories)")
+    return items

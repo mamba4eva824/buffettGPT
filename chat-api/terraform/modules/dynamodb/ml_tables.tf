@@ -191,3 +191,78 @@ resource "aws_dynamodb_table" "idempotency_cache" {
     }
   )
 }
+
+# =============================================================================
+# Metrics History Cache - Pre-computed metrics by category for follow-up agent
+# =============================================================================
+# Optimized schema for getMetricsHistory action group:
+# - Category-based partitioning reduces read size
+# - Pre-computed ratios eliminate query-time calculations
+# - TTL matches financial-data-cache (90 days)
+
+resource "aws_dynamodb_table" "metrics_history_cache" {
+  name         = "metrics-history-${var.environment}"
+  billing_mode = "PAY_PER_REQUEST"
+
+  hash_key  = "ticker"
+  range_key = "category_quarter"
+
+  attribute {
+    name = "ticker"
+    type = "S"
+  }
+
+  attribute {
+    name = "category_quarter"
+    type = "S"
+  }
+
+  attribute {
+    name = "category"
+    type = "S"
+  }
+
+  attribute {
+    name = "quarter"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "ticker-category-index"
+    hash_key        = "ticker"
+    range_key       = "category"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "ticker-quarter-index"
+    hash_key        = "ticker"
+    range_key       = "quarter"
+    projection_type = "ALL"
+  }
+
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = var.kms_key_arn
+  }
+
+  point_in_time_recovery {
+    enabled = var.enable_pitr
+  }
+
+  deletion_protection_enabled = var.enable_deletion_protection
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name    = "metrics-history-${var.environment}"
+      Purpose = "Pre-computed metrics by category for follow-up agent"
+      TTL     = "90 days"
+    }
+  )
+}

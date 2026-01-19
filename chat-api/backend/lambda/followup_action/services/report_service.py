@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 # DynamoDB table names from environment
 REPORTS_TABLE_V2 = os.environ.get('INVESTMENT_REPORTS_V2_TABLE', 'investment-reports-v2-dev')
 FINANCIAL_CACHE_TABLE = os.environ.get('FINANCIAL_DATA_CACHE_TABLE', 'financial-data-cache-dev')
+METRICS_HISTORY_TABLE = os.environ.get('METRICS_HISTORY_CACHE_TABLE', 'metrics-history-dev')
 
 # Initialize DynamoDB resource
 dynamodb = boto3.resource('dynamodb')
@@ -210,40 +211,126 @@ def get_metrics_history(
     quarters: int = 20
 ) -> Dict[str, Any]:
     """
-    Retrieve historical metrics for follow-up questions.
+    Retrieve pre-computed metrics from metrics-history-cache table.
 
-    Returns only the ~60 metrics used in investment research reports.
+    Queries category-partitioned metrics for efficient follow-up questions.
+    ~85% token savings vs querying all raw financial data.
 
     Args:
         ticker: Stock ticker symbol
-        metric_type: Category filter ('revenue_profit', 'cashflow', 'debt_leverage',
-                    'earnings_quality', 'dilution', 'valuation', or 'all')
-        quarters: Number of quarters of history (default 20 = 5 years)
+        metric_type: Category filter ('revenue_profit', 'cashflow', 'balance_sheet',
+                    'debt_leverage', 'earnings_quality', 'dilution', 'valuation', or 'all')
+        quarters: Number of quarters to retrieve (max 20)
 
     Returns:
-        Dict with historical metric data
+        Dict with metrics organized by category and quarter
     """
-    if metric_type == 'all':
-        metrics_to_return = INVESTMENT_RESEARCH_METRICS
-    elif metric_type in INVESTMENT_RESEARCH_METRICS:
-        metrics_to_return = {metric_type: INVESTMENT_RESEARCH_METRICS[metric_type]}
-    else:
+    from boto3.dynamodb.conditions import Key
+
+    ticker = ticker.upper()
+    table = dynamodb.Table(METRICS_HISTORY_TABLE)
+
+    # Valid categories (from CATEGORY_METRICS in feature_extractor.py)
+    valid_categories = [
+        'revenue_profit', 'cashflow', 'balance_sheet', 'debt_leverage',
+        'earnings_quality', 'dilution', 'valuation'
+    ]
+
+    if metric_type != 'all' and metric_type not in valid_categories:
         return {
             'success': False,
             'error': f'Unknown metric type: {metric_type}',
-            'available_types': list(INVESTMENT_RESEARCH_METRICS.keys())
+            'available_types': valid_categories
         }
 
-    # TODO: Implement actual data retrieval from DynamoDB/FMP cache
-    # For now, return metric definitions
-    return {
-        'success': True,
-        'ticker': ticker.upper(),
-        'metric_type': metric_type,
-        'quarters_requested': quarters,
-        'available_metrics': metrics_to_return,
-        'note': 'Historical data retrieval to be implemented'
-    }
+    try:
+        if metric_type == 'all':
+            # Query all categories for this ticker
+            response = table.query(
+                KeyConditionExpression=Key('ticker').eq(ticker),
+                Limit=quarters * len(valid_categories)  # 7 categories × N quarters
+            )
+        else:
+            # Query specific category using begins_with on sort key
+            response = table.query(
+                KeyConditionExpression=(
+                    Key('ticker').eq(ticker) &
+                    Key('category_quarter').begins_with(f"{metric_type}#")
+                ),
+                Limit=quarters
+            )
+
+        items = response.get('Items', [])
+
+        if not items:
+            return {
+                'success': False,
+                'error': f'No metrics found for {ticker}. Report may not have been generated yet.',
+                'ticker': ticker,
+                'metric_type': metric_type
+            }
+
+        # Organize results by category
+        result = {
+            'success': True,
+            'ticker': ticker,
+            'metric_type': metric_type,
+            'quarters_requested': quarters,
+            'quarters_available': len(set(item.get('quarter') for item in items)),
+            'categories_available': len(set(item.get('category') for item in items)),
+            'data': {}
+        }
+
+        # Category descriptions for context
+        category_descriptions = {
+            'revenue_profit': 'Revenue & Profitability Metrics',
+            'cashflow': 'Cash Flow Metrics',
+            'balance_sheet': 'Balance Sheet Metrics',
+            'debt_leverage': 'Debt & Leverage Ratios',
+            'earnings_quality': 'Earnings Quality Metrics',
+            'dilution': 'Share Dilution Metrics',
+            'valuation': 'Valuation & Returns Metrics'
+        }
+
+        for item in items:
+            category = item.get('category')
+            quarter = item.get('quarter')
+
+            if category not in result['data']:
+                result['data'][category] = {
+                    'description': category_descriptions.get(category, category),
+                    'quarters': []
+                }
+
+            # Convert Decimal to float for JSON serialization
+            metrics = item.get('metrics', {})
+            metrics_float = {k: float(v) if hasattr(v, '__float__') else v for k, v in metrics.items()}
+
+            result['data'][category]['quarters'].append({
+                'quarter': quarter,
+                'fiscal_date': item.get('fiscal_date'),
+                'fiscal_year': item.get('fiscal_year'),
+                'metrics': metrics_float
+            })
+
+        # Sort quarters within each category (most recent first)
+        for category in result['data']:
+            result['data'][category]['quarters'].sort(
+                key=lambda x: x['quarter'],
+                reverse=True
+            )
+
+        logger.info(f"Retrieved {len(items)} metric items for {ticker} (type={metric_type})")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error retrieving metrics for {ticker}: {e}")
+        return {
+            'success': False,
+            'error': f'Failed to retrieve metrics: {str(e)}',
+            'ticker': ticker,
+            'metric_type': metric_type
+        }
 
 
 def get_available_reports() -> Dict[str, Any]:

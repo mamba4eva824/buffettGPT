@@ -120,6 +120,17 @@ output "investment_reports_v2_table_arn" {
   value       = aws_dynamodb_table.investment_reports_v2.arn
 }
 
+# Metrics History Cache Table
+output "metrics_history_cache_table_name" {
+  description = "Name of the metrics history cache table"
+  value       = aws_dynamodb_table.metrics_history_cache.name
+}
+
+output "metrics_history_cache_table_arn" {
+  description = "ARN of the metrics history cache table"
+  value       = aws_dynamodb_table.metrics_history_cache.arn
+}
+
 # Summary Output
 output "table_summary" {
   description = "Summary of all DynamoDB tables"
@@ -137,6 +148,7 @@ output "table_summary" {
       investment_reports    = aws_dynamodb_table.investment_reports.name
       investment_reports_v2 = aws_dynamodb_table.investment_reports_v2.name
       forex_cache           = aws_dynamodb_table.forex_rate_cache.name
+      metrics_history_cache = aws_dynamodb_table.metrics_history_cache.name
     }
     optional = {
       anonymous_sessions = var.enable_anonymous_sessions ? aws_dynamodb_table.anonymous_sessions[0].name : "disabled"
