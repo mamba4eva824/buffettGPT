@@ -74,6 +74,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return list_conversations(event)
         elif http_method == 'GET' and '/conversations/' in path and '/messages' in path:
             return get_conversation_messages(event)
+        elif http_method == 'POST' and '/conversations/' in path and '/messages' in path:
+            return save_conversation_message(event)
         elif http_method == 'GET' and '/conversations/' in path:
             return get_conversation(event)
         elif http_method == 'POST' and path == '/conversations':
@@ -370,6 +372,96 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
         })
 
         return create_response(500, {'error': 'Failed to get messages'})
+
+
+def save_conversation_message(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Save a message to a conversation.
+
+    Args:
+        event: API Gateway event
+
+    Returns:
+        Response with saved message
+    """
+
+    conversation_id = event['pathParameters'].get('conversation_id')
+    if not conversation_id:
+        return create_response(400, {'error': 'Conversation ID required'})
+
+    user_id = get_user_id(event)
+    if not user_id:
+        return create_response(401, {'error': 'User ID not found'})
+
+    try:
+        # Parse request body
+        body = json.loads(event.get('body', '{}'))
+        message_type = body.get('message_type', 'assistant')
+        content = body.get('content')
+
+        if not content:
+            return create_response(400, {'error': 'Message content required'})
+
+        # Verify the user owns this conversation
+        conv_response = conversations_table.get_item(
+            Key={'conversation_id': conversation_id}
+        )
+
+        conversation = conv_response.get('Item')
+        if not conversation or conversation['user_id'] != user_id:
+            return create_response(403, {'error': 'Access denied'})
+
+        # Create message record
+        timestamp_unix = int(datetime.utcnow().timestamp())
+        timestamp_iso = datetime.utcnow().isoformat() + 'Z'
+        message_id = str(uuid.uuid4())
+
+        message_record = {
+            'conversation_id': conversation_id,
+            'timestamp': timestamp_unix,
+            'message_id': message_id,
+            'message_type': message_type,
+            'content': content,
+            'user_id': user_id,
+            'created_at': timestamp_iso,
+            'status': 'saved',
+            'environment': ENVIRONMENT,
+            'project': PROJECT_NAME
+        }
+
+        # Save message to DynamoDB
+        messages_table.put_item(Item=message_record)
+
+        # Update conversation timestamp
+        conversations_table.update_item(
+            Key={'conversation_id': conversation_id},
+            UpdateExpression='SET updated_at = :updated_at, message_count = if_not_exists(message_count, :zero) + :inc',
+            ExpressionAttributeValues={
+                ':updated_at': timestamp_unix,
+                ':zero': 0,
+                ':inc': 1
+            }
+        )
+
+        logger.info(f"Saved message {message_id} to conversation {conversation_id}")
+
+        return create_response(201, {
+            'message_id': message_id,
+            'conversation_id': conversation_id,
+            'timestamp': timestamp_unix,
+            'created_at': timestamp_iso
+        })
+
+    except json.JSONDecodeError:
+        return create_response(400, {'error': 'Invalid JSON in request body'})
+    except Exception as e:
+        logger.error(f"Error saving message to conversation", extra={
+            'conversation_id': conversation_id,
+            'error': str(e)
+        })
+
+        return create_response(500, {'error': 'Failed to save message'})
+
 
 def create_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
     """

@@ -406,6 +406,17 @@ resource "aws_apigatewayv2_route" "get_conversation_messages" {
   authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
 }
 
+# POST /conversations/{conversation_id}/messages - Save message to conversation
+resource "aws_apigatewayv2_route" "save_conversation_message" {
+  count     = var.enable_conversations_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "POST /conversations/{conversation_id}/messages"
+  target    = "integrations/${aws_apigatewayv2_integration.conversations_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
 # OPTIONS /conversations - CORS preflight
 resource "aws_apigatewayv2_route" "conversations_options" {
   count     = var.enable_conversations_routes ? 1 : 0
