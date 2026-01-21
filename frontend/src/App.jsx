@@ -5,7 +5,7 @@ import StreamingText from "./components/analysis/StreamingText.jsx";
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
 import { ConversationList } from "./components/ConversationList.jsx";
-import { loadConversationHistory } from "./api/conversationsApi.js";
+import { loadConversationHistory, conversationsApi } from "./api/conversationsApi.js";
 import { Avatar } from "./components/Avatar.jsx";
 import logger from "./utils/logger.js";
 import { ResearchProvider, useResearch } from "./contexts/ResearchContext.jsx";
@@ -748,6 +748,7 @@ function ChatApp() {
     fetchSection,
     setActiveSection,
     reset: resetResearch,
+    loadSavedReport,  // Load report from history without streaming
     // Follow-up chat
     followUpMessages,
     isFollowUpStreaming,
@@ -830,6 +831,9 @@ function ChatApp() {
     return { current: completed, total };
   }, [reportMeta?.toc, streamedContent]);
 
+  // Track if we've saved this research report to avoid duplicate saves
+  const savedResearchRef = useRef(null);
+
   // Use conversations hook for managing chat history
   const {
     conversations,
@@ -842,6 +846,51 @@ function ChatApp() {
     deleteConversation,
     fetchConversations
   } = useConversations({ token, userId: user?.id, includeArchived: isAuthenticated ? showArchived : false });
+
+  // Save research report data to conversation when streaming completes
+  useEffect(() => {
+    // Only save when:
+    // 1. Streaming just completed (streamStatus === 'complete')
+    // 2. We have report data to save
+    // 3. We have a conversation to save to
+    // 4. We haven't already saved this exact report
+    const shouldSave = streamStatus === 'complete' &&
+      showInvestmentResearch &&
+      reportMeta &&
+      Object.keys(streamedContent).length > 0 &&
+      selectedConversation?.conversation_id &&
+      token &&
+      savedResearchRef.current !== selectedConversation.conversation_id;
+
+    if (shouldSave) {
+      // Mark as saved to prevent duplicate saves
+      savedResearchRef.current = selectedConversation.conversation_id;
+
+      // Create a structured message containing the research report data
+      const researchData = {
+        _type: 'research_report',
+        ticker: researchTicker,
+        reportMeta: reportMeta,
+        streamedContent: streamedContent,
+        visibleSections: visibleSections,
+        savedAt: new Date().toISOString(),
+      };
+
+      // Save as an assistant message
+      conversationsApi.saveMessage(
+        selectedConversation.conversation_id,
+        {
+          message_type: 'assistant',
+          content: JSON.stringify(researchData),
+        },
+        token
+      ).catch(err => {
+        logger.error('Failed to save research report to conversation:', err);
+        // Reset saved ref so it can retry
+        savedResearchRef.current = null;
+      });
+    }
+  }, [streamStatus, showInvestmentResearch, reportMeta, streamedContent, selectedConversation?.conversation_id, token, researchTicker]);
 
   const { status, sessionId, messages, connect, disconnect, setMessages, switchConversation } = useAwsWebSocket({
     wsUrl,
@@ -986,8 +1035,10 @@ function ChatApp() {
     }
 
     // Create conversation if needed (for authenticated users)
+    // Use different title prefix based on mode to enable proper history loading
     if (isAuthenticated && !selectedConversation && messages.length === 0) {
-      const title = `Analysis: ${messageText.slice(0, 40)}${messageText.length > 40 ? '...' : ''}`;
+      const modePrefix = selectedMode === 'investment-research' ? 'Research' : 'Analysis';
+      const title = `${modePrefix}: ${messageText.slice(0, 40)}${messageText.length > 40 ? '...' : ''}`;
       const newConv = await createConversation(title);
       if (newConv) {
         setSelectedConversation(newConv);
@@ -995,8 +1046,10 @@ function ChatApp() {
     }
 
     // Check if we're in follow-up mode (viewing a completed research report)
+    // Use reportMeta as source of truth - it proves we have a loaded report
+    // This is more robust than streamStatus which can have timing issues
     const isInFollowUpMode = showInvestmentResearch &&
-                             streamStatus === 'complete' &&
+                             reportMeta &&
                              researchTicker;
 
     if (isInFollowUpMode) {
@@ -1087,15 +1140,10 @@ function ChatApp() {
 
       // Auto-hide banner after 8 seconds
       hideBannerTimeoutRef.current = setTimeout(() => {
-      setTimeout(() => {
-        setShowRateLimitBanner(true);
-      }, 500);
-
-      setTimeout(() => {
         setShowRateLimitBanner(false);
       }, 8000);
     }
-  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, selectedMode, startResearch, token, showInvestmentResearch, streamStatus, researchTicker, sendFollowUp, clearFollowUp]);
+  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, selectedMode, startResearch, token, showInvestmentResearch, reportMeta, researchTicker, sendFollowUp, clearFollowUp]);
 
   const newChat = useCallback(() => {
     // Clear messages and reset analysis view state
@@ -1175,6 +1223,82 @@ function ChatApp() {
           return timeA - timeB;
         });
 
+      // Check if this is a Research conversation (title starts with "Research:")
+      const isResearchConversation = conversationTitle &&
+        conversationTitle.toLowerCase().startsWith('research:');
+
+      if (isResearchConversation) {
+        // Try to find saved research report data in the messages
+        let savedResearchData = null;
+        for (const msg of formattedMessages) {
+          if (msg.type === 'assistant' && msg.content?.startsWith('{')) {
+            try {
+              const data = JSON.parse(msg.content);
+              if (data._type === 'research_report') {
+                savedResearchData = data;
+                break;
+              }
+            } catch (e) {
+              // Not valid JSON, continue
+            }
+          }
+        }
+
+        // Extract ticker from saved data or from title
+        let ticker = savedResearchData?.ticker;
+        if (!ticker) {
+          const titleMatch = conversationTitle.match(/Research:\s*(.+?)(?:\.\.\.|$)/i);
+          if (titleMatch) {
+            ticker = titleMatch[1].trim();
+          }
+        }
+
+        if (ticker) {
+          // Reset analysis state
+          setShowAnalysis(false);
+          setSavedAnalysisResults(null);
+          setAnalysisComplete(false);
+          setIsLoadedFromHistory(false);
+
+          // Set up research view
+          setShowInvestmentResearch(true);
+          setCollapsedSections([]);
+
+          if (savedResearchData?.reportMeta && savedResearchData?.streamedContent) {
+            // Restore visible sections from saved data, fallback to executive summary only
+            const savedVisibleSections = savedResearchData.visibleSections || ['01_executive_summary'];
+            setVisibleSections(savedVisibleSections);
+            // Load saved report without streaming
+            loadSavedReport({
+              ticker: ticker,
+              reportMeta: savedResearchData.reportMeta,
+              streamedContent: savedResearchData.streamedContent,
+              followUpMessages: [], // Follow-up messages would need separate handling
+            });
+          } else {
+            // No saved data found, re-stream the report
+            // (This is a fallback for older conversations before this feature)
+            setVisibleSections(['01_executive_summary']);
+            startResearch(ticker, token);
+          }
+
+          // Filter out the research report JSON message from display
+          const displayMessages = formattedMessages.filter(msg => {
+            if (msg.type === 'assistant' && msg.content?.startsWith('{')) {
+              try {
+                const data = JSON.parse(msg.content);
+                return data._type !== 'research_report';
+              } catch (e) {
+                return true;
+              }
+            }
+            return true;
+          });
+          setMessages(displayMessages);
+          return;
+        }
+      }
+
       // Check if this conversation has analysis content OR title indicates analysis
       const isAnalysisConversation = hasAnalysisMessages(formattedMessages) ||
         (conversationTitle && conversationTitle.toLowerCase().startsWith('analysis:'));
@@ -1206,8 +1330,9 @@ function ChatApp() {
           setIsLoadedFromHistory(true);  // 1. Guard - prevents new analysis
           setSavedAnalysisResults(hasContent ? analysisResults : null);  // 2. Results
           setAnalysisComplete(hasContent);  // 3. Completion state
-          setShowAnalysis(true);  // 4. Show the view
-          setAnalysisTicker(ticker);  // 5. TRIGGER - set last!
+          setShowInvestmentResearch(false);  // 4. Make sure research is off
+          setShowAnalysis(true);  // 5. Show the view
+          setAnalysisTicker(ticker);  // 6. TRIGGER - set last!
           // Don't set messages - we'll show AnalysisView instead
           setMessages([]);
           return;
@@ -1217,13 +1342,14 @@ function ChatApp() {
       // Regular conversation - show messages
       setSavedAnalysisResults(null);
       setShowAnalysis(false);
+      setShowInvestmentResearch(false);
       setAnalysisComplete(false);
       setMessages(formattedMessages);
     } catch (error) {
       logger.error('Error loading conversation messages:', error);
       // Don't alert on error, just log it
     }
-  }, [token, setMessages]);
+  }, [token, setMessages, startResearch, loadSavedReport]);
 
 
 
@@ -1712,7 +1838,7 @@ function ChatApp() {
                     isConnecting={isConnecting}
                     selectedMode={selectedMode}
                     onModeChange={setSelectedMode}
-                    isFollowUpMode={showInvestmentResearch && streamStatus === 'complete' && !!researchTicker}
+                    isFollowUpMode={showInvestmentResearch && !!reportMeta && !!researchTicker}
                   />
                 </div>
                 )}
