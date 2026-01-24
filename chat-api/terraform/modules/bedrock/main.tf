@@ -39,18 +39,23 @@ locals {
 # ================================================
 
 # IAM module for Bedrock Agent service roles
-# Simplified: Only creates agent role, removed KB role and Pinecone secret references
+# Simplified: Only creates agent role, KB resources deprecated and disabled
 # NOTE: Using existing role names to avoid agent recreation (Bedrock forces replacement on role change)
 module "iam" {
   source = "./modules/iam"
 
-  # Use existing role names - changing these would force agent recreation
+  # DEPRECATED: Knowledge Base resources no longer created (2025-01)
+  create_knowledge_base_resources = false
+
+  # Legacy variable values (only used if create_knowledge_base_resources = true)
   knowledge_base_role_name    = "bedrock-kb-service-role"
   knowledge_base_policy_name  = "bedrock-kb-policy"
-  agent_role_name             = "bedrock-agent-service-role"
-  agent_policy_name           = "bedrock-agent-policy"
   source_bucket_arn           = var.source_bucket_arn
   pinecone_secret_arn         = "arn:aws:secretsmanager:${var.aws_region}:*:secret:placeholder"  # Placeholder - KB not used
+
+  # Active agent configuration
+  agent_role_name             = "bedrock-agent-service-role"
+  agent_policy_name           = "bedrock-agent-policy"
   foundation_model_id         = var.foundation_model_id
   attach_bedrock_full_access  = var.attach_bedrock_full_access
   tags                        = local.common_tags

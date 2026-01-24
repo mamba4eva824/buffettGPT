@@ -1,13 +1,13 @@
 # Outputs for IAM module
 
 output "knowledge_base_role_arn" {
-  description = "ARN of the Knowledge Base service role"
-  value       = aws_iam_role.knowledge_base_role.arn
+  description = "ARN of the Knowledge Base service role (deprecated)"
+  value       = length(aws_iam_role.knowledge_base_role) > 0 ? aws_iam_role.knowledge_base_role[0].arn : ""
 }
 
 output "knowledge_base_role_name" {
-  description = "Name of the Knowledge Base service role"
-  value       = aws_iam_role.knowledge_base_role.name
+  description = "Name of the Knowledge Base service role (deprecated)"
+  value       = length(aws_iam_role.knowledge_base_role) > 0 ? aws_iam_role.knowledge_base_role[0].name : ""
 }
 
 output "agent_role_arn" {
@@ -21,8 +21,8 @@ output "agent_role_name" {
 }
 
 output "knowledge_base_policy_arn" {
-  description = "ARN of the Knowledge Base policy"
-  value       = aws_iam_policy.knowledge_base_policy.arn
+  description = "ARN of the Knowledge Base policy (deprecated)"
+  value       = length(aws_iam_policy.knowledge_base_policy) > 0 ? aws_iam_policy.knowledge_base_policy[0].arn : ""
 }
 
 output "agent_policy_arn" {
