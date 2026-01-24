@@ -33,11 +33,8 @@ variable "enable_deletion_protection" {
   default     = false
 }
 
-variable "enable_anonymous_sessions" {
-  description = "Enable anonymous sessions table (will be merged in future)"
-  type        = bool
-  default     = true
-}
+# NOTE: enable_anonymous_sessions variable removed (2025-01)
+# Anonymous sessions table was part of deprecated RAG chatbot architecture
 
 variable "common_tags" {
   description = "Common tags to apply to all resources"
