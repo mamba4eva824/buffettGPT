@@ -55,7 +55,7 @@ output "environment_summary" {
     
     resource_count = {
       lambda_functions = length(module.lambda.function_names)
-      dynamodb_tables  = length(keys(module.dynamodb.table_summary.core_tables)) + length(keys(module.dynamodb.table_summary.rate_limiting))
+      dynamodb_tables  = length(keys(module.dynamodb.table_summary.conversations)) + length(keys(module.dynamodb.table_summary.ml_cache)) + length(keys(module.dynamodb.table_summary.investment_research))
     }
     
     urls = {
