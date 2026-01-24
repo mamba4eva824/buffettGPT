@@ -1,55 +1,15 @@
-# Outputs for root Bedrock + Pinecone configuration
-
-# Secrets Manager Outputs
-output "pinecone_secret_arn" {
-  description = "ARN of the Pinecone API key secret"
-  value       = module.secrets.secret_arn
-}
-
-output "pinecone_secret_name" {
-  description = "Name of the Pinecone API key secret"
-  value       = module.secrets.secret_name
-}
+# Outputs for Bedrock Agents configuration
+# Updated 2025-01: Removed KB, Secrets, Guardrails outputs
 
 # IAM Outputs
-output "knowledge_base_role_arn" {
-  description = "ARN of the Knowledge Base service role"
-  value       = module.iam.knowledge_base_role_arn
-}
-
 output "agent_role_arn" {
   description = "ARN of the Agent service role"
   value       = module.iam.agent_role_arn
 }
 
-# Knowledge Base Outputs
-output "knowledge_base_id" {
-  description = "ID of the Bedrock Knowledge Base"
-  value       = module.knowledge_base.knowledge_base_id
-}
-
-output "knowledge_base_arn" {
-  description = "ARN of the Bedrock Knowledge Base"
-  value       = module.knowledge_base.knowledge_base_arn
-}
-
-output "knowledge_base_name" {
-  description = "Name of the Bedrock Knowledge Base"
-  value       = module.knowledge_base.knowledge_base_name
-}
-
-output "knowledge_base_created_at" {
-  description = "Time when the Bedrock Knowledge Base was created"
-  value       = module.knowledge_base.knowledge_base_created_at
-}
-
-output "data_source_id" {
-  description = "ID of the data source"
-  value       = module.knowledge_base.data_source_id
-}
-
-# Agent Outputs (deprecated - main advisor agent removed 2024-12-20)
-# These outputs now reference the supervisor agent as the primary agent
+# ================================================
+# Primary Agent Outputs (Supervisor)
+# ================================================
 output "agent_id" {
   description = "ID of the primary Bedrock Agent (supervisor)"
   value       = module.supervisor_agent.agent_id
@@ -83,32 +43,6 @@ output "agent_alias_arn" {
 output "agent_alias_name" {
   description = "Name of the primary agent alias (supervisor)"
   value       = module.supervisor_agent.agent_alias_name
-}
-
-# Guardrails Outputs
-output "guardrail_id" {
-  description = "ID of the Bedrock Guardrail"
-  value       = var.enable_guardrails ? module.guardrails[0].guardrail_id : null
-}
-
-output "guardrail_arn" {
-  description = "ARN of the Bedrock Guardrail"
-  value       = var.enable_guardrails ? module.guardrails[0].guardrail_arn : null
-}
-
-output "guardrail_name" {
-  description = "Name of the Bedrock Guardrail"
-  value       = var.enable_guardrails ? module.guardrails[0].guardrail_name : null
-}
-
-output "guardrail_version" {
-  description = "Version of the Bedrock Guardrail"
-  value       = var.enable_guardrails ? module.guardrails[0].guardrail_version : null
-}
-
-output "guardrail_status" {
-  description = "Status of the Bedrock Guardrail"
-  value       = var.enable_guardrails ? module.guardrails[0].guardrail_status : null
 }
 
 # ================================================
@@ -180,31 +114,38 @@ output "followup_agent_arn" {
   value       = module.followup_agent.agent_arn
 }
 
+# ================================================
 # Configuration Summary
+# ================================================
 output "configuration_summary" {
-  description = "Summary of the deployed configuration"
+  description = "Summary of the deployed Bedrock agents configuration"
   value = {
-    knowledge_base = {
-      id         = module.knowledge_base.knowledge_base_id
-      name       = module.knowledge_base.knowledge_base_name
-      created_at = module.knowledge_base.knowledge_base_created_at
-    }
-    agent = {
+    supervisor_agent = {
       id         = module.supervisor_agent.agent_id
       name       = module.supervisor_agent.agent_name
       version    = module.supervisor_agent.agent_version
       alias_id   = module.supervisor_agent.agent_alias_id
       alias_name = module.supervisor_agent.agent_alias_name
     }
-    guardrails = var.enable_guardrails ? {
-      id      = module.guardrails[0].guardrail_id
-      name    = module.guardrails[0].guardrail_name
-      status  = module.guardrails[0].guardrail_status
-      version = module.guardrails[0].guardrail_version
-    } : null
-    pinecone = {
-      secret_name = module.secrets.secret_name
-      connection  = var.pinecone_connection_string
+    expert_agents = {
+      debt     = module.debt_expert_agent.agent_id
+      cashflow = module.cashflow_expert_agent.agent_id
+      growth   = module.growth_expert_agent.agent_id
+    }
+    followup_agent = {
+      id       = module.followup_agent.agent_id
+      alias_id = module.followup_agent.agent_alias_id
     }
   }
 }
+
+# ================================================
+# REMOVED OUTPUTS (2025-01 Cleanup)
+# ================================================
+# The following outputs were removed as part of RAG chatbot deprecation:
+# - pinecone_secret_arn/name (Secrets module removed)
+# - knowledge_base_role_arn (KB module removed)
+# - knowledge_base_id/arn/name/created_at (KB module removed)
+# - data_source_id (KB module removed)
+# - guardrail_id/arn/name/version/status (Guardrails module removed)
+# ================================================
