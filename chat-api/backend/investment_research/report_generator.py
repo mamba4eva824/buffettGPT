@@ -130,9 +130,11 @@ class ReportGenerator:
         4.6: 'investment_report_prompt_v4_6.txt',  # Audit grade v4.6 (dashboard consolidation, 12 sections)
         4.7: 'investment_report_prompt_v4_7.txt',  # Audit grade v4.7 (extensive depth, investment fit, $100/mo projections)
         4.8: 'investment_report_prompt_v4_8.txt',  # Audit grade v4.8 (executive summary first, dynamic headers, simplified language)
+        4.9: 'investment_report_prompt_v4_9.txt',  # Audit grade v4.9 (consolidated dashboard - removed redundant sections 15/16)
+        5.0: 'investment_report_prompt_v5_0.txt',  # Audit grade v5.0 (visual momentum dashboards, progress bars, pattern alerts)
     }
 
-    def __init__(self, use_api: bool = False, prompt_version: float = 4.8):
+    def __init__(self, use_api: bool = False, prompt_version: float = 5.0):
         """
         Initialize the report generator.
 
@@ -185,7 +187,9 @@ class ReportGenerator:
             4.5: "Audit Grade v4.5 - table structure + vibe check + rating scale (320 lines)",
             4.6: "Audit Grade v4.6 - dashboard consolidation (12 sections)",
             4.7: "Audit Grade v4.7 - extensive depth, investment fit, $100/mo projections",
-            4.8: "Audit Grade v4.8 - executive summary first, dynamic headers, simplified language [RECOMMENDED]",
+            4.8: "Audit Grade v4.8 - executive summary first, dynamic headers, simplified language",
+            4.9: "Audit Grade v4.9 - consolidated dashboard (removed redundant sections 15/16)",
+            5.0: "Audit Grade v5.0 - visual momentum dashboards, progress bars, pattern alerts [RECOMMENDED]",
         }
         return descriptions.get(self.prompt_version, "Unknown")
 
@@ -445,8 +449,9 @@ class ReportGenerator:
         )
         executive_item['ttl'] = ttl
 
-        # Write executive item
-        self.reports_table_v2.put_item(Item=executive_item)
+        # Write executive item (convert floats to Decimal for DynamoDB)
+        executive_item_decimal = json.loads(json.dumps(executive_item), parse_float=Decimal)
+        self.reports_table_v2.put_item(Item=executive_item_decimal)
         exec_sections_count = len(executive_item.get('executive_sections', []))
         print(f"    Saved executive item (00_executive) with {exec_sections_count} sections")
 
@@ -457,11 +462,12 @@ class ReportGenerator:
             generated_at=generated_at
         )
 
-        # Batch write detailed section items
+        # Batch write detailed section items (convert floats to Decimal for DynamoDB)
         with self.reports_table_v2.batch_writer() as batch:
             for item in detailed_items:
                 item['ttl'] = ttl
-                batch.put_item(Item=item)
+                item_decimal = json.loads(json.dumps(item), parse_float=Decimal)
+                batch.put_item(Item=item_decimal)
 
         print(f"    Saved {len(detailed_items)} detailed section items")
         total_items = 1 + len(detailed_items)
@@ -891,6 +897,44 @@ class ReportGenerator:
             current_ratio = round(current_assets / current_liab, 2) if current_liab else 0
             output.append(f"| {year} | {fmt.money(debt)} | {fmt.money(liquidity)} | {fmt.money(net_debt)} | {fmt.money(equity)} | {de_ratio}x | {da_ratio}x | {current_ratio}x |")
         output.append("*Liquidity = Cash + Short-term Investments")
+
+        # ============================================================
+        # MOMENTUM INDICATORS (Temporal Derivatives)
+        # ============================================================
+        output.append("\n## MOMENTUM INDICATORS")
+        output.append("Use these to determine if trends are ACCELERATING or DECELERATING\n")
+
+        debt_current = features.get('debt', {}).get('current', {})
+        cashflow_current = features.get('cashflow', {}).get('current', {})
+        growth_current = features.get('growth', {}).get('current', {})
+
+        # Profitability Momentum
+        output.append("### Profitability Momentum Signals")
+        output.append(f"- `operating_margin_velocity_qoq` = {growth_current.get('operating_margin_velocity_qoq', 0):.2f}")
+        output.append(f"- `operating_margin_acceleration` = {growth_current.get('operating_margin_acceleration', 0):.2f}")
+        output.append(f"- `is_margin_expanding` = {1 if growth_current.get('is_margin_expanding') else 0}")
+        output.append(f"- `margin_momentum_positive` = {1 if growth_current.get('margin_momentum_positive') else 0}")
+
+        # Cash Flow Momentum
+        output.append("\n### Cash Flow Momentum Signals")
+        output.append(f"- `fcf_margin_velocity_qoq` = {cashflow_current.get('fcf_margin_velocity_qoq', 0):.2f}")
+        output.append(f"- `fcf_margin_acceleration` = {cashflow_current.get('fcf_margin_acceleration', 0):.2f}")
+        output.append(f"- `fcf_velocity_qoq` = {cashflow_current.get('fcf_velocity_qoq', 0):.2f}")
+        output.append(f"- `ocf_velocity_qoq` = {cashflow_current.get('ocf_velocity_qoq', 0):.2f}")
+
+        # Debt Momentum
+        output.append("\n### Debt Momentum Signals")
+        output.append(f"- `debt_to_equity_velocity_qoq` = {debt_current.get('debt_to_equity_velocity_qoq', 0):.2f}")
+        output.append(f"- `debt_to_equity_acceleration_qoq` = {debt_current.get('debt_to_equity_acceleration_qoq', 0):.2f}")
+        output.append(f"- `is_deleveraging` = {1 if debt_current.get('is_deleveraging') else 0}")
+        output.append(f"- `net_debt_velocity_qoq` = {debt_current.get('net_debt_velocity_qoq', 0):.2f}")
+
+        # Growth Momentum
+        output.append("\n### Growth Momentum Signals")
+        output.append(f"- `revenue_growth_velocity` = {growth_current.get('revenue_growth_velocity', 0):.2f}")
+        output.append(f"- `revenue_growth_acceleration` = {growth_current.get('revenue_growth_acceleration', 0):.2f}")
+        output.append(f"- `is_growth_accelerating` = {1 if growth_current.get('is_growth_accelerating') else 0}")
+        output.append(f"- `growth_deceleration_warning` = {1 if growth_current.get('growth_deceleration_warning') else 0}")
 
         # === QUARTERLY MOMENTUM ANALYSIS ===
         output.append("\n## QUARTERLY MOMENTUM ANALYSIS (Last 8 Quarters)")
