@@ -15,8 +15,10 @@ This module now includes:
 The full v3.6.5 feature set (163 features) is used for model inference.
 """
 
-from typing import Optional, List, Dict, Tuple
+import time
+from typing import Optional, List, Dict, Tuple, Any
 from datetime import datetime
+from decimal import Decimal
 from .logger import get_logger
 
 logger = get_logger(__name__)
@@ -62,7 +64,6 @@ def decimal_to_float(obj):
     Recursively convert Decimal to float in nested structures.
     DynamoDB returns numbers as Decimal objects which need conversion.
     """
-    from decimal import Decimal
     if isinstance(obj, Decimal):
         return float(obj)
     elif isinstance(obj, dict):
@@ -510,7 +511,37 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         # METADATA
         # ===============================
         'quarters': [],
-        'period_dates': []          # Actual quarter end dates
+        'period_dates': [],         # Actual quarter end dates
+
+        # ===============================
+        # EARNINGS QUALITY / AUDIT METRICS (NEW)
+        # ===============================
+        # Debt maturity breakdown
+        'short_term_debt': [],
+        'long_term_debt': [],
+        'short_term_debt_pct': [],
+
+        # Stock-based compensation (actual SBC from dedicated FMP field)
+        'sbc_actual': [],               # Actual SBC from stockBasedCompensation field
+        'sbc_to_revenue_pct': [],       # SBC as % of revenue
+        'd_and_a': [],                  # Depreciation & Amortization
+
+        # Other non-cash items (impairments, writedowns for earnings quality)
+        'other_non_cash_items': [],     # otherNonCashItems from cash flow (impairments, writedowns)
+
+        # Legacy fields for backwards compatibility
+        'non_cash_adjustments': [],     # Now points to other_non_cash_items
+        'sbc_estimate': [],             # Now points to actual SBC
+
+        # Dilution analysis
+        'basic_shares': [],
+        'diluted_shares': [],
+        'dilution_pct': [],             # (diluted - basic) / basic * 100
+
+        # GAAP vs Adjusted earnings bridge
+        'gaap_net_income': [],
+        'adjusted_earnings': [],        # GAAP + SBC + D&A (simplified)
+        'gaap_adjusted_gap_pct': [],    # How much adjusted exceeds GAAP
     }
 
     for i in range(n):
@@ -525,7 +556,9 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         short_term_investments = extract_value(balance_sheet, 'shortTermInvestments', i, 0)
         current_assets = extract_value(balance_sheet, 'totalCurrentAssets', i, 0)
         current_liabilities = extract_value(balance_sheet, 'totalCurrentLiabilities', i, 0)
-        total_liabilities = extract_value(balance_sheet, 'totalLiabilities', i, 0)
+
+        # NEW: Short-term debt for maturity analysis
+        short_term_debt_val = extract_value(balance_sheet, 'shortTermDebt', i, 0)
 
         # Income statement metrics
         revenue = extract_value(income_statement, 'revenue', i, 0)
@@ -537,12 +570,22 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         eps = extract_value(income_statement, 'eps', i, 0)
         income_tax = extract_value(income_statement, 'incomeTaxExpense', i, 0)
 
+        # NEW: D&A and shares for earnings quality
+        d_and_a_val = extract_value(income_statement, 'depreciationAndAmortization', i, 0)
+        basic_shares_val = extract_value(income_statement, 'weightedAverageShsOut', i, 0)
+        diluted_shares_val = extract_value(income_statement, 'weightedAverageShsOutDil', i, 0)
+
         # Cash flow metrics
         fcf = extract_value(cashflow, 'freeCashFlow', i, 0)
         ocf = extract_value(cashflow, 'operatingCashFlow', i, 0)
         capex = abs(extract_value(cashflow, 'capitalExpenditure', i, 0))
         dividends = abs(extract_value(cashflow, 'dividendsPaid', i, 0))
         buybacks = abs(extract_value(cashflow, 'commonStockRepurchased', i, 0))
+
+        # Stock-based compensation (actual SBC for dilution analysis)
+        sbc_actual = extract_value(cashflow, 'stockBasedCompensation', i, 0)
+        # Other non-cash items (impairments, writedowns for earnings quality)
+        other_non_cash_items = extract_value(cashflow, 'otherNonCashItems', i, 0)
 
         # Period date
         period_date = extract_value(balance_sheet, 'date', i, None)
@@ -819,6 +862,52 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
             trends['is_deleveraging'].append(None)
 
         # ===============================
+        # EARNINGS QUALITY / AUDIT METRICS (NEW)
+        # ===============================
+        # Debt maturity breakdown
+        trends['short_term_debt'].append(short_term_debt_val)
+        long_term_debt_val = total_debt - short_term_debt_val if total_debt > 0 else 0
+        trends['long_term_debt'].append(long_term_debt_val)
+        trends['short_term_debt_pct'].append(
+            round(safe_divide(short_term_debt_val, total_debt) * 100, 1) if total_debt > 0 else 0
+        )
+
+        # === DILUTION METRICS (use actual SBC) ===
+        sbc_val = abs(sbc_actual) if sbc_actual else 0
+        trends['sbc_actual'].append(sbc_val)  # Actual SBC from dedicated field
+        trends['sbc_to_revenue_pct'].append(
+            round(safe_divide(sbc_val, revenue) * 100, 1) if revenue > 0 else 0
+        )
+
+        # === EARNINGS QUALITY METRICS (use other non-cash items) ===
+        other_non_cash_val = other_non_cash_items if other_non_cash_items else 0
+        trends['other_non_cash_items'].append(other_non_cash_val)  # Impairments, writedowns
+        trends['d_and_a'].append(d_and_a_val)
+
+        # Keep legacy fields for backwards compatibility
+        trends['sbc_estimate'].append(sbc_val)  # Now points to actual SBC
+        trends['non_cash_adjustments'].append(other_non_cash_val)  # Now points to other items
+
+        # Dilution analysis
+        trends['basic_shares'].append(basic_shares_val)
+        trends['diluted_shares'].append(diluted_shares_val)
+        dilution_pct_val = round(
+            safe_divide(diluted_shares_val - basic_shares_val, basic_shares_val) * 100, 2
+        ) if basic_shares_val > 0 else 0
+        trends['dilution_pct'].append(dilution_pct_val)
+
+        # GAAP vs Adjusted earnings bridge
+        # Include: SBC + D&A + other non-cash items (impairments, writedowns)
+        trends['gaap_net_income'].append(net_income)
+        all_non_cash = sbc_val + d_and_a_val + abs(other_non_cash_val)
+        adjusted_earnings_val = net_income + all_non_cash
+        trends['adjusted_earnings'].append(adjusted_earnings_val)
+        gaap_adjusted_gap = round(
+            safe_divide(all_non_cash, abs(net_income)) * 100, 1
+        ) if net_income != 0 else 0
+        trends['gaap_adjusted_gap_pct'].append(gaap_adjusted_gap)
+
+        # ===============================
         # METADATA
         # ===============================
         trends['quarters'].append(f"Q{i}")
@@ -917,9 +1006,6 @@ def _detect_trend_phases(values: List[float], metric_name: str,
     if len(values) < min_quarters:
         return phases
 
-    # Convert Decimal to float for numeric operations
-    values = [float(v) if v is not None else 0.0 for v in values]
-
     # Detect consecutive trends (note: values[0] is most recent)
     i = 0
     while i < len(values) - 1:
@@ -986,8 +1072,8 @@ def _detect_growth_phases(growth_values: List[float]) -> List[Dict]:
     if len(growth_values) < 4:
         return phases
 
-    # Convert Decimal to float and filter out None values
-    valid_values = [(i, float(v)) for i, v in enumerate(growth_values) if v is not None]
+    # Filter out None values
+    valid_values = [(i, v) for i, v in enumerate(growth_values) if v is not None]
     if len(valid_values) < 4:
         return phases
 
@@ -1094,9 +1180,6 @@ def _find_metric_inflections(values: List[float], metric_name: str,
     if len(values) < lookback * 2:
         return inflections
 
-    # Convert Decimal to float for numeric operations
-    values = [float(v) if v is not None else None for v in values]
-
     # Filter out None values for analysis
     valid_indices = [i for i, v in enumerate(values) if v is not None]
     if len(valid_indices) < lookback * 2:
@@ -1183,17 +1266,14 @@ def find_peaks_troughs(quarterly_trends: dict) -> Dict:
         if not values:
             continue
 
-        # Convert Decimal to float and filter out None values
-        valid_data = [(i, float(v)) for i, v in enumerate(values) if v is not None]
+        # Filter out None values
+        valid_data = [(i, v) for i, v in enumerate(values) if v is not None]
         if not valid_data:
             continue
 
         # Find max and min
         max_entry = max(valid_data, key=lambda x: x[1])
         min_entry = min(valid_data, key=lambda x: x[1])
-
-        # Convert current value to float
-        current_val = float(values[0]) if values and values[0] is not None else None
 
         peaks_troughs[metric] = {
             'peak': {
@@ -1204,7 +1284,7 @@ def find_peaks_troughs(quarterly_trends: dict) -> Dict:
                 'value': min_entry[1],
                 'quarter': f"Q{min_entry[0]}"
             },
-            'current': current_val,
+            'current': values[0] if values else None,
             'range': round(max_entry[1] - min_entry[1], 2)
         }
 
@@ -1231,9 +1311,9 @@ def compute_trend_insights(quarterly_trends: dict) -> dict:
     }
 
 
-def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> dict:
+def compute_ml_features(quarterly_trends: dict) -> dict:
     """
-    Compute the full ML feature set from quarterly trends and raw financial data.
+    Compute the full ML feature set from quarterly trends.
 
     This computes the temporal derivatives that the v3.6.5 ML models expect:
     - *_yoy: Year-over-year change (index 0 vs index 4)
@@ -1243,8 +1323,6 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
 
     Args:
         quarterly_trends: Output from extract_quarterly_trends()
-        raw_financials: Optional dict with 'balance_sheet', 'income_statement', 'cash_flow'
-                       Used to extract absolute values that aren't in trends
 
     Returns:
         dict with 'debt', 'cashflow', 'growth' keys containing ML-ready features
@@ -1287,115 +1365,7 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
         vel_past = compute_velocity(arr, idx + 1)
         return round(vel_current - vel_past, 2)
 
-    def compute_cagr(arr, periods):
-        """Compute CAGR over N periods (quarters)."""
-        start = get_val(arr, periods)
-        end = get_val(arr, 0)
-        if start and start > 0 and end and end > 0:
-            # CAGR = (end/start)^(4/periods) - 1 (annualized from quarters)
-            return round(((end / start) ** (4.0 / periods) - 1) * 100, 2)
-        return 0.0
-
-    def compute_momentum(arr, periods):
-        """Compute momentum: sum of directional changes over N periods."""
-        if not arr or len(arr) < periods + 1:
-            return 0.0
-        momentum = sum(1 if get_val(arr, i) > get_val(arr, i + 1) else -1
-                       for i in range(periods))
-        return float(momentum)
-
-    # ===============================
-    # EXTRACT RAW FINANCIAL DATA
-    # ===============================
-    # Get absolute values from raw financials (not from trends)
-    balance_sheet = raw_financials.get('balance_sheet', []) if raw_financials else []
-    income_statement = raw_financials.get('income_statement', []) if raw_financials else []
-    cashflow_stmt = raw_financials.get('cash_flow', []) if raw_financials else []
-
-    # Balance sheet values (most recent quarter)
-    total_equity = extract_value(balance_sheet, 'totalStockholdersEquity', 0, 0)
-    total_assets = extract_value(balance_sheet, 'totalAssets', 0, 0)
-    current_assets = extract_value(balance_sheet, 'totalCurrentAssets', 0, 0)
-    current_liabilities = extract_value(balance_sheet, 'totalCurrentLiabilities', 0, 0)
-    inventory = extract_value(balance_sheet, 'inventory', 0, 0)
-    total_debt_raw = extract_value(balance_sheet, 'totalDebt', 0, 0)
-
-    # Income statement values (most recent quarter)
-    net_income = extract_value(income_statement, 'netIncome', 0, 0)
-    interest_expense = extract_value(income_statement, 'interestExpense', 0, 0)
-    revenue_raw = extract_value(income_statement, 'revenue', 0, 0)
-    gross_profit = extract_value(income_statement, 'grossProfit', 0, 0)
-    cost_of_revenue = extract_value(income_statement, 'costOfRevenue', 0, 0)
-
-    # Historical gross profit for YoY
-    gross_profit_1y = extract_value(income_statement, 'grossProfit', 4, 0)
-
-    # Extract fiscal year/quarter from period date
-    period_date = extract_value(balance_sheet, 'date', 0, None)
-    if period_date:
-        try:
-            date_obj = datetime.strptime(str(period_date)[:10], "%Y-%m-%d")
-            fiscal_year = date_obj.year
-            fiscal_quarter = (date_obj.month - 1) // 3 + 1
-        except (ValueError, TypeError):
-            fiscal_year = 2025
-            fiscal_quarter = 4
-    else:
-        fiscal_year = 2025
-        fiscal_quarter = 4
-
-    # Cash flow statement values
-    dividends_paid = abs(extract_value(cashflow_stmt, 'dividendsPaid', 0, 0))
-    share_buybacks = abs(extract_value(cashflow_stmt, 'commonStockRepurchased', 0, 0))
-
-    # Historical values for YoY calculations (4 quarters ago)
-    total_assets_1y = extract_value(balance_sheet, 'totalAssets', 4, 0)
-    total_equity_1y = extract_value(balance_sheet, 'totalStockholdersEquity', 4, 0)
-    net_income_1y = extract_value(income_statement, 'netIncome', 4, 0)
-    revenue_1y = extract_value(income_statement, 'revenue', 4, 0)
-
-    # 2-year ago values (8 quarters ago)
-    total_assets_2y = extract_value(balance_sheet, 'totalAssets', 8, 0)
-    net_income_2y = extract_value(income_statement, 'netIncome', 8, 0)
-
-    # ===============================
-    # COMPUTE DERIVED METRICS
-    # ===============================
-    # Annualize quarterly figures for ratios (*4 for annual rate)
-    roa = safe_divide(net_income * 4, total_assets) * 100 if total_assets else 0.0
-    roa_1y = safe_divide(net_income_1y * 4, total_assets_1y) * 100 if total_assets_1y else 0.0
-    roa_2y = safe_divide(net_income_2y * 4, total_assets_2y) * 100 if total_assets_2y else 0.0
-
-    # ROE (annualized)
-    roe = safe_divide(net_income * 4, total_equity) * 100 if total_equity else 0.0
-    roe_1y = safe_divide(net_income_1y * 4, total_equity_1y) * 100 if total_equity_1y else 0.0
-
-    # ROIC = NOPAT / Invested Capital (approximation)
-    invested_capital = total_equity + total_debt_raw
-    roic = safe_divide((net_income + interest_expense) * 4, invested_capital) * 100 if invested_capital else 0.0
-
-    # Asset turnover (annualized)
-    asset_turnover = safe_divide(revenue_raw * 4, total_assets) if total_assets else 0.0
-    asset_turnover_1y = safe_divide(revenue_1y * 4, total_assets_1y) if total_assets_1y else 0.0
-
-    # Equity multiplier
-    equity_multiplier = safe_divide(total_assets, total_equity) if total_equity else 0.0
-
-    # Quick ratio (current assets - inventory) / current liabilities
-    quick_ratio = safe_divide(current_assets - inventory, current_liabilities)
-
-    # Working capital metrics
-    working_capital = current_assets - current_liabilities
-    working_capital_to_revenue = safe_divide(working_capital, revenue_raw * 4) * 100 if revenue_raw else 0.0
-
-    # Shareholder returns
-    total_capital_return = dividends_paid + share_buybacks
-
-    # OCF to NI ratio (earnings quality)
-    ocf_raw = extract_value(cashflow_stmt, 'operatingCashFlow', 0, 0)
-    ocf_to_ni_ratio = safe_divide(ocf_raw, net_income) if net_income else 0.0
-
-    # Extract arrays for trend calculations
+    # Extract arrays
     dte = quarterly_trends.get('debt_to_equity', [])
     nde = quarterly_trends.get('net_debt_to_ebitda', [])
     ic = quarterly_trends.get('interest_coverage', [])
@@ -1427,17 +1397,17 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
     # DEBT FEATURES (58 total in v3.6.5)
     # ===============================
     debt_features = {
-        # Base metrics - NOW FROM RAW DATA
-        'total_debt': get_val(td, 0) or total_debt_raw,
-        'total_equity': total_equity,
-        'total_assets': total_assets,
+        # Base metrics
+        'total_debt': get_val(td, 0),
+        'total_equity': 0,  # Not directly in trends, derived from D/E
+        'total_assets': 0,  # Not directly in trends
         'cash': get_val(cash, 0),
-        'interest_expense': interest_expense,
+        'interest_expense': 0,  # Derived from interest coverage
         'operating_income': get_val(oi, 0),
         'ebitda': get_val(ebitda, 0),
-        'current_assets': current_assets,
-        'current_liabilities': current_liabilities,
-        'inventory': inventory,
+        'current_assets': 0,
+        'current_liabilities': 0,
+        'inventory': 0,
 
         # Ratios
         'debt_to_equity': get_val(dte, 0),
@@ -1446,7 +1416,7 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
         'net_debt': get_val(nd, 0),
         'net_debt_to_ebitda': get_val(nde, 0),
         'current_ratio': get_val(cr, 0),
-        'quick_ratio': quick_ratio,  # FIXED: actual calculation
+        'quick_ratio': get_val(cr, 0) * 0.9,  # Approximation
 
         # Temporal features - 1yr trends
         'debt_to_equity_trend_1yr': compute_trend(dte, 4),
@@ -1466,7 +1436,7 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
         # Velocity (QoQ rate of change)
         'debt_to_equity_velocity_qoq': compute_velocity(dte),
         'net_debt_velocity_qoq': compute_velocity(nd),
-        'interest_expense_velocity_qoq': compute_yoy([interest_expense]) if interest_expense else 0.0,
+        'interest_expense_velocity_qoq': 0.0,
 
         # Acceleration
         'debt_to_equity_acceleration_qoq': compute_acceleration(dte),
@@ -1474,63 +1444,42 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
         # Flags
         'is_deleveraging': 1 if get_val(dte, 0) < get_val(dte, 4) else 0,
 
-        # ROA/ROIC - NOW COMPUTED
-        'roa': round(roa, 2),
-        'roic': round(roic, 2),
-        'roa_yoy': round(roa - roa_1y, 2) if roa_1y else 0.0,
-        'roa_trend_2yr': round(roa - roa_2y, 2) if roa_2y else 0.0,
-        'roic_yoy': 0.0,  # Would need historical ROIC
+        # ROA/ROIC (derived)
+        'roa': 0.0,  # Would need net_income / total_assets
+        'roic': 0.0,  # Would need NOPAT / invested capital
+        'roa_yoy': 0.0,
+        'roa_trend_2yr': 0.0,
+        'roic_yoy': 0.0,
 
-        # DuPont - NOW COMPUTED
-        'asset_turnover': round(asset_turnover, 2),
-        'asset_turnover_yoy': round(asset_turnover - asset_turnover_1y, 2) if asset_turnover_1y else 0.0,
-        'equity_multiplier': round(equity_multiplier, 2),
+        # DuPont
+        'asset_turnover': 0.0,
+        'asset_turnover_yoy': 0.0,
+        'equity_multiplier': 0.0,
 
         # Debt coverage
         'fcf_to_debt': safe_divide(get_val(fcf, 0), get_val(td, 0)),
-        'ebitda_to_interest': get_val(ic, 0),
-
-        # ADDED: Missing features required by debt model
-        'debt_to_equity_cagr_3yr': compute_cagr(dte, 12),
-        'leverage_momentum_3q': compute_momentum(dte, 3),
-        'is_leverage_increasing': 1 if get_val(dte, 0) > get_val(dte, 4) else 0,
-        'is_liquidity_deteriorating': 1 if get_val(cr, 0) < get_val(cr, 4) else 0,
-        'debt_growth_faster_than_equity': 1 if compute_yoy(td) > compute_yoy([total_equity, total_equity_1y] if total_equity_1y else [total_equity]) else 0,
-        'cost_of_revenue': cost_of_revenue,
-        'year_x': fiscal_year,
-        'year_y': fiscal_quarter,
-
-        # ADDED: Shared features for model compatibility
-        'revenue': get_val(rev, 0) or revenue_raw,
-        'net_income': net_income,
-        'gross_profit': gross_profit,
-        'eps': get_val(eps, 0),
-        'gross_margin': get_val(gm, 0),
-        'net_margin': get_val(nm, 0),
-        'operating_cash_flow': get_val(ocf, 0) or ocf_raw,
-        'free_cash_flow': get_val(fcf, 0),
-        'capital_expenditures': get_val(capex, 0),
+        'ebitda_to_interest': get_val(ic, 0),  # Approximation
     }
 
     # ===============================
     # CASHFLOW FEATURES (42 total in v3.6.5)
     # ===============================
     cashflow_features = {
-        # Base metrics - NOW FROM RAW DATA
-        'operating_cash_flow': get_val(ocf, 0) or ocf_raw,
+        # Base metrics
+        'operating_cash_flow': get_val(ocf, 0),
         'capital_expenditures': get_val(capex, 0),
         'free_cash_flow': get_val(fcf, 0),
-        'net_income': net_income,  # FIXED: from raw data
-        'revenue': get_val(rev, 0) or revenue_raw,
-        'working_capital_change': working_capital,  # FIXED: computed
-        'dividend_payout': dividends_paid,  # FIXED: from raw data
-        'share_buybacks': share_buybacks,  # FIXED: from raw data
+        'net_income': 0,  # Not directly available
+        'revenue': get_val(rev, 0),
+        'working_capital_change': 0,
+        'dividend_payout': 0,
+        'share_buybacks': 0,
 
         # Ratios
         'fcf_to_net_income': get_val(fcf_ni, 0),
         'fcf_margin': get_val(fcf_m, 0),
-        'total_capital_return': total_capital_return,  # FIXED: computed
-        'cash_conversion_cycle': 0,  # Would need receivables/payables data
+        'total_capital_return': 0,
+        'cash_conversion_cycle': 0,
 
         # Temporal features
         'fcf_margin_trend_1yr': compute_trend(fcf_m, 4),
@@ -1549,76 +1498,52 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
         'capex_intensity': get_val(ci, 0),
         'capex_intensity_trend': compute_trend(ci, 4),
 
-        # Working capital - NOW COMPUTED
-        'dio': 0.0,  # Would need COGS and inventory data
-        'working_capital_to_revenue': round(working_capital_to_revenue, 2),
+        # Working capital
+        'dio': 0.0,
+        'working_capital_to_revenue': 0.0,
 
-        # Include some debt features for model compatibility - NOW FROM RAW DATA
-        'total_debt': get_val(td, 0) or total_debt_raw,
-        'total_equity': total_equity,
-        'total_assets': total_assets,
+        # Include some debt features for model compatibility
+        'total_debt': get_val(td, 0),
+        'total_equity': 0,
+        'total_assets': 0,
         'cash': get_val(cash, 0),
-        'interest_expense': interest_expense,
+        'interest_expense': 0,
         'operating_income': get_val(oi, 0),
         'ebitda': get_val(ebitda, 0),
-        'current_assets': current_assets,
-        'current_liabilities': current_liabilities,
-        'inventory': inventory,
-        'gross_profit': gross_profit,  # FIXED: from raw data
+        'current_assets': 0,
+        'current_liabilities': 0,
+        'inventory': 0,
+        'gross_profit': 0,
         'eps': get_val(eps, 0),
-
-        # ADDED: Missing features required by cashflow model
-        'gross_margin': get_val(gm, 0),
-        'net_margin': get_val(nm, 0),
-        'cost_of_revenue': cost_of_revenue,
-        'year_x': fiscal_year,
-        'year_y': fiscal_quarter,
     }
 
     # ===============================
     # GROWTH FEATURES (63 total in v3.6.5)
     # ===============================
-    # Calculate 2-year CAGR
-    revenue_2y = extract_value(income_statement, 'revenue', 8, 0)
-    revenue_cagr_2yr = 0.0
-    if revenue_2y and revenue_2y > 0 and revenue_raw and revenue_raw > 0:
-        # CAGR = (end/start)^(1/years) - 1
-        revenue_cagr_2yr = round(((revenue_raw / revenue_2y) ** 0.5 - 1) * 100, 2)
-
-    # Reinvestment rate = (CapEx - Depreciation) / Net Income
-    capex_raw = abs(extract_value(cashflow_stmt, 'capitalExpenditure', 0, 0))
-    reinvestment_rate = safe_divide(capex_raw, net_income) * 100 if net_income > 0 else 0.0
-
-    # Earnings stability (simplified: std deviation of net margin over 4 quarters)
-    # Using coefficient of variation as proxy
-    nm_values = [get_val(nm, i) for i in range(min(4, len(nm)))] if nm else []
-    nm_mean = sum(nm_values) / len(nm_values) if nm_values else 0
-    earnings_stability = 1.0 if nm_mean and all(abs(v - nm_mean) < nm_mean * 0.3 for v in nm_values) else 0.0
-
     growth_features = {
         # YoY growth
         'revenue_growth_yoy': get_val(rev_yoy, 0, 0.0),
         'revenue_growth_qoq': compute_velocity(rev),
-        'revenue_cagr_2yr': revenue_cagr_2yr,  # FIXED: computed
-        'revenue_growth_vs_industry': 0.0,  # Would need industry data
+        'revenue_cagr_2yr': 0.0,  # Would need 8-quarter calculation
+        'revenue_growth_vs_industry': 0.0,
         'revenue_growth_trend': compute_trend(rev_yoy, 4) if rev_yoy else 0.0,
 
         # Margin changes
         'operating_margin_change_1yr': compute_trend(om, 4),
         'operating_margin_momentum': compute_velocity(om),
 
-        # ROE - NOW COMPUTED
-        'roe_change_1yr': round(roe - roe_1y, 2) if roe_1y else 0.0,
-        'roe_trend_2yr': 0.0,  # Would need 2y ago ROE
+        # ROE
+        'roe_change_1yr': 0.0,
+        'roe_trend_2yr': 0.0,
 
-        # Cash quality - NOW COMPUTED
-        'ocf_to_ni_ratio': round(ocf_to_ni_ratio, 2),
+        # Cash quality
+        'ocf_to_ni_ratio': 0.0,
         'fcf_to_ni_ratio': get_val(fcf_ni, 0),
-        'quality_of_earnings': round(ocf_to_ni_ratio, 2),  # Same as ocf_to_ni
+        'quality_of_earnings': 0.0,
 
-        # Investment - NOW COMPUTED
-        'reinvestment_rate': round(reinvestment_rate, 2),
-        'growth_capex_pct': round(safe_divide(capex_raw, revenue_raw) * 100, 2) if revenue_raw else 0.0,
+        # Investment
+        'reinvestment_rate': 0.0,
+        'growth_capex_pct': 0.0,
 
         # Velocity
         'revenue_growth_velocity': compute_velocity(rev_yoy) if rev_yoy else 0.0,
@@ -1640,8 +1565,8 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
         'revenue_growth_trend_4q': compute_trend(rev_yoy, 4) if rev_yoy else 0.0,
         'is_growth_accelerating': 1 if compute_velocity(rev_yoy) > 0 else 0 if rev_yoy else 0,
 
-        # Base metrics - NOW FROM RAW DATA
-        'gross_profit': gross_profit,
+        # Base metrics
+        'gross_profit': 0,
         'net_income_growth_yoy': compute_yoy(nm) if nm else 0.0,
         'eps_growth_yoy': get_val(eps_yoy, 0, 0.0),
         'is_profitability_improving': 1 if get_val(nm, 0) > get_val(nm, 4) else 0,
@@ -1656,37 +1581,14 @@ def compute_ml_features(quarterly_trends: dict, raw_financials: dict = None) -> 
         'operating_margin_trend_2yr': compute_trend(om, 8),
         'net_margin_trend_2yr': compute_trend(nm, 8),
 
-        # Other - NOW COMPUTED WHERE POSSIBLE
-        'roe_decomposed': round(roe, 2),  # Just ROE for now
-        'earnings_stability': earnings_stability,
-        'operating_leverage': 0.0,  # Would need fixed/variable cost breakdown
-        'revenue': get_val(rev, 0) or revenue_raw,
+        # Other
+        'roe_decomposed': 0.0,
+        'earnings_stability': 0.0,
+        'operating_leverage': 0.0,
+        'revenue': get_val(rev, 0),
         'eps': get_val(eps, 0),
         'operating_income': get_val(oi, 0),
         'ebitda': get_val(ebitda, 0),
-
-        # ADDED: Missing features required by growth model
-        'eps_to_revenue': safe_divide(get_val(eps, 0), revenue_raw) * 1e6 if revenue_raw else 0.0,
-        'cost_efficiency': safe_divide(revenue_raw - cost_of_revenue, revenue_raw) * 100 if revenue_raw else 0.0,
-        'net_margin_trend_1yr': compute_trend(nm, 4),
-        'gross_margin_change_1yr': compute_trend(gm, 4),
-        'gross_profit_growth_yoy': round(safe_divide(gross_profit - gross_profit_1y, gross_profit_1y) * 100, 2) if gross_profit_1y else 0.0,
-        'cost_of_revenue': cost_of_revenue,
-        'year_x': fiscal_year,
-        'year_y': fiscal_quarter,
-
-        # ADDED: Additional shared features for model compatibility
-        'total_debt': get_val(td, 0) or total_debt_raw,
-        'total_equity': total_equity,
-        'total_assets': total_assets,
-        'cash': get_val(cash, 0),
-        'interest_expense': interest_expense,
-        'current_assets': current_assets,
-        'current_liabilities': current_liabilities,
-        'inventory': inventory,
-        'operating_cash_flow': get_val(ocf, 0) or ocf_raw,
-        'free_cash_flow': get_val(fcf, 0),
-        'capital_expenditures': get_val(capex, 0),
     }
 
     return {
@@ -1719,9 +1621,8 @@ def extract_all_features(raw_financials: dict) -> dict:
     # First extract quarterly trends (20 quarters of raw data)
     quarterly_trends = extract_quarterly_trends(raw_financials)
 
-    # Compute ML features from quarterly trends AND raw financials
-    # Passing raw_financials allows extraction of absolute values (total_equity, total_assets, etc.)
-    ml_features = compute_ml_features(quarterly_trends, raw_financials)
+    # Compute ML features from quarterly trends
+    ml_features = compute_ml_features(quarterly_trends)
 
     # Get base metrics for backward compatibility
     base_metrics = {
@@ -1741,24 +1642,63 @@ def extract_all_features(raw_financials: dict) -> dict:
             merged = {**base_current, **ml_current}
             base_metrics[agent_type]['current'] = merged
 
+    # [FEATURE_DEBUG] Log extracted features for each agent
+    logger.info(f"[FEATURE_DEBUG] === FEATURES EXTRACTED ===")
+    for agent_type in ['debt', 'cashflow', 'growth']:
+        current = base_metrics[agent_type].get('current', {})
+        logger.info(f"[FEATURE_DEBUG] {agent_type.upper()} metrics count: {len(current)}")
+        logger.info(f"[FEATURE_DEBUG] {agent_type.upper()} metric names: {list(current.keys())[:10]}...")
+
+    # [FEATURE_DEBUG] Log sample values for key metrics
+    debt_current = base_metrics['debt'].get('current', {})
+    logger.info(f"[FEATURE_DEBUG] Debt sample: debt_to_equity={debt_current.get('debt_to_equity')}, "
+                f"interest_coverage={debt_current.get('interest_coverage')}, "
+                f"current_ratio={debt_current.get('current_ratio')}")
+
+    cashflow_current = base_metrics['cashflow'].get('current', {})
+    logger.info(f"[FEATURE_DEBUG] Cashflow sample: free_cash_flow={cashflow_current.get('free_cash_flow')}, "
+                f"fcf_margin={cashflow_current.get('fcf_margin')}, "
+                f"operating_cash_flow={cashflow_current.get('operating_cash_flow')}")
+
+    growth_current = base_metrics['growth'].get('current', {})
+    logger.info(f"[FEATURE_DEBUG] Growth sample: roe={growth_current.get('roe')}, "
+                f"revenue_growth_yoy={growth_current.get('revenue_growth_yoy')}, "
+                f"net_margin={growth_current.get('net_margin')}")
+
     return base_metrics
 
 
-def format_currency(value, billions=True) -> str:
-    """Format a number as currency string (e.g., '$32.4B')."""
+def format_currency(value, billions=True, currency_code: str = 'USD', usd_rate: float = 1.0) -> str:
+    """
+    Format a number as currency string with optional USD equivalent.
+
+    For non-USD currencies, shows both native and USD equivalent:
+    - "DKK 75.0B (~$10.7B)"
+
+    Args:
+        value: The numeric value to format
+        billions: If True, uses auto-scaling (B/M/K)
+        currency_code: ISO currency code (e.g., 'USD', 'DKK', 'EUR')
+        usd_rate: Exchange rate to USD (1 native = X USD)
+
+    Returns:
+        Formatted currency string
+    """
     if value is None:
         return 'N/A'
 
-    if billions and abs(value) >= 1e9:
-        return f"${value / 1e9:.1f}B"
-    elif abs(value) >= 1e6:
-        return f"${value / 1e6:.1f}M"
+    from .currency import CurrencyFormatter
+    fmt = CurrencyFormatter(currency_code, usd_rate)
+
+    if billions:
+        return fmt.money(value)
     else:
-        return f"${value:,.0f}"
+        return fmt.full(value)
 
 
 def prepare_agent_payload(ticker: str, fiscal_year: int, model_inference: dict,
-                          features: dict, agent_type: str) -> dict:
+                          features: dict, agent_type: str,
+                          currency_info: dict = None) -> dict:
     """
     Prepare the payload to send to a Bedrock agent.
 
@@ -1768,11 +1708,13 @@ def prepare_agent_payload(ticker: str, fiscal_year: int, model_inference: dict,
         model_inference: Model prediction results
         features: Extracted features dict
         agent_type: 'debt', 'cashflow', or 'growth'
+        currency_info: Optional dict with 'code' and 'usd_rate' for multi-currency support
 
     Returns:
         dict formatted for agent consumption
     """
     agent_features = features.get(agent_type, {})
+    currency_info = currency_info or {}
 
     return {
         'ticker': ticker,
@@ -1793,9 +1735,195 @@ def prepare_agent_payload(ticker: str, fiscal_year: int, model_inference: dict,
 
         'key_metrics': agent_features,
 
+        'currency_info': {
+            'code': currency_info.get('code', 'USD'),
+            'usd_rate': currency_info.get('usd_rate', 1.0),
+            'rate_fetched_at': currency_info.get('rate_fetched_at')
+        },
+
         'formatting_hints': {
             'use_billions': True,
-            'currency': 'USD',
+            'currency': currency_info.get('code', 'USD'),
+            'usd_rate': currency_info.get('usd_rate', 1.0),
             'include_emojis': True
         }
     }
+
+
+# =============================================================================
+# METRICS HISTORY CACHE - Quarter-based schema with embedded categories
+# =============================================================================
+#
+# Optimized schema: 20 items per ticker (one per quarter) instead of 140.
+# Each item contains all 7 metric categories, filtered at query time.
+#
+# Schema:
+#   PK: ticker (e.g., "AAPL")
+#   SK: fiscal_date (e.g., "2025-09-27") - human-readable, sorts chronologically
+#
+# Benefits:
+#   - 7x fewer DynamoDB items (20 vs 140)
+#   - Simpler writes (1 batch vs 6)
+#   - No GSIs needed
+#   - Easy to query "all categories for N quarters"
+#   - Client-side filtering for specific categories (~85% token savings preserved)
+
+# Mapping from category to metric names in quarterly_trends
+CATEGORY_METRICS = {
+    'revenue_profit': [
+        'revenue', 'net_income', 'gross_profit', 'operating_income', 'eps',
+        'gross_margin', 'operating_margin', 'net_margin', 'revenue_growth_yoy',
+        'revenue_growth_qoq', 'roe', 'ebitda', 'eps_growth_yoy', 'net_income_growth_yoy',
+        'gross_margin_change_1yr', 'operating_margin_change_1yr', 'net_margin_change_1yr',
+        'is_margin_expanding'
+    ],
+    'cashflow': [
+        'operating_cash_flow', 'free_cash_flow', 'fcf_margin', 'ocf_to_revenue',
+        'capex', 'capex_intensity', 'dividends_paid', 'share_buybacks',
+        'fcf_to_net_income', 'working_capital', 'reinvestment_rate',
+        'shareholder_payout', 'fcf_payout_ratio', 'working_capital_to_revenue',
+        'total_capital_return', 'fcf_change_yoy', 'ocf_change_yoy', 'capex_change_yoy'
+    ],
+    'balance_sheet': [
+        'total_debt', 'cash_position', 'net_debt', 'total_equity',
+        'total_assets', 'working_capital', 'current_assets', 'current_liabilities',
+        'short_term_debt', 'long_term_debt'
+    ],
+    'debt_leverage': [
+        'debt_to_equity', 'debt_to_assets', 'interest_coverage',
+        'current_ratio', 'quick_ratio', 'short_term_debt', 'long_term_debt',
+        'short_term_debt_pct', 'net_debt_to_ebitda', 'fcf_to_debt',
+        'debt_to_equity_change_1yr', 'debt_to_equity_change_2yr',
+        'current_ratio_change_1yr', 'is_deleveraging', 'interest_expense',
+        'equity_multiplier'
+    ],
+    'earnings_quality': [
+        'gaap_net_income', 'sbc_actual', 'd_and_a', 'adjusted_earnings',
+        'sbc_to_revenue_pct', 'gaap_adjusted_gap_pct', 'other_non_cash_items',
+        'non_cash_adjustments'
+    ],
+    'dilution': [
+        'basic_shares', 'diluted_shares', 'dilution_pct', 'share_buybacks'
+    ],
+    'valuation': [
+        'roa', 'roic', 'roe', 'asset_turnover', 'equity_multiplier',
+        'roic_growth', 'roe_change_2yr', 'capital_return_yield'
+    ]
+}
+
+
+def prepare_metrics_for_cache(
+    ticker: str,
+    quarterly_trends: Dict[str, Any],
+    currency: str = "USD",
+    source_cache_key: str = ""
+) -> List[Dict[str, Any]]:
+    """
+    Transform quarterly_trends into quarter-based items for metrics-history-cache.
+
+    Creates one DynamoDB item per quarter with all 7 metric categories embedded.
+    This optimized schema reduces items from 140 to 20 per ticker while preserving
+    the ability to filter by category at query time (~85% token savings).
+
+    Args:
+        ticker: Stock symbol (e.g., "AAPL")
+        quarterly_trends: Dict from extract_quarterly_trends() with metric arrays
+        currency: Currency code (e.g., "USD", "EUR")
+        source_cache_key: Cache key from financial data cache (for traceability)
+
+    Returns:
+        List of items ready for DynamoDB batch_write_item.
+        Each item represents one quarter with all categories.
+        Expected: 20 items per ticker (one per quarter).
+
+    Item structure:
+        {
+            "ticker": "AAPL",
+            "fiscal_date": "2025-09-27",  # Sort key - human-readable
+            "fiscal_year": 2025,
+            "fiscal_quarter": "Q1",       # e.g., Q1, Q2, Q3, Q4
+            "revenue_profit": { ... },    # ~18 metrics
+            "cashflow": { ... },          # ~18 metrics
+            "balance_sheet": { ... },     # ~10 metrics
+            "debt_leverage": { ... },     # ~16 metrics
+            "earnings_quality": { ... },  # ~8 metrics
+            "dilution": { ... },          # ~4 metrics
+            "valuation": { ... },         # ~8 metrics
+            ...
+        }
+    """
+    items = []
+    quarters = quarterly_trends.get('quarters', [])
+    period_dates = quarterly_trends.get('period_dates', [])
+
+    if not quarters:
+        logger.warning(f"No quarters found in quarterly_trends for {ticker}")
+        return items
+
+    if not period_dates:
+        logger.warning(f"No period_dates found in quarterly_trends for {ticker}")
+        return items
+
+    now = int(time.time())
+    expires_at = now + (90 * 24 * 60 * 60)  # 90 days TTL
+
+    for q_idx, quarter in enumerate(quarters):
+        fiscal_date = period_dates[q_idx] if q_idx < len(period_dates) else None
+
+        if not fiscal_date:
+            logger.warning(f"Skipping quarter {quarter} for {ticker}: no fiscal_date")
+            continue
+
+        # Extract fiscal year and quarter from the date
+        # fiscal_date format: "2025-09-27"
+        try:
+            year = int(fiscal_date[:4])
+            month = int(fiscal_date[5:7])
+            # Determine fiscal quarter based on month
+            # Most companies: Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec
+            # Apple (Sep fiscal year end): Q1=Oct-Dec, Q2=Jan-Mar, Q3=Apr-Jun, Q4=Jul-Sep
+            # For simplicity, use calendar quarters
+            if month <= 3:
+                fiscal_quarter = "Q1"
+            elif month <= 6:
+                fiscal_quarter = "Q2"
+            elif month <= 9:
+                fiscal_quarter = "Q3"
+            else:
+                fiscal_quarter = "Q4"
+        except (ValueError, IndexError):
+            year = None
+            fiscal_quarter = None
+
+        # Build item with all categories embedded
+        item = {
+            'ticker': ticker,
+            'fiscal_date': fiscal_date,  # Sort key - human-readable date
+            'fiscal_year': year,
+            'fiscal_quarter': fiscal_quarter,
+            'cached_at': now,
+            'expires_at': expires_at,
+            'currency': currency,
+            'source_cache_key': source_cache_key
+        }
+
+        # Embed each category's metrics
+        has_any_metrics = False
+        for category, metric_names in CATEGORY_METRICS.items():
+            category_metrics = {}
+            for metric_name in metric_names:
+                if metric_name in quarterly_trends:
+                    values = quarterly_trends[metric_name]
+                    if q_idx < len(values) and values[q_idx] is not None:
+                        category_metrics[metric_name] = values[q_idx]
+
+            if category_metrics:
+                item[category] = category_metrics
+                has_any_metrics = True
+
+        # Only add item if we have at least one category with metrics
+        if has_any_metrics:
+            items.append(item)
+
+    logger.info(f"Prepared {len(items)} cache items for {ticker} (1 item per quarter, 7 categories embedded)")
+    return items
