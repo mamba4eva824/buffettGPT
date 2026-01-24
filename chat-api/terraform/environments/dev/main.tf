@@ -43,16 +43,15 @@ locals {
   }
   
   # Lambda environment variables
+  # Updated 2025-01: Removed deprecated RAG chatbot table references
+  # Updated 2025-01: Re-added CHAT_MESSAGES_TABLE for Research report history
   lambda_common_env_vars = {
-    ENVIRONMENT                = local.environment
-    PROJECT_NAME              = local.project_name
-    LOG_LEVEL                 = "DEBUG"
-    CHAT_SESSIONS_TABLE       = module.dynamodb.chat_sessions_table_name
-    CHAT_MESSAGES_TABLE       = module.dynamodb.chat_messages_table_name
-    CONVERSATIONS_TABLE       = module.dynamodb.conversations_table_name
-    WEBSOCKET_CONNECTIONS_TABLE = module.dynamodb.websocket_connections_table_name
-    ENHANCED_RATE_LIMITS_TABLE = module.dynamodb.enhanced_rate_limits_table_name
-    KMS_KEY_ID                = module.core.kms_key_id
+    ENVIRONMENT         = local.environment
+    PROJECT_NAME        = local.project_name
+    LOG_LEVEL           = "DEBUG"
+    CONVERSATIONS_TABLE = module.dynamodb.conversations_table_name
+    CHAT_MESSAGES_TABLE = module.dynamodb.chat_messages_table_name
+    KMS_KEY_ID          = module.core.kms_key_id
     CHAT_PROCESSING_QUEUE_URL = module.core.chat_processing_queue_url
 
     # Bedrock Configuration - Use module outputs when available
@@ -93,8 +92,7 @@ locals {
     FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
     TICKER_LOOKUP_TABLE        = try(module.dynamodb.ticker_lookup_table_name, "")
 
-    # Investment Research Tables
-    INVESTMENT_REPORTS_TABLE    = try(module.dynamodb.investment_reports_table_name, "")
+    # Investment Research Tables (v1 removed, only v2 active)
     INVESTMENT_REPORTS_V2_TABLE = try(module.dynamodb.investment_reports_v2_table_name, "")
     METRICS_HISTORY_CACHE_TABLE = try(module.dynamodb.metrics_history_cache_table_name, "")
 
@@ -103,11 +101,10 @@ locals {
   }
 
   # Function-specific environment variables
+  # Updated 2025-01: Removed deprecated RAG chatbot table references
   lambda_function_env_vars = {
     websocket_connect = {
-      ANONYMOUS_SESSIONS_TABLE = module.dynamodb.anonymous_sessions_table_name
-      USERS_TABLE             = ""  # Auth disabled for dev
-      RATE_LIMITS_TABLE       = module.dynamodb.enhanced_rate_limits_table_name
+      USERS_TABLE = ""  # Auth disabled for dev
     }
     chat_processor = {
       # Additional environment variables can be added here if needed
@@ -140,11 +137,10 @@ module "dynamodb" {
   project_name               = local.project_name
   environment                = local.environment
   billing_mode               = "PAY_PER_REQUEST"  # On-demand for dev
-  kms_key_arn               = module.core.kms_key_arn
-  enable_pitr               = false  # No PITR for dev
+  kms_key_arn                = module.core.kms_key_arn
+  enable_pitr                = false  # No PITR for dev
   enable_deletion_protection = false  # Allow deletion in dev
-  enable_anonymous_sessions  = true   # Keep for now, merge later
-  common_tags               = local.common_tags
+  common_tags                = local.common_tags
 }
 
 # ================================================
@@ -319,9 +315,9 @@ module "monitoring" {
 }
 
 # ================================================
-# Bedrock Module - Agent, Knowledge Base, and Guardrails
+# Bedrock Module - Expert Agents Only
 # ================================================
-# Fixed: Circular dependency resolved by using wildcard for knowledge base ARN in IAM policy
+# Updated 2025-01: Removed Knowledge Base, Pinecone, and Guardrails
 
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -336,42 +332,12 @@ module "bedrock" {
   foundation_model_id = var.bedrock_foundation_model
   agent_instruction   = var.bedrock_agent_instruction
 
-  # Knowledge Base Configuration
-  knowledge_base_name        = var.bedrock_knowledge_base_name
-  knowledge_base_description = var.bedrock_knowledge_base_description
-  # embedding_model_arn - using module default (Titan v2 with 1024 dimensions)
-  # source_bucket_arn - using module default (arn:aws:s3:::buffet-training-data)
-  create_data_source         = true
-
-  # Pinecone Configuration
-  # pinecone_connection_string - using module default (configured Pinecone host)
-  pinecone_api_key          = var.pinecone_api_key
-
-  # Data Source and Chunking Configuration
-  enable_chunking_configuration = true
-  chunking_strategy            = "SEMANTIC"
-  max_tokens_per_chunk         = 300
-
   # Enable prompt override to customize temperature and instructions
   enable_prompt_override = true
 
   # Create agent version after deployment
   # Set to true to use versioned routing (prevents DRAFT routing issues)
   create_agent_version = true
-
-  # Guardrails Configuration - Enabled for financial advisor safety
-  enable_guardrails         = true
-  guardrail_name           = var.bedrock_guardrail_name
-  guardrail_description    = var.bedrock_guardrail_description
-  blocked_input_messaging  = "I can only provide financial advice and investment guidance. Please ask questions related to investment planning, retirement, tax strategies, insurance, estate planning, or financial goal setting."
-  blocked_outputs_messaging = "I cannot provide that type of advice. I'm designed to help with financial planning, investment strategies, retirement planning, tax planning, insurance analysis, estate planning basics, and financial goal setting. Please ask a finance-related question."
-
-  # Enable policies for comprehensive guardrails
-  enable_content_policy                = true
-  enable_sensitive_information_policy  = false  # Disabled since no PII/regex configured
-  enable_topic_policy                 = true
-  enable_word_policy                  = true
-  enable_contextual_grounding         = true
 
   # Action Groups for Expert Agents
   # Uses dedicated data-fetcher-action Lambda (pure Python, no LWA)
