@@ -1,0 +1,60 @@
+{
+  "batch_id": "20260116_191056",
+  "created_at": "2026-01-16T19:10:56.533281Z",
+  "version": 6,
+  "tasks": {
+    "AAPL": {
+      "ticker": "AAPL",
+      "status": "in_progress",
+      "worker_id": "W02",
+      "started_at": "2026-01-16T19:10:56.533993Z",
+      "completed_at": null,
+      "error": null,
+      "retry_count": 0,
+      "report_path": null,
+      "last_heartbeat": "2026-01-16T19:13:56.551866Z"
+    },
+    "MSFT": {
+      "ticker": "MSFT",
+      "status": "pending",
+      "worker_id": null,
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retry_count": 0,
+      "report_path": null,
+      "last_heartbeat": null
+    },
+    "F": {
+      "ticker": "F",
+      "status": "pending",
+      "worker_id": null,
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retry_count": 0,
+      "report_path": null,
+      "last_heartbeat": null
+    },
+    "NVDA": {
+      "ticker": "NVDA",
+      "status": "pending",
+      "worker_id": null,
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retry_count": 0,
+      "report_path": null,
+      "last_heartbeat": null
+    }
+  },
+  "config": {
+    "config": {
+      "prompt_version": 4.6,
+      "max_retries": 3,
+      "refresh": false,
+      "created_by": "orchestrator",
+      "workers_requested": 5
+    }
+  }
+}

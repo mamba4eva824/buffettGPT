@@ -13,6 +13,29 @@ env:
   PYTHON_VERSION: '3.11'
 
 jobs:
+  test-frontend:
+    name: Run Frontend Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: frontend
+        run: npm run test:run
+
   build-backend:
     name: Build Backend Lambda Functions
     runs-on: ubuntu-latest
@@ -158,7 +181,7 @@ jobs:
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure]
+    needs: [deploy-infrastructure, test-frontend]
 
     steps:
       - name: Checkout code

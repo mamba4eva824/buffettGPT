@@ -117,7 +117,10 @@ def parse_report_sections(report_content: str, ticker: str) -> List[ParsedSectio
 
         # Extract content (skip the header line itself)
         content_lines = lines[line_num + 1:end_line]
-        content = '\n'.join(content_lines).strip()
+        raw_content = '\n'.join(content_lines).strip()
+
+        # Clean content to remove decorative part headers
+        content = _clean_section_content(raw_content)
 
         # Use actual title from report, clean it up
         clean_title = _clean_title(title, fallback)
@@ -159,6 +162,38 @@ def _clean_title(title: str, fallback: str) -> str:
     cleaned = cleaned.strip()
 
     return cleaned if cleaned else fallback
+
+
+def _clean_section_content(content: str) -> str:
+    """
+    Clean up section content by removing decorative part headers.
+
+    Removes patterns like:
+    ═══════════════════════════════════════════════════════════════
+    ## PART 2: DETAILED ANALYSIS (For Those Who Want to Dig Deeper)
+    ═══════════════════════════════════════════════════════════════
+
+    Args:
+        content: Raw section content
+
+    Returns:
+        Cleaned content without decorative headers
+    """
+    # Pattern to match decorative part headers (with optional surrounding dividers)
+    # Matches: divider line + PART X header + divider line
+    part_header_pattern = r'═+\s*\n?\s*##?\s*PART\s+\d+[^\n]*\n?\s*═*'
+
+    # Remove part headers
+    cleaned = re.sub(part_header_pattern, '', content, flags=re.IGNORECASE)
+
+    # Also remove standalone part headers without full dividers
+    standalone_pattern = r'^##?\s*PART\s+\d+[^\n]*$'
+    cleaned = re.sub(standalone_pattern, '', cleaned, flags=re.IGNORECASE | re.MULTILINE)
+
+    # Clean up any resulting multiple blank lines
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
+    return cleaned.strip()
 
 
 def extract_ratings_json(report_content: str) -> Optional[Dict[str, Any]]:

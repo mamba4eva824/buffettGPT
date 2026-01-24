@@ -7,10 +7,26 @@ import json
 import boto3
 import logging
 import os
+import traceback
 from datetime import datetime
+from decimal import Decimal
 from typing import Dict, Any, List, Optional
 import uuid
 from botocore.exceptions import ClientError
+
+
+def convert_floats_to_decimal(obj):
+    """
+    Recursively convert float values to Decimal for DynamoDB compatibility.
+    boto3 DynamoDB resource requires Decimal instead of float.
+    """
+    if isinstance(obj, float):
+        return Decimal(str(obj))
+    elif isinstance(obj, dict):
+        return {k: convert_floats_to_decimal(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_floats_to_decimal(item) for item in obj]
+    return obj
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -549,6 +565,7 @@ def update_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
         # Build update expression
         update_expr = []
         expr_attr_values = {}
+        expr_attr_names = {}
 
         if 'title' in body:
             update_expr.append('title = :title')
@@ -559,18 +576,35 @@ def update_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
             expr_attr_values[':archived'] = body['is_archived']
 
         if 'metadata' in body:
-            update_expr.append('metadata = :metadata')
-            expr_attr_values[':metadata'] = body['metadata']
+            # Support partial metadata updates by merging with existing metadata
+            # Convert floats to Decimal for DynamoDB compatibility
+            metadata_updates = convert_floats_to_decimal(body['metadata'])
+            existing_metadata = conversation.get('metadata') or {}
+
+            # Merge new metadata keys into existing metadata
+            # This preserves existing keys while adding/updating new ones
+            merged_metadata = {**existing_metadata, **metadata_updates}
+
+            # Replace entire metadata attribute with merged value
+            update_expr.append('#metadata = :metadata')
+            expr_attr_names['#metadata'] = 'metadata'
+            expr_attr_values[':metadata'] = merged_metadata
+
+            logger.info(f"Merging metadata for conversation {conversation_id}: updating keys {list(metadata_updates.keys())}")
 
         if update_expr:
             update_expr.append('updated_at = :updated')
             expr_attr_values[':updated'] = int(datetime.utcnow().timestamp())
 
-            conversations_table.update_item(
-                Key={'conversation_id': conversation_id},
-                UpdateExpression='SET ' + ', '.join(update_expr),
-                ExpressionAttributeValues=expr_attr_values
-            )
+            update_kwargs = {
+                'Key': {'conversation_id': conversation_id},
+                'UpdateExpression': 'SET ' + ', '.join(update_expr),
+                'ExpressionAttributeValues': expr_attr_values
+            }
+            if expr_attr_names:
+                update_kwargs['ExpressionAttributeNames'] = expr_attr_names
+
+            conversations_table.update_item(**update_kwargs)
 
             logger.info(f"Updated conversation {conversation_id}")
 
@@ -580,10 +614,13 @@ def update_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
         })
 
     except Exception as e:
-        logger.error(f"Error updating conversation", extra={
-            'conversation_id': conversation_id,
-            'error': str(e)
-        })
+        # Detailed error logging for debugging
+        logger.error(f"Error updating conversation {conversation_id}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        logger.error(f"Exception message: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Update expression: {update_expr if 'update_expr' in dir() else 'not set'}")
+        logger.error(f"Attribute names: {expr_attr_names if 'expr_attr_names' in dir() else 'not set'}")
 
         return create_response(500, {'error': 'Failed to update conversation'})
 

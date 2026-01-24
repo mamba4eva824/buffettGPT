@@ -207,6 +207,21 @@ resource "aws_api_gateway_deployment" "analysis" {
       try(aws_api_gateway_integration.research_followup_lambda[0].uri, ""),
       try(aws_api_gateway_method.research_followup_options[0].id, ""),
       try(aws_api_gateway_integration.research_followup_options[0].id, ""),
+      # Research Status API resources
+      try(aws_api_gateway_resource.research_report_status[0].id, ""),
+      try(aws_api_gateway_method.research_status_get[0].id, ""),
+      try(aws_api_gateway_integration.research_status_lambda[0].id, ""),
+      try(aws_api_gateway_integration.research_status_lambda[0].uri, ""),
+      try(aws_api_gateway_method.research_status_options[0].id, ""),
+      try(aws_api_gateway_integration.research_status_options[0].id, ""),
+      # Research Section API resources
+      try(aws_api_gateway_resource.research_report_section[0].id, ""),
+      try(aws_api_gateway_resource.research_report_section_id[0].id, ""),
+      try(aws_api_gateway_method.research_section_get[0].id, ""),
+      try(aws_api_gateway_integration.research_section_lambda[0].id, ""),
+      try(aws_api_gateway_integration.research_section_lambda[0].uri, ""),
+      try(aws_api_gateway_method.research_section_options[0].id, ""),
+      try(aws_api_gateway_integration.research_section_options[0].id, ""),
     ]))
   }
 
@@ -222,7 +237,11 @@ resource "aws_api_gateway_deployment" "analysis" {
     aws_api_gateway_integration.research_stream_lambda,
     aws_api_gateway_integration.research_stream_options,
     aws_api_gateway_integration.research_followup_lambda,
-    aws_api_gateway_integration.research_followup_options
+    aws_api_gateway_integration.research_followup_options,
+    aws_api_gateway_integration.research_status_lambda,
+    aws_api_gateway_integration.research_status_options,
+    aws_api_gateway_integration.research_section_lambda,
+    aws_api_gateway_integration.research_section_options
   ]
 }
 
@@ -255,7 +274,7 @@ resource "aws_api_gateway_gateway_response" "analysis_default_4xx" {
   response_parameters = {
     "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
     "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-    "gatewayresponse.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
   }
 }
 
@@ -267,7 +286,7 @@ resource "aws_api_gateway_gateway_response" "analysis_default_5xx" {
   response_parameters = {
     "gatewayresponse.header.Access-Control-Allow-Origin"  = "'*'"
     "gatewayresponse.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-    "gatewayresponse.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "gatewayresponse.header.Access-Control-Allow-Methods" = "'GET,POST,OPTIONS'"
   }
 }
 
@@ -507,6 +526,218 @@ resource "aws_api_gateway_integration_response" "research_stream_options" {
   }
 
   depends_on = [aws_api_gateway_integration.research_stream_options]
+}
+
+# ============================================================================
+# /research/report/{ticker}/status - GET endpoint for report status check
+# ============================================================================
+# Used by frontend to check if a report exists and if it has expired.
+# Supports efficient conversation loading with reference-only storage.
+# ============================================================================
+
+# /research/report/{ticker}/status resource
+resource "aws_api_gateway_resource" "research_report_status" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research_report_ticker[0].id
+  path_part   = "status"
+}
+
+# GET Method with JWT Authorization
+resource "aws_api_gateway_method" "research_status_get" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_status[0].id
+  http_method   = "GET"
+  authorization = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id = var.enable_authorization ? aws_api_gateway_authorizer.analysis_jwt[0].id : null
+
+  request_parameters = {
+    "method.request.path.ticker"          = true
+    "method.request.header.Authorization" = false
+  }
+}
+
+# HTTP_PROXY Integration to Investment Research Lambda Function URL
+resource "aws_api_gateway_integration" "research_status_lambda" {
+  count                   = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id             = aws_api_gateway_rest_api.analysis[0].id
+  resource_id             = aws_api_gateway_resource.research_report_status[0].id
+  http_method             = aws_api_gateway_method.research_status_get[0].http_method
+  integration_http_method = "GET"
+  type                    = "HTTP_PROXY"
+
+  uri = "${trimsuffix(var.investment_research_function_url, "/")}/report/{ticker}/status"
+
+  request_parameters = {
+    "integration.request.path.ticker"          = "method.request.path.ticker"
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+  }
+
+  passthrough_behavior = "WHEN_NO_MATCH"
+  timeout_milliseconds = 10000
+}
+
+# CORS Preflight (OPTIONS) for Research Status
+resource "aws_api_gateway_method" "research_status_options" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_status[0].id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "research_status_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_status[0].id
+  http_method = aws_api_gateway_method.research_status_options[0].http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "research_status_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_status[0].id
+  http_method = aws_api_gateway_method.research_status_options[0].http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "research_status_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_status[0].id
+  http_method = aws_api_gateway_method.research_status_options[0].http_method
+  status_code = aws_api_gateway_method_response.research_status_options[0].status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cloudfront_url != "" ? "'${var.cloudfront_url}'" : "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.research_status_options]
+}
+
+# ============================================================================
+# /research/report/{ticker}/section/{section_id} - GET endpoint for individual sections
+# ============================================================================
+# Used by frontend to fetch individual report sections on-demand.
+# Enables reference-only storage optimization for conversations.
+# ============================================================================
+
+# /research/report/{ticker}/section resource
+resource "aws_api_gateway_resource" "research_report_section" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research_report_ticker[0].id
+  path_part   = "section"
+}
+
+# /research/report/{ticker}/section/{section_id} resource
+resource "aws_api_gateway_resource" "research_report_section_id" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research_report_section[0].id
+  path_part   = "{section_id}"
+}
+
+# GET Method with JWT Authorization
+resource "aws_api_gateway_method" "research_section_get" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_section_id[0].id
+  http_method   = "GET"
+  authorization = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id = var.enable_authorization ? aws_api_gateway_authorizer.analysis_jwt[0].id : null
+
+  request_parameters = {
+    "method.request.path.ticker"          = true
+    "method.request.path.section_id"      = true
+    "method.request.header.Authorization" = false
+  }
+}
+
+# HTTP_PROXY Integration to Investment Research Lambda Function URL
+resource "aws_api_gateway_integration" "research_section_lambda" {
+  count                   = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id             = aws_api_gateway_rest_api.analysis[0].id
+  resource_id             = aws_api_gateway_resource.research_report_section_id[0].id
+  http_method             = aws_api_gateway_method.research_section_get[0].http_method
+  integration_http_method = "GET"
+  type                    = "HTTP_PROXY"
+
+  uri = "${trimsuffix(var.investment_research_function_url, "/")}/report/{ticker}/section/{section_id}"
+
+  request_parameters = {
+    "integration.request.path.ticker"          = "method.request.path.ticker"
+    "integration.request.path.section_id"      = "method.request.path.section_id"
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+  }
+
+  passthrough_behavior = "WHEN_NO_MATCH"
+  timeout_milliseconds = 10000
+}
+
+# CORS Preflight (OPTIONS) for Research Section
+resource "aws_api_gateway_method" "research_section_options" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_section_id[0].id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "research_section_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_section_id[0].id
+  http_method = aws_api_gateway_method.research_section_options[0].http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "research_section_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_section_id[0].id
+  http_method = aws_api_gateway_method.research_section_options[0].http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "research_section_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_section_id[0].id
+  http_method = aws_api_gateway_method.research_section_options[0].http_method
+  status_code = aws_api_gateway_method_response.research_section_options[0].status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cloudfront_url != "" ? "'${var.cloudfront_url}'" : "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.research_section_options]
 }
 
 # ============================================================================

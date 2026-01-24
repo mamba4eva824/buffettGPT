@@ -76,3 +76,10 @@ What happens if: recession hits? rates spike? competitor with zero debt appears?
 
 ### 🚦 Verdict
 🟢/🟡/🔴 + Why you would/wouldn't own this balance sheet. Compare to ML model prediction.
+
+## Section-Specific Explanation Headers
+After data tables, use DYNAMIC headers that match the analogy being used (not generic "In Plain English"):
+- 📚 **The Student Loan Comparison:** (for debt burden analogies)
+- 🏦 **Your Bank Account Version:** (for cash vs debt discussions)
+- 🛡️ **The Fortress Assessment:** (for balance sheet strength)
+- 💡 **The Balance Sheet Reality:** (for hidden insights - not "Hidden Story")

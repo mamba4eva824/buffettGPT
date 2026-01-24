@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ChevronDown, FileText } from 'lucide-react';
+import { ChevronDown, FileText, ArrowDown } from 'lucide-react';
 import {
   Zap,
   Building2,
@@ -54,35 +54,83 @@ export default function SectionCard({
   isStreaming = false,
   isCollapsed = false,
   onToggleCollapse,
-  autoScroll = true
+  autoScroll = true,
+  scrollContainerRef = null  // Parent scroll container to detect user scroll
 }) {
   const contentRef = useRef(null);
   const lastContentLengthRef = useRef(0);
+  const [userHasScrolledAway, setUserHasScrolledAway] = useState(false);
 
   // Get the icon component
   const Icon = iconMap[section?.icon] || FileText;
 
   // ChatGPT-style streaming effect
+  // Only animate when actively streaming - loaded from history should display instantly
   const { displayText, isTyping } = useTypewriter(section?.content || '', {
     speed: 1.5,
     isActive: isStreaming,
-    alwaysAnimate: true
+    alwaysAnimate: isStreaming  // Only animate during actual streaming, not history loads
   });
 
-  // Auto-scroll as content streams in
+  // Detect user scroll intent - if user scrolls up during streaming, pause auto-scroll
+  const handleScroll = useCallback((e) => {
+    if (!isStreaming && !isTyping) return;
+
+    const container = e.target;
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+    // If user scrolled more than 100px from bottom, they want to read earlier content
+    if (distanceFromBottom > 100) {
+      setUserHasScrolledAway(true);
+    } else {
+      setUserHasScrolledAway(false);
+    }
+  }, [isStreaming, isTyping]);
+
+  // Attach scroll listener to parent container
   useEffect(() => {
-    if (autoScroll && (isStreaming || isTyping) && displayText.length > lastContentLengthRef.current && contentRef.current) {
-      // Scroll the card into view smoothly
+    const container = scrollContainerRef?.current;
+    if (!container) return;
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [scrollContainerRef, handleScroll]);
+
+  // Reset scroll state when streaming starts
+  useEffect(() => {
+    if (isStreaming) {
+      setUserHasScrolledAway(false);
+    }
+  }, [isStreaming]);
+
+  // Auto-scroll as content streams in (only if user hasn't scrolled away)
+  useEffect(() => {
+    const shouldAutoScroll = autoScroll &&
+      (isStreaming || isTyping) &&
+      !userHasScrolledAway &&
+      displayText.length > lastContentLengthRef.current &&
+      contentRef.current;
+
+    if (shouldAutoScroll) {
       contentRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
     lastContentLengthRef.current = displayText.length;
-  }, [displayText, isStreaming, isTyping, autoScroll]);
+  }, [displayText, isStreaming, isTyping, autoScroll, userHasScrolledAway]);
+
+  // Scroll to bottom handler
+  const scrollToBottom = useCallback(() => {
+    if (contentRef.current) {
+      contentRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      setUserHasScrolledAway(false);
+    }
+  }, []);
 
   if (!section) return null;
 
   return (
     <div className="w-full mb-4">
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="relative bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
         {/* Header - clickable to collapse */}
         <button
           onClick={onToggleCollapse}
@@ -129,6 +177,17 @@ export default function SectionCard({
             </div>
           )}
         </div>
+
+        {/* Scroll to bottom button - shows when user scrolled away during streaming */}
+        {(isStreaming || isTyping) && userHasScrolledAway && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium rounded-full shadow-lg transition-all hover:scale-105"
+          >
+            <ArrowDown className="w-3.5 h-3.5" />
+            <span>Follow</span>
+          </button>
+        )}
       </div>
     </div>
   );

@@ -507,3 +507,78 @@ def check_report_exists_v2(ticker: str) -> bool:
     except Exception as e:
         logger.error(f"Error checking report existence for {ticker}: {e}")
         return False
+
+
+def get_report_status(ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Get report status for conversation loading optimization.
+
+    Returns detailed status information without fetching full content.
+    Used by frontend to determine if sections can be fetched on-demand
+    or if the report has expired.
+
+    Args:
+        ticker: Stock symbol (e.g., 'AAPL')
+
+    Returns:
+        Dict with status info:
+        {
+            'exists': True,
+            'ticker': 'AAPL',
+            'generated_at': '2025-01-15T10:30:00Z',
+            'expired': False,
+            'ttl_remaining_days': 75,
+            'total_word_count': 15000
+        }
+        Returns None if report doesn't exist.
+    """
+    ticker = ticker.upper()
+
+    try:
+        table = _get_table_v2()
+        # Use ExpressionAttributeNames for 'ttl' since it's a DynamoDB reserved word
+        response = table.get_item(
+            Key={
+                'ticker': ticker,
+                'section_id': '00_executive'
+            },
+            ProjectionExpression='ticker, #t, generated_at, total_word_count',
+            ExpressionAttributeNames={'#t': 'ttl'}
+        )
+
+        item = response.get('Item')
+        if not item:
+            logger.info(f"No report found for {ticker}")
+            return None
+
+        # Convert Decimals
+        item = decimal_to_float(item)
+
+        # Check TTL and calculate remaining days
+        ttl = item.get('ttl', 0)
+        now = datetime.utcnow().timestamp()
+        expired = False
+        ttl_remaining_days = None
+
+        if ttl:
+            if ttl < now:
+                expired = True
+                ttl_remaining_days = 0
+            else:
+                ttl_remaining_days = int((ttl - now) / 86400)  # Convert seconds to days
+
+        status = {
+            'exists': True,
+            'ticker': ticker,
+            'generated_at': item.get('generated_at'),
+            'expired': expired,
+            'ttl_remaining_days': ttl_remaining_days,
+            'total_word_count': item.get('total_word_count', 0)
+        }
+
+        logger.info(f"Report status for {ticker}: expired={expired}, ttl_remaining={ttl_remaining_days} days")
+        return status
+
+    except Exception as e:
+        logger.error(f"Error getting report status for {ticker}: {e}")
+        return None

@@ -11,6 +11,7 @@ V1 Endpoints (single-blob reports):
 
 V2 Endpoints (section-based progressive loading):
 - GET /report/{ticker}/toc                 - Get ToC + ratings (JSON)
+- GET /report/{ticker}/status              - Check report existence/expiration (JSON)
 - GET /report/{ticker}/section/{section_id} - Get specific section (JSON)
 - GET /report/{ticker}/executive           - Get Part 1 executive sections (JSON)
 - GET /report/{ticker}/stream              - Stream all sections as SSE events (v2)
@@ -24,9 +25,13 @@ from datetime import datetime
 from typing import AsyncGenerator, Optional, List, Dict, Any
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 
+import boto3
+import jwt
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from config.settings import ENVIRONMENT, DEFAULT_FISCAL_YEAR
@@ -41,6 +46,7 @@ from services.report_service import (
     get_executive_sections,
     get_all_sections,
     check_report_exists_v2,
+    get_report_status,
 )
 from services.streaming import (
     # V1 events
@@ -79,6 +85,182 @@ logger = logging.getLogger(__name__)
 
 # Thread pool for running blocking DynamoDB calls without blocking the event loop
 _executor = ThreadPoolExecutor(max_workers=4)
+
+
+# =============================================================================
+# JWT Authentication Middleware (SEC-001 Fix)
+# =============================================================================
+
+# Environment variables for JWT validation
+JWT_SECRET_ARN = os.environ.get('JWT_SECRET_ARN')
+
+# Initialize AWS clients lazily
+_secrets_client = None
+
+
+def get_secrets_client():
+    """Lazy initialization of Secrets Manager client."""
+    global _secrets_client
+    if _secrets_client is None:
+        _secrets_client = boto3.client('secretsmanager')
+    return _secrets_client
+
+
+@lru_cache(maxsize=1)
+def get_jwt_secret() -> str:
+    """Get JWT secret from AWS Secrets Manager with caching."""
+    if JWT_SECRET_ARN:
+        try:
+            client = get_secrets_client()
+            response = client.get_secret_value(SecretId=JWT_SECRET_ARN)
+            secret = response['SecretString']
+            if not secret or len(secret) < 32:
+                raise ValueError("JWT secret must be at least 32 characters long")
+            return secret
+        except Exception as e:
+            logger.error(f"Failed to fetch JWT secret from Secrets Manager: {e}")
+            raise Exception("JWT_SECRET not properly configured in Secrets Manager") from e
+    else:
+        # Require JWT_SECRET environment variable - no default fallback for security
+        jwt_secret = os.environ.get('JWT_SECRET')
+        if not jwt_secret:
+            logger.error("JWT_SECRET environment variable not set")
+            raise ValueError("JWT_SECRET must be set via environment variable or JWT_SECRET_ARN must be configured")
+        if len(jwt_secret) < 32:
+            logger.error("JWT_SECRET is too short")
+            raise ValueError("JWT_SECRET must be at least 32 characters long for security")
+        return jwt_secret
+
+
+def verify_jwt_token(token: str) -> Dict[str, Any]:
+    """
+    Verify JWT token and extract claims.
+
+    Args:
+        token: JWT token string
+
+    Returns:
+        Dictionary with user claims
+
+    Raises:
+        Exception: If token is invalid
+    """
+    jwt_secret = get_jwt_secret()
+
+    try:
+        # Decode and verify the JWT token
+        payload = jwt.decode(
+            token,
+            jwt_secret,
+            algorithms=['HS256'],
+            options={'verify_exp': True}
+        )
+
+        logger.info(f"JWT token verified successfully for user_id={payload.get('user_id')}")
+        return payload
+
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token has expired")
+        raise Exception("Token expired")
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token: {str(e)}")
+        raise Exception("Invalid token")
+    except Exception as e:
+        logger.error(f"JWT verification error: {str(e)}")
+        raise Exception("Token verification failed")
+
+
+# Endpoints that don't require authentication
+PUBLIC_PATHS = {"/health"}
+
+
+class JWTAuthMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to enforce JWT authentication on protected endpoints.
+
+    SEC-001 Fix: Prevents unauthenticated access to Function URL endpoints
+    that invoke paid AI services (Claude Haiku 4.5).
+
+    Public endpoints (no auth required):
+    - /health
+
+    Protected endpoints (JWT required):
+    - /followup
+    - /report/*
+    - /reports
+    - All other endpoints
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        # Allow public paths without authentication
+        if request.url.path in PUBLIC_PATHS:
+            return await call_next(request)
+
+        # Extract Authorization header
+        auth_header = request.headers.get("Authorization") or request.headers.get("authorization")
+
+        if not auth_header:
+            logger.warning(f"No Authorization header for {request.url.path}")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "success": False,
+                    "error": "Unauthorized",
+                    "detail": "Missing Authorization header",
+                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                }
+            )
+
+        # Extract Bearer token
+        if not auth_header.startswith("Bearer "):
+            logger.warning(f"Invalid Authorization header format for {request.url.path}")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "success": False,
+                    "error": "Unauthorized",
+                    "detail": "Invalid Authorization header format. Expected: Bearer <token>",
+                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                }
+            )
+
+        token = auth_header[7:]  # Remove "Bearer " prefix
+
+        try:
+            # Verify the JWT token
+            claims = verify_jwt_token(token)
+            user_id = claims.get('user_id') or claims.get('sub')
+
+            if not user_id:
+                logger.warning("JWT token missing user_id claim")
+                return JSONResponse(
+                    status_code=401,
+                    content={
+                        "success": False,
+                        "error": "Unauthorized",
+                        "detail": "Token missing user_id claim",
+                        "timestamp": datetime.utcnow().isoformat() + 'Z'
+                    }
+                )
+
+            # Add user info to request state for use by endpoints
+            request.state.user_id = user_id
+            request.state.user_claims = claims
+
+            logger.info(f"Authenticated request from user_id={user_id} to {request.url.path}")
+            return await call_next(request)
+
+        except Exception as e:
+            logger.warning(f"JWT validation failed for {request.url.path}: {str(e)}")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "success": False,
+                    "error": "Unauthorized",
+                    "detail": str(e),
+                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                }
+            )
 
 
 # =============================================================================
@@ -158,6 +340,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Add JWT authentication middleware (SEC-001 fix)
+app.add_middleware(JWTAuthMiddleware)
 
 
 # =============================================================================
@@ -578,6 +763,54 @@ async def get_toc(
         "ratings": toc_data.get('ratings', {}),
         "total_word_count": toc_data.get('total_word_count', 0),
         "generated_at": toc_data.get('generated_at'),
+        "timestamp": datetime.utcnow().isoformat() + 'Z'
+    })
+
+
+@app.get("/report/{ticker}/status")
+async def get_status(
+    ticker: str = Path(
+        ...,
+        description="Stock ticker symbol (e.g., AAPL, MSFT)",
+        min_length=1,
+        max_length=5
+    )
+):
+    """
+    Check if a report exists and its expiration status.
+
+    Used for fast conversation loading without fetching full content.
+    Returns status info to determine if sections can be fetched on-demand
+    or if the report has expired.
+
+    Args:
+        ticker: Stock ticker symbol (1-5 letters)
+
+    Returns:
+        JSONResponse with exists, expired, ttl_remaining_days, generated_at
+    """
+    ticker = ticker.upper().strip()
+    if not validate_ticker(ticker):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid ticker format: {ticker}. Must be 1-5 letters."
+        )
+
+    logger.info(f"Checking report status for {ticker}")
+
+    status = get_report_status(ticker)
+    if not status:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "exists": False,
+                "ticker": ticker,
+                "timestamp": datetime.utcnow().isoformat() + 'Z'
+            }
+        )
+
+    return JSONResponse(content={
+        **status,
         "timestamp": datetime.utcnow().isoformat() + 'Z'
     })
 

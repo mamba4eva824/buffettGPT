@@ -1,5 +1,6 @@
 # Staging Environment Outputs
 # These values are used by CI/CD and for sharing access with testers
+# Updated 2025-01: Removed CloudFront, deprecated DynamoDB, and Knowledge Base outputs
 
 # ================================================
 # API Gateway Outputs
@@ -48,9 +49,9 @@ output "conversations_table_name" {
   value       = module.dynamodb.conversations_table_name
 }
 
-output "chat_messages_table_name" {
-  description = "Name of the chat messages table"
-  value       = module.dynamodb.chat_messages_table_name
+output "dynamodb_tables" {
+  description = "DynamoDB table names"
+  value       = module.dynamodb.table_summary
 }
 
 # ================================================
@@ -67,35 +68,6 @@ output "bedrock_agent_alias_id" {
   value       = module.bedrock.agent_alias_id
 }
 
-output "bedrock_knowledge_base_id" {
-  description = "The ID of the Bedrock knowledge base"
-  value       = module.bedrock.knowledge_base_id
-}
-
-# ================================================
-# CloudFront Outputs
-# ================================================
-
-output "cloudfront_distribution_id" {
-  description = "The ID of the CloudFront distribution"
-  value       = module.cloudfront.cloudfront_distribution_id
-}
-
-output "cloudfront_url" {
-  description = "The CloudFront distribution URL"
-  value       = module.cloudfront.cloudfront_url
-}
-
-output "cloudfront_domain_name" {
-  description = "The CloudFront distribution domain name"
-  value       = module.cloudfront.cloudfront_domain_name
-}
-
-output "s3_bucket_name" {
-  description = "The S3 bucket name for frontend files"
-  value       = module.cloudfront.s3_bucket_name
-}
-
 # ================================================
 # Access Instructions Output
 # ================================================
@@ -110,3 +82,15 @@ output "staging_access_info" {
     instructions   = "Share the frontend URL with friends and family for testing."
   }
 }
+
+# ================================================
+# DEPRECATED OUTPUTS (Removed 2025-01)
+# ================================================
+# The following outputs were removed as part of RAG chatbot deprecation:
+# - chat_messages_table_name (table removed)
+# - bedrock_knowledge_base_id (KB removed)
+# - cloudfront_distribution_id (module removed)
+# - cloudfront_url (module removed)
+# - cloudfront_domain_name (module removed)
+# - s3_bucket_name (module removed)
+# ================================================

@@ -349,3 +349,8 @@ logs/
 .temp/
 *.tmp
 *.temp
+
+# Development test outputs and local environments
+**/test_outputs/
+**/prediction_ensemble_local/
+**/ecr_plan

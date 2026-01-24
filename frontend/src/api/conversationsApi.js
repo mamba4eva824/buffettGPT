@@ -103,6 +103,22 @@ export const conversationsApi = {
   },
 
   /**
+   * Update research state in conversation metadata
+   * This enables partial updates without clobbering other metadata fields
+   * PUT /conversations/:id
+   */
+  updateResearchState: async (conversationId, researchState, token) => {
+    return apiCall(CONVERSATION_ENDPOINTS.UPDATE(conversationId), {
+      method: 'PUT',
+      body: JSON.stringify({
+        metadata: {
+          research_state: researchState
+        }
+      })
+    }, token);
+  },
+
+  /**
    * Delete a conversation
    * DELETE /conversations/:id
    */
@@ -119,6 +135,17 @@ export const conversationsApi = {
   getMessages: async (conversationId, token, limit = 100) => {
     const endpoint = `${CONVERSATION_ENDPOINTS.MESSAGES(conversationId)}?limit=${limit}`;
     return apiCall(endpoint, { method: 'GET' }, token);
+  },
+
+  /**
+   * Save a message to a conversation
+   * POST /conversations/:id/messages
+   */
+  saveMessage: async (conversationId, message, token) => {
+    return apiCall(CONVERSATION_ENDPOINTS.MESSAGES(conversationId), {
+      method: 'POST',
+      body: JSON.stringify(message)
+    }, token);
   }
 };
 

@@ -293,3 +293,51 @@ MIT License
 ## Support
 
 For issues and questions, please open a GitHub issue with detailed information about your use case.
+
+---
+
+## Recent Updates
+
+### Completed (January 2026)
+
+#### Section Selection Persistence Fix
+- **Issue**: Report ToC section selections (Valuation, Growth, Debt, etc.) were not persisting when users refreshed the page and returned to conversation history
+- **Root Cause**: DynamoDB nested attribute path updates (`#metadata.#meta_research_state`) were failing silently when the parent path existed but didn't contain the nested key
+- **Solution**: Changed from nested attribute paths to a merge + replace approach for metadata updates
+- **Files Modified**: [conversations_handler.py](chat-api/backend/src/handlers/conversations_handler.py)
+- **Documentation**: [SECTION_SELECTION_PERSISTENCE_FIX.md](chat-api/backend/investment_research/docs/SECTION_SELECTION_PERSISTENCE_FIX.md)
+
+#### DynamoDB Integration Tests
+- Created 54 unit tests for DynamoDB read/write operations
+- **Conversation research_state persistence** (20 tests): PUT/GET operations for saving and retrieving ToC section selections
+- **Investment research section endpoints** (34 tests): V2 section-based report retrieval including TTL expiration, Decimal conversion, and ticker validation
+- **Test Files**:
+  - `test_conversations_research_state.py`
+  - `test_investment_research_sections.py`
+- **Documentation**: [DYNAMODB_INTEGRATION_TESTS.md](chat-api/backend/investment_research/changelog/DYNAMODB_INTEGRATION_TESTS.md)
+
+#### Infrastructure Cleanup
+- Removed deprecated Knowledge Base, Pinecone, and Guardrails resources from staging and production Terraform configurations
+- Cleaned up stale bedrock module variables
+
+---
+
+## In Progress
+
+### Multi-Agent Investment Research v6
+- Enhanced expert agent prompts with improved value investing analysis
+- New supervisor instruction prompts for better synthesis
+- Files in progress: `supervisor_instruction_v6.txt`, `value_investor_*_v6.txt`
+
+### Prediction Ensemble Enhancements
+- Local testing infrastructure for prediction ensemble
+- Integration tests for ensemble Lambda
+
+### Frontend Improvements
+- Expired report banner component
+- Research layout refinements
+- Section card enhancements
+
+### Follow-up Agent
+- AI-powered follow-up question generation based on research context
+- Documentation: [FOLLOWUP_AGENT.md](chat-api/backend/investment_research/docs/FOLLOWUP_AGENT.md)
