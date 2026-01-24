@@ -223,8 +223,9 @@ module "monitoring" {
 }
 
 # ================================================
-# Bedrock Module - Agent, Knowledge Base, and Guardrails
+# Bedrock Module - Agent Configuration
 # ================================================
+# Note: Knowledge Base, Guardrails, and Pinecone integration removed (2025-01)
 
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -239,42 +240,8 @@ module "bedrock" {
   foundation_model_id = var.bedrock_foundation_model
   agent_instruction   = var.bedrock_agent_instruction
 
-  # Knowledge Base Configuration
-  knowledge_base_name        = var.bedrock_knowledge_base_name
-  knowledge_base_description = var.bedrock_knowledge_base_description
-  create_data_source         = true
-
-  # Pinecone Configuration
-  pinecone_api_key           = var.pinecone_api_key
-  pinecone_connection_string = "https://buffett-embeddings-staging-34d0bay.svc.aped-4627-b74a.pinecone.io"
-
-  # S3 Data Source Configuration
-  source_bucket_arn = "arn:aws:s3:::buffet-training-data"
-
-  # Embedding Model Configuration - AWS Titan Embeddings V2 (1024 dimensions)
-  embedding_model_arn = "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
-
-  # Data Source and Chunking Configuration
-  enable_chunking_configuration = true
-  chunking_strategy             = "SEMANTIC"
-  max_tokens_per_chunk          = 300
-
-  # Disable prompt override to use AWS defaults
-  enable_prompt_override = false
-
-  # Guardrails Configuration
-  enable_guardrails         = true
-  guardrail_name            = var.bedrock_guardrail_name
-  guardrail_description     = var.bedrock_guardrail_description
-  blocked_input_messaging   = "I can only provide financial advice and investment guidance. Please ask questions related to investment planning, retirement, tax strategies, insurance, estate planning, or financial goal setting."
-  blocked_outputs_messaging = "I cannot provide that type of advice. I'm designed to help with financial planning, investment strategies, retirement planning, tax planning, insurance analysis, estate planning basics, and financial goal setting. Please ask a finance-related question."
-
-  # Enable policies for comprehensive guardrails
-  enable_content_policy               = true
-  enable_sensitive_information_policy = false
-  enable_topic_policy                 = true
-  enable_word_policy                  = true
-  enable_contextual_grounding         = true
+  # Enable prompt override to customize temperature and instructions
+  enable_prompt_override = true
 
   # Agent versioning - set to true to use versioned routing (not DRAFT)
   # This allows the alias to point to numbered versions (1, 2, 3, etc.)
