@@ -97,17 +97,8 @@ jobs:
             --secret-string "${{ secrets.JWT_SECRET }}" \
             --region ${{ env.AWS_REGION }}
 
-          # Create or update Pinecone API key
-          aws secretsmanager describe-secret --secret-id buffett-staging-pinecone-api-key 2>/dev/null || \
-          aws secretsmanager create-secret \
-            --name buffett-staging-pinecone-api-key \
-            --description "Pinecone API key for staging environment" \
-            --region ${{ env.AWS_REGION }}
-
-          aws secretsmanager put-secret-value \
-            --secret-id buffett-staging-pinecone-api-key \
-            --secret-string "${{ secrets.PINECONE_API_KEY }}" \
-            --region ${{ env.AWS_REGION }}
+          # NOTE: Pinecone API key secret removed (2025-01)
+          # Knowledge Base and Pinecone integration deprecated
 
           echo "✅ AWS Secrets Manager secrets created/updated successfully"
 
@@ -133,7 +124,6 @@ jobs:
             -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
             -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
-            -var="pinecone_api_key=${{ secrets.PINECONE_API_KEY }}" \
             -var="alert_email=${{ secrets.ALERT_EMAIL }}" \
             -detailed-exitcode
           EXIT_CODE=$?
