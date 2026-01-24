@@ -1,13 +1,19 @@
 # Variables for IAM module
 
+variable "create_knowledge_base_resources" {
+  description = "Whether to create Knowledge Base IAM resources (deprecated - set to false)"
+  type        = bool
+  default     = false
+}
+
 variable "knowledge_base_role_name" {
-  description = "Name of the Knowledge Base service role"
+  description = "Name of the Knowledge Base service role (deprecated)"
   type        = string
   default     = "bedrock-kb-service-role"
 }
 
 variable "knowledge_base_policy_name" {
-  description = "Name of the Knowledge Base policy"
+  description = "Name of the Knowledge Base policy (deprecated)"
   type        = string
   default     = "bedrock-kb-policy"
 }

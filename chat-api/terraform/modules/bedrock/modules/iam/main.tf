@@ -16,9 +16,10 @@ data "aws_caller_identity" "current" {}
 # Data source for current AWS region
 data "aws_region" "current" {}
 
-# Knowledge Base Service Role
+# Knowledge Base Service Role (DEPRECATED - conditionally created)
 resource "aws_iam_role" "knowledge_base_role" {
-  name = var.knowledge_base_role_name
+  count = var.create_knowledge_base_resources ? 1 : 0
+  name  = var.knowledge_base_role_name
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -40,8 +41,9 @@ resource "aws_iam_role" "knowledge_base_role" {
   })
 }
 
-# Knowledge Base Policy
+# Knowledge Base Policy (DEPRECATED - conditionally created)
 resource "aws_iam_policy" "knowledge_base_policy" {
+  count       = var.create_knowledge_base_resources ? 1 : 0
   name        = var.knowledge_base_policy_name
   description = "Policy for Bedrock Knowledge Base to access required resources"
 
@@ -86,10 +88,11 @@ resource "aws_iam_policy" "knowledge_base_policy" {
   })
 }
 
-# Attach Knowledge Base Policy to Role
+# Attach Knowledge Base Policy to Role (DEPRECATED - conditionally created)
 resource "aws_iam_role_policy_attachment" "knowledge_base_policy_attachment" {
-  role       = aws_iam_role.knowledge_base_role.name
-  policy_arn = aws_iam_policy.knowledge_base_policy.arn
+  count      = var.create_knowledge_base_resources ? 1 : 0
+  role       = aws_iam_role.knowledge_base_role[0].name
+  policy_arn = aws_iam_policy.knowledge_base_policy[0].arn
 }
 
 # Agent Service Role
