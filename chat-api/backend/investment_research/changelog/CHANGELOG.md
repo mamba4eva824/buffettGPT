@@ -2,6 +2,22 @@
 
 All notable changes to the investment research module are documented here.
 
+**Related Changelogs:**
+- [E2E Testing Changelog](./E2E_TESTING.md) — Frontend SSE, event parsing, and state management tests
+
+---
+
+## [2026-01-24] Frontend E2E Test Infrastructure Implemented
+
+See [E2E_TESTING.md](./E2E_TESTING.md) for full details.
+
+**Summary:** Implemented P0 test suite with **92 tests passing**:
+- 43 reducer state management tests
+- 21 SSE connection handling tests
+- 28 event parsing tests
+
+**Bug Discovered:** `handleSSEEvent` lacks null data guard (see E2E_TESTING.md for details)
+
 ---
 
 ## [2026-01-10] V2 Section-Based DynamoDB Schema — Progressive Loading

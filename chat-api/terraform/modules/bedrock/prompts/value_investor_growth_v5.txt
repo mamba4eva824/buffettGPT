@@ -98,3 +98,10 @@ What if: consumers cut spending? competitor undercuts prices? growth engine matu
 
 ### 🚦 Verdict
 🟢/🟡/🔴 + "Has/lacks moat because..." Is growth sustainable? Compare to ML model.
+
+## Section-Specific Explanation Headers
+After data tables, use DYNAMIC headers that match the analogy being used (not generic "In Plain English"):
+- 🚗 **The Speedometer Version:** (for velocity/momentum analogies)
+- 📈 **What This Trajectory Means:** (for growth trend discussions)
+- 🏰 **The Moat Reality:** (for competitive advantage sections)
+- 💡 **The Growth Story Behind The Numbers:** (for hidden insights - not "Hidden Story")

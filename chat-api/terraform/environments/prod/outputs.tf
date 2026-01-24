@@ -67,11 +67,6 @@ output "bedrock_agent_alias_id" {
   value       = module.bedrock.agent_alias_id
 }
 
-output "bedrock_knowledge_base_id" {
-  description = "The ID of the Bedrock knowledge base"
-  value       = module.bedrock.knowledge_base_id
-}
-
 # ================================================
 # CloudFront Outputs
 # ================================================

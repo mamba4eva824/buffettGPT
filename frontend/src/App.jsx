@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose, RefreshCw, AlertCircle } from "lucide-react";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
 import AnalysisView from "./components/analysis/AnalysisView.jsx";
 import StreamingText from "./components/analysis/StreamingText.jsx";
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
@@ -10,9 +10,33 @@ import { Avatar } from "./components/Avatar.jsx";
 import logger from "./utils/logger.js";
 import { ResearchProvider, useResearch } from "./contexts/ResearchContext.jsx";
 import SectionCard from "./components/research/SectionCard.jsx";
-import TableOfContents from "./components/research/TableOfContents.jsx";
-import RatingsHeader from "./components/research/RatingsHeader.jsx";
-import StreamingIndicator from "./components/research/StreamingIndicator.jsx";
+import ResearchLayout from "./components/research/ResearchLayout.jsx";
+
+// Research API URL for status checks
+const RESEARCH_API_URL = import.meta.env.VITE_RESEARCH_API_URL || 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
+
+/**
+ * Check if a research report exists and is not expired.
+ * Used when loading conversations with reference-only format.
+ */
+async function checkReportStatus(ticker, token = null) {
+  try {
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const response = await fetch(`${RESEARCH_API_URL}/research/report/${ticker.toUpperCase()}/status`, { headers });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return { exists: false, expired: true };
+      }
+      throw new Error(`Status check failed: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    logger.error('Error checking report status:', error);
+    return { exists: false, expired: true, error: error.message };
+  }
+}
 
 // Helper to detect if content is analysis output
 function isAnalysisContent(content) {
@@ -730,8 +754,11 @@ function ChatApp() {
   // Research mode state - for unified research view
   const [collapsedSections, setCollapsedSections] = useState([]);
   const [visibleSections, setVisibleSections] = useState([]); // Sections to display (on-demand via ToC clicks)
+  const [userExpandedSections, setUserExpandedSections] = useState(['01_executive_summary']); // Only sections user explicitly clicked (persisted)
   const [researchTocWidth, setResearchTocWidth] = useState(300);
   const researchScrollRef = useRef(null);
+  const [reportExpired, setReportExpired] = useState(false);  // Track if loaded report has expired
+  const [expiredReportMeta, setExpiredReportMeta] = useState(null);  // Metadata for expired report UI
 
   // Research context - provides streaming state and actions
   const {
@@ -756,6 +783,20 @@ function ChatApp() {
     clearFollowUp,
   } = useResearch();
 
+  // Only auto-show executive summary when streaming starts
+  // Other sections appear only when user clicks ToC items
+  useEffect(() => {
+    if (currentStreamingSection && isResearchStreaming) {
+      // Only auto-add executive summary - other sections require ToC click
+      if (currentStreamingSection === '01_executive_summary') {
+        setVisibleSections(prev => {
+          if (prev.includes(currentStreamingSection)) return prev;
+          return [...prev, currentStreamingSection];
+        });
+      }
+    }
+  }, [currentStreamingSection, isResearchStreaming]);
+
   // Toggle section collapse
   const toggleSectionCollapse = useCallback((sectionId) => {
     setCollapsedSections(prev =>
@@ -768,6 +809,12 @@ function ChatApp() {
   // Handle ToC section click - add section to visible list and scroll/fetch
   const handleTocSectionClick = useCallback(async (sectionId) => {
     setActiveSection(sectionId);
+
+    // Track this as a user-initiated expansion (persists to conversation history)
+    setUserExpandedSections(prev => {
+      if (prev.includes(sectionId)) return prev;
+      return [...prev, sectionId];
+    });
 
     // Add to visible sections (will render as new card if not already there)
     setVisibleSections(prev => {
@@ -792,7 +839,7 @@ function ChatApp() {
     // Fetch section on-demand if not available
     if (!streamedContent[sectionId]?.content && !isResearchStreaming) {
       try {
-        await fetchSection(analysisTicker, sectionId, token);
+        await fetchSection(researchTicker, sectionId, token);
         // Scroll after fetch completes
         setTimeout(() => {
           const sectionEl = document.getElementById(`section-${sectionId}`);
@@ -804,7 +851,7 @@ function ChatApp() {
         console.error('Failed to fetch section:', err);
       }
     }
-  }, [setActiveSection, streamedContent, isResearchStreaming, fetchSection, analysisTicker, token]);
+  }, [setActiveSection, streamedContent, isResearchStreaming, fetchSection, researchTicker, token]);
 
   // Get ordered sections from ToC for rendering - filtered by visibility (on-demand loading)
   const orderedSections = useMemo(() => {
@@ -833,6 +880,10 @@ function ChatApp() {
 
   // Track if we've saved this research report to avoid duplicate saves
   const savedResearchRef = useRef(null);
+  // Track how many sections were saved to detect new on-demand fetches
+  const lastSavedSectionsRef = useRef(0);
+  // Track last saved activeSectionId to detect ToC clicks
+  const lastSavedActiveSectionRef = useRef(null);
 
   // Use conversations hook for managing chat history
   const {
@@ -847,50 +898,137 @@ function ChatApp() {
     fetchConversations
   } = useConversations({ token, userId: user?.id, includeArchived: isAuthenticated ? showArchived : false });
 
-  // Save research report data to conversation when streaming completes
+  // Reset save tracking when conversation changes
+  useEffect(() => {
+    lastSavedSectionsRef.current = 0;
+    lastSavedActiveSectionRef.current = null;
+  }, [selectedConversation?.conversation_id]);
+
+  // Save research report reference to conversation when streaming completes OR sections/active section change
+  // NOTE: We only save metadata + reference, NOT full content (stored in investment_reports_v2)
   useEffect(() => {
     // Only save when:
-    // 1. Streaming just completed (streamStatus === 'complete')
+    // 1. Streaming completed (streamStatus === 'complete') OR we have loaded sections
     // 2. We have report data to save
     // 3. We have a conversation to save to
-    // 4. We haven't already saved this exact report
-    const shouldSave = streamStatus === 'complete' &&
+    // 4. EITHER: Initial save (savedResearchRef not set) OR sections have increased OR active section changed
+    const isInitialSave = savedResearchRef.current !== selectedConversation?.conversation_id;
+    const sectionsIncreased = userExpandedSections.length > lastSavedSectionsRef.current;
+    const activeSectionChanged = activeSectionId && activeSectionId !== lastSavedActiveSectionRef.current;
+
+    // DEBUG: Log state for ToC persistence debugging
+    console.log('[ToC Save DEBUG]', {
+      streamStatus,
+      activeSectionId,
+      lastSavedActiveSectionRef: lastSavedActiveSectionRef.current,
+      activeSectionChanged,
+      isInitialSave,
+      sectionsIncreased,
+      hasReportMeta: !!reportMeta,
+      conversationId: selectedConversation?.conversation_id,
+    });
+
+    // Allow save when streaming is complete OR when we have loaded content (for ToC clicks after load)
+    const isReadyToSave = streamStatus === 'complete' || (streamStatus === 'loading' && Object.keys(streamedContent).length > 0);
+
+    const shouldSave = isReadyToSave &&
       showInvestmentResearch &&
       reportMeta &&
       Object.keys(streamedContent).length > 0 &&
       selectedConversation?.conversation_id &&
       token &&
-      savedResearchRef.current !== selectedConversation.conversation_id;
+      (isInitialSave || sectionsIncreased || activeSectionChanged);
 
     if (shouldSave) {
       // Mark as saved to prevent duplicate saves
       savedResearchRef.current = selectedConversation.conversation_id;
+      lastSavedSectionsRef.current = userExpandedSections.length;
+      lastSavedActiveSectionRef.current = activeSectionId;
 
-      // Create a structured message containing the research report data
-      const researchData = {
-        _type: 'research_report',
-        ticker: researchTicker,
-        reportMeta: reportMeta,
-        streamedContent: streamedContent,
-        visibleSections: visibleSections,
-        savedAt: new Date().toISOString(),
-      };
-
-      // Save as an assistant message
-      conversationsApi.saveMessage(
+      // Save research state to conversation metadata (not messages table)
+      // This is cleaner than creating new message records on each ToC click
+      conversationsApi.updateResearchState(
         selectedConversation.conversation_id,
         {
-          message_type: 'assistant',
-          content: JSON.stringify(researchData),
+          ticker: researchTicker,
+          generated_at: reportMeta?.generated_at,
+          report_table: 'investment-reports-v2',
+          active_section_id: activeSectionId,
+          visible_sections: userExpandedSections,
+          toc: reportMeta?.toc,
+          ratings: reportMeta?.ratings,
+          total_word_count: reportMeta?.total_word_count,
+          last_updated: new Date().toISOString(),
         },
         token
       ).catch(err => {
-        logger.error('Failed to save research report to conversation:', err);
+        logger.error('Failed to save research state to conversation metadata:', err);
         // Reset saved ref so it can retry
         savedResearchRef.current = null;
       });
     }
-  }, [streamStatus, showInvestmentResearch, reportMeta, streamedContent, selectedConversation?.conversation_id, token, researchTicker]);
+  }, [streamStatus, showInvestmentResearch, reportMeta, streamedContent, userExpandedSections, activeSectionId, selectedConversation?.conversation_id, token, researchTicker]);
+
+  // NOTE: Removed the re-save effect for on-demand sections since we no longer store content.
+  // Sections are now fetched from investment_reports_v2 on-demand when conversation loads.
+
+  // Save follow-up messages when they complete streaming
+  // This persists Q&A history so it loads with the conversation
+  const lastSavedFollowUpCountRef = useRef(0);
+  useEffect(() => {
+    // Only save when:
+    // 1. We have follow-up messages
+    // 2. We have a conversation to save to
+    // 3. The last message is a completed assistant response
+    // 4. We haven't already saved this count
+    if (!followUpMessages.length || !selectedConversation?.conversation_id || !token) {
+      return;
+    }
+
+    const lastMessage = followUpMessages[followUpMessages.length - 1];
+    const isCompleted = lastMessage && !lastMessage.isStreaming && lastMessage.type === 'assistant';
+
+    if (!isCompleted || followUpMessages.length <= lastSavedFollowUpCountRef.current) {
+      return;
+    }
+
+    // Find the new messages to save (since last save)
+    const newMessages = followUpMessages.slice(lastSavedFollowUpCountRef.current);
+    lastSavedFollowUpCountRef.current = followUpMessages.length;
+
+    // Save each new message
+    for (const msg of newMessages) {
+      const messageData = msg.type === 'user'
+        ? {
+            _type: 'followup_question',
+            ticker: researchTicker,
+            question: msg.content,
+            timestamp: msg.timestamp,
+          }
+        : {
+            _type: 'followup_response',
+            ticker: researchTicker,
+            response: msg.content,
+            timestamp: msg.timestamp,
+          };
+
+      conversationsApi.saveMessage(
+        selectedConversation.conversation_id,
+        {
+          message_type: msg.type === 'user' ? 'user' : 'assistant',
+          content: JSON.stringify(messageData),
+        },
+        token
+      ).catch(err => {
+        logger.error('Failed to save follow-up message:', err);
+      });
+    }
+  }, [followUpMessages, selectedConversation?.conversation_id, token, researchTicker]);
+
+  // Reset follow-up save counter when conversation changes
+  useEffect(() => {
+    lastSavedFollowUpCountRef.current = 0;
+  }, [selectedConversation?.conversation_id]);
 
   const { status, sessionId, messages, connect, disconnect, setMessages, switchConversation } = useAwsWebSocket({
     wsUrl,
@@ -1110,6 +1248,7 @@ function ChatApp() {
       setSavedAnalysisResults(null);
       setIsLoadedFromHistory(false);
       setCollapsedSections([]); // Reset collapsed state for new research
+      setUserExpandedSections(['01_executive_summary']); // Reset user-clicked sections for new research
       setVisibleSections(['01_executive_summary']); // Auto-show executive summary
 
       // Start the research stream
@@ -1158,6 +1297,7 @@ function ChatApp() {
     // Reset research state (includes clearing follow-up)
     resetResearch();
     setCollapsedSections([]);
+    setUserExpandedSections(['01_executive_summary']);
     setVisibleSections([]);
 
     // Clear selection - conversation will be created in doSend when user submits a company
@@ -1179,7 +1319,7 @@ function ChatApp() {
     if (!token || !conversationId) return;
 
     try {
-      const { messages } = await loadConversationHistory(conversationId, token);
+      const { conversation, messages } = await loadConversationHistory(conversationId, token);
 
       // Format messages for display
       const formattedMessages = messages
@@ -1228,21 +1368,78 @@ function ChatApp() {
         conversationTitle.toLowerCase().startsWith('research:');
 
       if (isResearchConversation) {
-        // Try to find saved research report data in the messages
+        // NEW: Check conversation metadata first for research state
+        const researchState = conversation?.metadata?.research_state;
         let savedResearchData = null;
-        for (const msg of formattedMessages) {
-          if (msg.type === 'assistant' && msg.content?.startsWith('{')) {
-            try {
-              const data = JSON.parse(msg.content);
-              if (data._type === 'research_report') {
-                savedResearchData = data;
-                break;
+
+        if (researchState) {
+          // Found research state in conversation metadata (new format)
+          console.log('[ToC Load DEBUG] Found research state in metadata:', {
+            ticker: researchState.ticker,
+            active_section_id: researchState.active_section_id,
+            visible_sections: researchState.visible_sections,
+          });
+
+          // Convert metadata format to expected savedResearchData format
+          savedResearchData = {
+            _type: 'research_report_ref',
+            ticker: researchState.ticker,
+            generated_at: researchState.generated_at,
+            reportMeta: {
+              toc: researchState.toc,
+              ratings: researchState.ratings,
+              total_word_count: researchState.total_word_count,
+            },
+            visibleSections: researchState.visible_sections,
+            activeSectionId: researchState.active_section_id,
+          };
+        } else {
+          // FALLBACK: Try to find saved research report data in the messages (legacy format)
+          // Support both legacy format (research_report with full content) and reference format (research_report_ref)
+          // IMPORTANT: Use the LAST (most recent) message to get the latest activeSectionId and visibleSections
+          let foundCount = 0;
+          for (const msg of formattedMessages) {
+            if (msg.type === 'assistant' && msg.content?.startsWith('{')) {
+              try {
+                const data = JSON.parse(msg.content);
+                if (data._type === 'research_report' || data._type === 'research_report_ref') {
+                  foundCount++;
+                  console.log('[ToC Load DEBUG] Found saved research message (legacy)', foundCount, 'activeSectionId:', data.activeSectionId, 'savedAt:', data.savedAt);
+                  savedResearchData = data;
+                  // Don't break - continue to find the most recent message
+                }
+              } catch (e) {
+                // Not valid JSON, continue
               }
-            } catch (e) {
-              // Not valid JSON, continue
             }
           }
         }
+
+        console.log('[ToC Load DEBUG] Final savedResearchData activeSectionId:', savedResearchData?.activeSectionId);
+
+        // Parse follow-up messages from conversation history
+        const savedFollowUpMessages = formattedMessages
+          .filter(msg => {
+            if (msg.content?.startsWith('{')) {
+              try {
+                const data = JSON.parse(msg.content);
+                return data._type === 'followup_question' || data._type === 'followup_response';
+              } catch (e) {
+                return false;
+              }
+            }
+            return false;
+          })
+          .map(msg => {
+            const data = JSON.parse(msg.content);
+            return {
+              id: msg.id || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              type: data._type === 'followup_question' ? 'user' : 'assistant',
+              content: data.question || data.response,
+              isStreaming: false,
+              timestamp: data.timestamp || msg.timestamp,
+            };
+          });
 
         // Extract ticker from saved data or from title
         let ticker = savedResearchData?.ticker;
@@ -1259,35 +1456,115 @@ function ChatApp() {
           setSavedAnalysisResults(null);
           setAnalysisComplete(false);
           setIsLoadedFromHistory(false);
+          setReportExpired(false);
+          setExpiredReportMeta(null);
 
           // Set up research view
           setShowInvestmentResearch(true);
-          setCollapsedSections([]);
 
-          if (savedResearchData?.reportMeta && savedResearchData?.streamedContent) {
-            // Restore visible sections from saved data, fallback to executive summary only
+          // Determine format type
+          const isReferenceFormat = savedResearchData?._type === 'research_report_ref';
+          const isLegacyFormat = savedResearchData?._type === 'research_report' && savedResearchData?.streamedContent;
+
+          if (isReferenceFormat) {
+            // NEW FORMAT: Reference-only - fetch sections on-demand from investment_reports_v2
             const savedVisibleSections = savedResearchData.visibleSections || ['01_executive_summary'];
+            const savedActiveSectionId = savedResearchData.activeSectionId || savedVisibleSections[0] || '01_executive_summary';
+
+            // Check if report still exists and is not expired
+            const status = await checkReportStatus(ticker, token);
+
+            if (!status.exists || status.expired) {
+              // Report has expired or doesn't exist - show expiration banner
+              setReportExpired(true);
+              setExpiredReportMeta({
+                ticker: ticker,
+                generated_at: savedResearchData.generated_at,
+                ratings: savedResearchData.reportMeta?.ratings,
+                toc: savedResearchData.reportMeta?.toc,
+              });
+              setUserExpandedSections(savedVisibleSections);
+              setVisibleSections(savedVisibleSections);
+
+              // Load metadata-only (no content to display)
+              loadSavedReport({
+                ticker: ticker,
+                reportMeta: savedResearchData.reportMeta,
+                streamedContent: {},  // Empty - report expired
+                activeSectionId: savedActiveSectionId,  // Restore ToC highlight
+                followUpMessages: savedFollowUpMessages,
+              });
+            } else {
+              // Report exists - load metadata and fetch sections on-demand
+              setUserExpandedSections(savedVisibleSections);
+              setVisibleSections(savedVisibleSections);
+              setCollapsedSections([...savedVisibleSections]);
+
+              // Load with metadata, empty content (will be populated by fetchSection)
+              loadSavedReport({
+                ticker: ticker,
+                reportMeta: savedResearchData.reportMeta,
+                streamedContent: {},  // Empty - fetch on-demand
+                activeSectionId: savedActiveSectionId,  // Restore ToC highlight
+                followUpMessages: savedFollowUpMessages,
+              });
+
+              // Fetch visible sections in parallel from investment_reports_v2
+              try {
+                await Promise.all(
+                  savedVisibleSections.map(sectionId => fetchSection(ticker, sectionId, token))
+                );
+                // Scroll to restored active section after content loads
+                setTimeout(() => {
+                  const sectionEl = document.getElementById(`section-${savedActiveSectionId}`);
+                  if (sectionEl) {
+                    sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }, 150);
+              } catch (err) {
+                logger.error('Error fetching sections on-demand:', err);
+                // Continue anyway - partial content is better than none
+              }
+            }
+          } else if (isLegacyFormat) {
+            // LEGACY FORMAT: Full content embedded - load directly (backward compatible)
+            const savedVisibleSections = savedResearchData.visibleSections || ['01_executive_summary'];
+            // Legacy format may not have activeSectionId, fall back to first visible section
+            const savedActiveSectionId = savedResearchData.activeSectionId || savedVisibleSections[0] || '01_executive_summary';
+            setUserExpandedSections(savedVisibleSections);
             setVisibleSections(savedVisibleSections);
-            // Load saved report without streaming
+            setCollapsedSections([...savedVisibleSections]);
+
             loadSavedReport({
               ticker: ticker,
               reportMeta: savedResearchData.reportMeta,
               streamedContent: savedResearchData.streamedContent,
-              followUpMessages: [], // Follow-up messages would need separate handling
+              activeSectionId: savedActiveSectionId,  // Restore ToC highlight
+              followUpMessages: savedFollowUpMessages,
             });
+
+            // Scroll to restored active section after content renders
+            setTimeout(() => {
+              const sectionEl = document.getElementById(`section-${savedActiveSectionId}`);
+              if (sectionEl) {
+                sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }
+            }, 150);
           } else {
             // No saved data found, re-stream the report
-            // (This is a fallback for older conversations before this feature)
+            // (Fallback for older conversations before this feature)
+            setUserExpandedSections(['01_executive_summary']);
             setVisibleSections(['01_executive_summary']);
             startResearch(ticker, token);
           }
 
-          // Filter out the research report JSON message from display
+          // Filter out the research report JSON messages from display
           const displayMessages = formattedMessages.filter(msg => {
             if (msg.type === 'assistant' && msg.content?.startsWith('{')) {
               try {
                 const data = JSON.parse(msg.content);
-                return data._type !== 'research_report';
+                // Filter out report data and follow-up messages (handled separately)
+                return !['research_report', 'research_report_ref', 'followup_question', 'followup_response'].includes(data._type);
               } catch (e) {
                 return true;
               }
@@ -1349,7 +1626,7 @@ function ChatApp() {
       logger.error('Error loading conversation messages:', error);
       // Don't alert on error, just log it
     }
-  }, [token, setMessages, startResearch, loadSavedReport]);
+  }, [token, setMessages, startResearch, loadSavedReport, fetchSection]);
 
 
 
@@ -1366,8 +1643,8 @@ function ChatApp() {
             />
           )}
 
-          {/* Sidebar - Only show for authenticated users, hide in Investment Research mode */}
-          {isAuthenticated && !showInvestmentResearch && (
+          {/* Sidebar - Show for authenticated users (visible in all modes including Research) */}
+          {isAuthenticated && (
             <aside className={classNames(
               "shrink-0 border-r border-slate-100 dark:border-slate-700 transition-all duration-300 ease-in-out",
               // Mobile: fixed overlay that slides in from left
@@ -1638,66 +1915,159 @@ function ChatApp() {
                       onSuggestionsReady={setAnalysisComplete}
                     />
                   </div>
-                ) : (
-                  /* UNIFIED MESSAGES + RESEARCH VIEW */
-                  <div className="flex-1 flex min-h-0">
-                    {/* Scrollable content area - messages and research sections */}
-                    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
-                      <div className="mx-auto max-w-3xl space-y-4">
-                        {/* Research header - only when research mode is active */}
-                        {showInvestmentResearch && reportMeta && (
-                          <div className="mb-4 pb-4 border-b border-slate-200 dark:border-slate-700">
-                            <div className="flex items-center justify-between">
-                              <RatingsHeader
-                                ticker={researchTicker || analysisTicker}
-                                ratings={reportMeta?.ratings}
-                                generatedAt={reportMeta?.generated_at}
-                              />
-                              <button
-                                onClick={() => {
-                                  setShowInvestmentResearch(false);
-                                  setAnalysisTicker('');
-                                  resetResearch();
-                                  setVisibleSections([]);
-                                }}
-                                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
-                                title="Close"
-                              >
-                                <X className="h-5 w-5" />
-                              </button>
-                            </div>
+                ) : showInvestmentResearch ? (
+                  /* RESEARCH MODE - Uses dedicated ResearchLayout */
+                  <ResearchLayout
+                    ticker={researchTicker || analysisTicker}
+                    reportMeta={reportMeta}
+                    streamedContent={streamedContent}
+                    activeSectionId={activeSectionId}
+                    currentStreamingSection={currentStreamingSection}
+                    isStreaming={isResearchStreaming}
+                    streamStatus={streamStatus}
+                    error={researchError}
+                    progress={researchProgress}
+                    reportExpired={reportExpired}
+                    expiredReportMeta={expiredReportMeta}
+                    tocWidth={researchTocWidth}
+                    onSectionClick={handleTocSectionClick}
+                    onClose={() => {
+                      setShowInvestmentResearch(false);
+                      setAnalysisTicker('');
+                      resetResearch();
+                      setVisibleSections([]);
+                    }}
+                    onRetry={() => startResearch(analysisTicker, token)}
+                    onRegenerateExpired={() => {
+                      setReportExpired(false);
+                      setExpiredReportMeta(null);
+                      startResearch(expiredReportMeta.ticker, token);
+                    }}
+                    onDismissExpired={() => {
+                      setReportExpired(false);
+                      setExpiredReportMeta(null);
+                      setShowInvestmentResearch(false);
+                      resetResearch();
+                    }}
+                    composer={
+                      <>
+                        {showRateLimitBanner && !isAuthenticated && hasStartedQuerying && (
+                          <RateLimitBanner
+                            remainingQueries={remainingQueries}
+                            onClose={() => setShowRateLimitBanner(false)}
+                            onSignUp={() => setAccountDropdownOpen(true)}
+                            isVisible={showRateLimitBanner}
+                          />
+                        )}
+                        <SearchComposer
+                          input={input}
+                          setInput={setInput}
+                          doSend={doSend}
+                          isConnecting={isConnecting}
+                          selectedMode={selectedMode}
+                          onModeChange={setSelectedMode}
+                          isFollowUpMode={!!reportMeta && !!researchTicker}
+                        />
+                      </>
+                    }
+                  >
+                    {/* User messages */}
+                    {messages.map((m) => {
+                      const userMessages = messages.filter(msg => msg.type === 'user');
+                      const lastUserMsg = userMessages[userMessages.length - 1];
+                      const isLastUserMessage = m.type === 'user' && m.id === lastUserMsg?.id;
 
-                            {/* Streaming indicator */}
-                            {(isResearchStreaming || streamStatus === 'connecting') && (
-                              <div className="mt-3">
-                                <StreamingIndicator
-                                  currentSection={streamedContent[currentStreamingSection]?.title}
-                                  progress={researchProgress.total > 0 ? researchProgress : null}
-                                  isStreaming={isResearchStreaming}
-                                  status={streamStatus}
-                                />
-                              </div>
-                            )}
+                      return (
+                        <MessageBubble
+                          key={m.id}
+                          msg={m}
+                          user={user}
+                          messageRef={isLastUserMessage ? lastUserMessageRef : null}
+                        />
+                      );
+                    })}
 
-                            {/* Error state */}
-                            {researchError && (
-                              <div className="mt-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-3">
-                                <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0" />
-                                <div className="flex-1">
-                                  <p className="text-sm text-red-700 dark:text-red-400">{researchError}</p>
+                    {/* Research sections */}
+                    {orderedSections.map((section) => (
+                      <div key={section.section_id} id={`section-${section.section_id}`} className="mx-auto w-full max-w-2xl">
+                        <SectionCard
+                          section={section}
+                          isStreaming={currentStreamingSection === section.section_id}
+                          isCollapsed={collapsedSections.includes(section.section_id)}
+                          onToggleCollapse={() => toggleSectionCollapse(section.section_id)}
+                        />
+                      </div>
+                    ))}
+
+                    {/* Loading state when research started but no sections yet */}
+                    {orderedSections.length === 0 && !researchError && (isResearchStreaming || streamStatus === 'connecting') && (
+                      <div className="flex items-center justify-center h-32 text-slate-400 dark:text-slate-500">
+                        <p>Loading research report...</p>
+                      </div>
+                    )}
+
+                    {/* Follow-up conversation */}
+                    {followUpMessages.length > 0 && (
+                      <div className="mx-auto w-full max-w-2xl mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                        <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-4 px-4">
+                          Follow-up Questions
+                        </div>
+                        {followUpMessages.map((msg) => (
+                          <div key={msg.id} className="mb-4 px-4">
+                            {msg.type === 'user' ? (
+                              <div className="flex justify-end">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full text-sm max-w-[80%]">
+                                  {msg.content}
                                 </div>
-                                <button
-                                  onClick={() => startResearch(analysisTicker, token)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                                >
-                                  <RefreshCw className="h-4 w-4" />
-                                  Retry
-                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex gap-3">
+                                <div className="h-7 w-7 shrink-0">
+                                  <img
+                                    src="/buffett-memoji.png"
+                                    alt="Assistant"
+                                    className="w-full h-full rounded-full"
+                                  />
+                                </div>
+                                <div className="flex-1 bg-slate-50 dark:bg-slate-700 rounded-xl p-4 text-sm prose prose-sm dark:prose-invert max-w-none">
+                                  {msg.content}
+                                  {msg.isStreaming && (
+                                    <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>
-                        )}
+                        ))}
+                      </div>
+                    )}
 
+                    {/* Follow-up streaming indicator */}
+                    {isFollowUpStreaming && followUpMessages.length === 0 && (
+                      <div className="mx-auto w-full max-w-2xl mt-4 px-4">
+                        <div className="flex gap-3">
+                          <div className="h-7 w-7 shrink-0">
+                            <img
+                              src="/buffett-memoji.png"
+                              alt="Assistant"
+                              className="w-full h-full rounded-full"
+                            />
+                          </div>
+                          <div className="text-slate-400 dark:text-slate-500 text-sm">
+                            Thinking...
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Invisible element at the end for auto-scrolling */}
+                    <div ref={messagesEndRef} />
+                  </ResearchLayout>
+                ) : (
+                  /* REGULAR CHAT VIEW */
+                  <div className="flex-1 flex min-h-0">
+                    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
+                      <div className="mx-auto max-w-3xl space-y-4">
                         {/* User messages */}
                         {messages.map((m) => {
                           const userMessages = messages.filter(msg => msg.type === 'user');
@@ -1714,79 +2084,6 @@ function ChatApp() {
                           );
                         })}
 
-                        {/* Research sections - render after messages when in research mode */}
-                        {showInvestmentResearch && orderedSections.map((section) => (
-                          <div key={section.section_id} id={`section-${section.section_id}`} className="mx-auto w-full max-w-2xl">
-                            <SectionCard
-                              section={section}
-                              isStreaming={currentStreamingSection === section.section_id}
-                              isCollapsed={collapsedSections.includes(section.section_id)}
-                              onToggleCollapse={() => toggleSectionCollapse(section.section_id)}
-                            />
-                          </div>
-                        ))}
-
-                        {/* Loading state when research started but no sections yet */}
-                        {showInvestmentResearch && orderedSections.length === 0 && !researchError && (isResearchStreaming || streamStatus === 'connecting') && (
-                          <div className="flex items-center justify-center h-32 text-slate-400 dark:text-slate-500">
-                            <p>Loading research report...</p>
-                          </div>
-                        )}
-
-                        {/* Follow-up conversation - render after research sections */}
-                        {showInvestmentResearch && followUpMessages.length > 0 && (
-                          <div className="mx-auto w-full max-w-2xl mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                            <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-4 px-4">
-                              Follow-up Questions
-                            </div>
-                            {followUpMessages.map((msg) => (
-                              <div key={msg.id} className="mb-4 px-4">
-                                {msg.type === 'user' ? (
-                                  <div className="flex justify-end">
-                                    <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full text-sm max-w-[80%]">
-                                      {msg.content}
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div className="flex gap-3">
-                                    <div className="h-7 w-7 shrink-0">
-                                      <img
-                                        src="/buffett-memoji.png"
-                                        alt="Assistant"
-                                        className="w-full h-full rounded-full"
-                                      />
-                                    </div>
-                                    <div className="flex-1 bg-slate-50 dark:bg-slate-700 rounded-xl p-4 text-sm prose prose-sm dark:prose-invert max-w-none">
-                                      {msg.content}
-                                      {msg.isStreaming && (
-                                        <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Follow-up streaming indicator */}
-                        {showInvestmentResearch && isFollowUpStreaming && followUpMessages.length === 0 && (
-                          <div className="mx-auto w-full max-w-2xl mt-4 px-4">
-                            <div className="flex gap-3">
-                              <div className="h-7 w-7 shrink-0">
-                                <img
-                                  src="/buffett-memoji.png"
-                                  alt="Assistant"
-                                  className="w-full h-full rounded-full"
-                                />
-                              </div>
-                              <div className="text-slate-400 dark:text-slate-500 text-sm">
-                                Thinking...
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
                         {/* Evaluating indicator */}
                         {isEvaluating && (
                           <div className="flex justify-start">
@@ -1800,27 +2097,11 @@ function ChatApp() {
                         <div ref={messagesEndRef} />
                       </div>
                     </div>
-
-                    {/* Table of Contents - right side, only when research mode has content */}
-                    {showInvestmentResearch && reportMeta?.toc?.length > 0 && (
-                      <div
-                        className="hidden md:block flex-shrink-0 border-l border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50"
-                        style={{ width: researchTocWidth }}
-                      >
-                        <TableOfContents
-                          toc={reportMeta.toc}
-                          activeSectionId={activeSectionId}
-                          onSectionClick={handleTocSectionClick}
-                          streamedSections={streamedContent}
-                          currentStreamingSection={currentStreamingSection}
-                        />
-                      </div>
-                    )}
                   </div>
                 )}
 
-                {/* Bottom Composer - always visible except when analysis is showing */}
-                {!showAnalysis && (
+                {/* Bottom Composer - visible for regular chat (not analysis or research mode) */}
+                {!showAnalysis && !showInvestmentResearch && (
                 <div className="border-t border-slate-100 dark:border-slate-700 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out">
                   {/* Rate Limit Banner */}
                   {showRateLimitBanner && !isAuthenticated && hasStartedQuerying && (

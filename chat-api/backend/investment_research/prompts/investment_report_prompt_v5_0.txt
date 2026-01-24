@@ -80,16 +80,39 @@ Your reader is a 25-35 year old who has $50-500/month to invest, may have studen
 ### 2. Business Analogy Framework
 **Open with a {ticker}-specific analogy and echo it throughout the report.**
 
-Create ONE strong analogy that captures what {ticker} does, then reference it in other sections:
-- SaaS/Security → "digital bouncer," "subscription gym," "security guard service"
-- E-commerce → "digital mall," "everything store"
-- Pharma → "health insurance for drug development"
-- Consumer → "the thing you can't quit"
+**CRITICAL: DO NOT reuse these example analogies verbatim.** These are INSPIRATION ONLY. Create a UNIQUE analogy based on {ticker}'s specific business model, competitive position, or customer relationship.
 
-**Example for Okta:**
-- Opening: "Okta is like the digital bouncer for the corporate world..."
-- Cash Flow: "Every company that walks through Okta's door pays a monthly cover charge..."
-- Debt: "This bouncer has more tip money than bar tabs..."
+**How to create a unique analogy:**
+1. Ask: "What does {ticker} actually DO for its customers?"
+2. Find a real-world equivalent the reader experiences (workplace, shopping, daily life)
+3. Make it specific to THIS company's unique angle, not generic to the industry
+
+**Analogy Bank by Industry (ROTATE — never use the same one twice):**
+
+| Industry | Analogy Options (pick ONE, or create your own) |
+|----------|-----------------------------------------------|
+| **SaaS/Security** | digital doorman, corporate ID checker, password vault, login gatekeeper, office key master, network traffic cop, cyber locksmith, access control booth, digital passport office, the IT department's best friend |
+| **SaaS/Productivity** | digital assistant that never sleeps, workflow autopilot, the glue holding teams together, office Swiss Army knife, corporate productivity engine |
+| **E-commerce** | digital Main Street, the everything aisle, your phone's shopping mall, the merchant middleman, retail's landlord |
+| **Cloud/Infrastructure** | digital real estate landlord, the internet's utility company, computing's power grid, server room for rent, the plumbing of the internet |
+| **Payments/Fintech** | money's highway system, the toll booth between buyer and seller, financial plumbing, the invisible cashier, digital wallet keeper |
+| **Pharma/Biotech** | molecular lottery ticket, drug development casino, health R&D factory, the medicine pipeline, disease-fighting laboratory |
+| **Consumer Staples** | the grocery list essential, the thing you grab without thinking, household autopilot purchase, the comfort brand |
+| **Consumer Discrettic** | the splurge you justify, the lifestyle upgrade, the "treat yourself" brand, the aspirational purchase |
+| **Banks/Insurance** | money's safety deposit box, risk pooling machine, the financial middleman, savings warehouse, loan factory |
+| **Industrials** | the economy's backbone, infrastructure builder, the machines behind the machines, commerce's conveyor belt |
+| **Healthcare** | the wellness gatekeeper, medical services hub, health system plumbing, patient care factory |
+| **Media/Entertainment** | attention merchant, eyeball collector, the content buffet, entertainment vending machine |
+| **Semiconductors** | brain cells of every device, digital intelligence factory, the chips in everything, computing's foundation |
+| **Energy** | economy's fuel tank, power grid backbone, the lights-on guarantee, modern life's engine |
+
+**Analogy Echo Pattern (generic template):**
+- **TL;DR**: "{ticker} is like [analogy] for [customer type]..."
+- **Cash Flow**: "Every [customer action] means [cash implication using analogy]..."
+- **Debt**: "This [analogy role] has [debt situation using analogy language]..."
+- **Real Talk**: Return to the analogy for the closing insight
+
+**Uniqueness Test:** Before using an analogy, ask: "Would this exact phrase work for {ticker}'s top 3 competitors?" If YES → make it more specific or choose a different angle.
 
 ### 3. Everything Must Be Unique to {ticker}
 Headers, analogies, and insights should ONLY make sense for THIS company.
@@ -321,8 +344,13 @@ Use the momentum signals to create a visual "quick read" that shows WHERE growth
 - ↓ Slowing (Momentum Shift < -1 pts)
 - ⚠️ Stalling (growth < 5% or approaching 0%)
 
-**Step 3: Add the plain English interpretation:**
-Use a relatable analogy specific to the situation:
+**Step 3: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 🚗 **The Speedometer Version:** (when using velocity/car analogy)
+- 📈 **What This Trajectory Means:** (when discussing trend direction)
+- 🔥 **The Viral Math:** (when using TikTok/viral analogy)
+
+Example interpretations by situation:
 - Decelerating: "Imagine checking your speedometer: 70 mph... 65... 60... 55. Still moving forward, but clearly slowing down."
 - Accelerating: "Like a viral TikTok — Day 1: 1M views, Day 2: 3M, Day 3: 8M. The algorithm loves it."
 - Steady: "Cruise control. Not speeding up, not slowing down. Consistent."
@@ -420,7 +448,13 @@ Examples by situation:
 | 20XX | $X.XXB | +$XXM | +X.X% | ✅ Breakeven! |
 | 20XX | $X.XXB | +$XXXM | +X.X% | 📈 Profitable |
 
-**Step 3: Plain English interpretation:**
+**Step 3: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 💰 **The Take-Home Translation:** (when discussing margin as personal income)
+- 🍔 **The Kitchen Analogy:** (when using restaurant/food truck analogy)
+- 💳 **The Credit Card Comparison:** (when using debt payoff analogy)
+
+Example interpretations by situation:
 - Expanding: "They went from losing 65 cents on every dollar to keeping 8 cents. Like finally paying off your credit card and starting to save."
 - Compressing: "Imagine your savings rate dropping from 15% to 11% of your paycheck. Same income, less staying in your pocket."
 - Steady: "Consistent profitability — not getting better, not getting worse. The reliable earner."
@@ -557,15 +591,26 @@ Examples by situation:
 | 20XX | $XXM | X.X% | → Breakeven |
 | 20XX | $XXXM | XX.X% | 📈 Growing |
 
-**Step 4: Plain English interpretation:**
+**Step 4: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 💵 **Your Paycheck Comparison:** (when using salary/take-home analogy)
+- 🚰 **The Faucet Analogy:** (when using water/flow analogy)
+- 🏧 **The Cash Machine Translation:** (when discussing business cash generation)
+
+Example interpretations by situation:
 - Strengthening: "The faucet is opening wider — more cash flowing in each quarter. And it's not just flowing more, it's *increasing faster*."
 - Weakening: "Same revenue, less cash hitting the bank. Like your paycheck growing but take-home shrinking because of taxes and deductions."
 - Steady: "Consistent cash generation. The faucet isn't opening wider, but it's not closing either."
 
-**Step 5: Hidden Story callout (if applicable):**
-If cash flow momentum diverges from growth momentum, highlight it:
+**Step 5: Divergence callout (if applicable):**
+If cash flow momentum diverges from growth momentum, highlight it with a SPECIFIC header:
+- 💡 **The Untold Cash Story:** (when cash is strengthening despite slowing growth)
+- 💡 **The Cash Reality Check:** (when cash is weakening despite strong growth)
+- 💡 **What The Headlines Miss:** (for any divergence worth noting)
+
+Example:
 ```
-**💡 Hidden story:** While headlines focus on slowing growth, the cash machine is quietly getting stronger. This is the untold story.
+**💡 The Untold Cash Story:** While headlines focus on slowing growth, the cash machine is quietly getting stronger. For every $1 of profit on paper, $4.68 actually lands in the bank — and this ratio is *improving*.
 ```
 
 ---
@@ -625,7 +670,13 @@ Examples by situation:
 | 1-3 years | $XXM | XX.X% | 🟢/🟡/🔴 |
 | 3-5 years | $XXM | XX.X% | 🟢/🟡/🔴 |
 
-**Step 4: Plain English interpretation:**
+**Step 4: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 📚 **The Student Loan Comparison:** (when using student debt analogy)
+- 💳 **The Credit Card Reality:** (when using credit card analogy)
+- 🏦 **Your Bank Account Version:** (when using savings/checking analogy)
+
+Example interpretations by situation:
 - Deleveraging: "Three years ago they owed $2.4B. Now it's $423M. That's like paying off 80% of your student loans in 4 years while your savings account grew."
 - Leveraging up: "They're putting another $1B on the credit card every quarter. Might be for growth investments, but borrowed money comes with interest."
 - Stable: "Debt levels holding steady. Not getting better, not getting worse."
@@ -717,9 +768,9 @@ Before submitting, verify:
 - [ ] Each momentum section has a "Quick Read" visual gauge box
 - [ ] Progress bars use █ and ░ characters consistently
 - [ ] Historical data tables show 5-year annual OR 8-quarter views
-- [ ] Plain English analogies follow each data table
+- [ ] Analogy headers are DYNAMIC and section-specific (NOT generic "In Plain English")
 - [ ] Pattern alerts flagged with ⚠️ when relevant
-- [ ] Hidden story callouts used when momentum diverges from headline metrics
+- [ ] Divergence callouts use specific headers like "The Untold Cash Story" (NOT generic "Hidden Story")
 
 **Plain Language:**
 - [ ] Every number has plain English explaining what it means

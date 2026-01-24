@@ -44,11 +44,8 @@ locals {
     ENVIRONMENT                 = local.environment
     PROJECT_NAME                = local.project_name
     LOG_LEVEL                   = "INFO" # Production logging level
-    CHAT_SESSIONS_TABLE         = module.dynamodb.chat_sessions_table_name
-    CHAT_MESSAGES_TABLE         = module.dynamodb.chat_messages_table_name
-    CONVERSATIONS_TABLE         = module.dynamodb.conversations_table_name
-    WEBSOCKET_CONNECTIONS_TABLE = module.dynamodb.websocket_connections_table_name
-    ENHANCED_RATE_LIMITS_TABLE  = module.dynamodb.enhanced_rate_limits_table_name
+    CHAT_MESSAGES_TABLE = module.dynamodb.chat_messages_table_name
+    CONVERSATIONS_TABLE = module.dynamodb.conversations_table_name
     KMS_KEY_ID                  = module.core.kms_key_id
     CHAT_PROCESSING_QUEUE_URL   = module.core.chat_processing_queue_url
 
@@ -63,15 +60,10 @@ locals {
   }
 
   # Function-specific environment variables
+  # NOTE: Anonymous sessions and rate limits tables removed (2025-01)
   lambda_function_env_vars = {
-    websocket_connect = {
-      ANONYMOUS_SESSIONS_TABLE = module.dynamodb.anonymous_sessions_table_name
-      USERS_TABLE              = "" # Not using users table for now
-      RATE_LIMITS_TABLE        = module.dynamodb.enhanced_rate_limits_table_name
-    }
-    chat_processor = {
-      # Additional environment variables can be added here if needed
-    }
+    websocket_connect = {}
+    chat_processor    = {}
   }
 }
 
@@ -103,7 +95,6 @@ module "dynamodb" {
   kms_key_arn                = module.core.kms_key_arn
   enable_pitr                = true # Enable point-in-time recovery for production
   enable_deletion_protection = true # Enable deletion protection for production
-  enable_anonymous_sessions  = true # Support anonymous sessions
   common_tags                = local.common_tags
 }
 

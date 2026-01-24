@@ -31,6 +31,7 @@ const ACTIONS = {
   SET_SECTION: 'SET_SECTION',
   SET_ERROR: 'SET_ERROR',
   RESET: 'RESET',
+  LOAD_SAVED_REPORT: 'LOAD_SAVED_REPORT',  // Load pre-saved report from history
   // Follow-up chat actions
   FOLLOWUP_USER_MESSAGE: 'FOLLOWUP_USER_MESSAGE',
   FOLLOWUP_START: 'FOLLOWUP_START',
@@ -118,6 +119,8 @@ function researchReducer(state, action) {
     case ACTIONS.SET_SECTION:
       return {
         ...state,
+        // Update status to 'complete' if we were in 'loading' state (reference format fetch)
+        streamStatus: state.streamStatus === 'loading' ? 'complete' : state.streamStatus,
         streamedContent: {
           ...state.streamedContent,
           [action.sectionId]: {
@@ -141,6 +144,23 @@ function researchReducer(state, action) {
 
     case ACTIONS.RESET:
       return initialState;
+
+    case ACTIONS.LOAD_SAVED_REPORT:
+      // Load a report from saved history
+      // For reference format: streamedContent may be empty initially (fetch on-demand)
+      // For legacy format: streamedContent contains full content
+      return {
+        ...initialState,
+        selectedTicker: action.ticker,
+        // If streamedContent is empty, set status to 'loading' to indicate sections need fetching
+        streamStatus: Object.keys(action.streamedContent || {}).length > 0 ? 'complete' : 'loading',
+        isStreaming: false,
+        reportMeta: action.reportMeta,
+        streamedContent: action.streamedContent || {},
+        // Restore saved activeSectionId, or fall back to first ToC item
+        activeSectionId: action.activeSectionId || action.reportMeta?.toc?.[0]?.section_id || '01_executive_summary',
+        followUpMessages: action.followUpMessages || [],
+      };
 
     // Follow-up chat actions
     case ACTIONS.FOLLOWUP_USER_MESSAGE:
@@ -271,6 +291,7 @@ export function ResearchProvider({ children }) {
       const decoder = new TextDecoder();
       let buffer = '';
       let currentEvent = '';
+      let hasError = false;  // Track if error event was received during stream
 
       while (true) {
         const { done, value } = await reader.read();
@@ -286,6 +307,10 @@ export function ResearchProvider({ children }) {
           } else if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
+              // Track error events to prevent overwriting with 'complete'
+              if (currentEvent === 'error') {
+                hasError = true;
+              }
               handleSSEEvent(currentEvent, data, dispatch);
             } catch (e) {
               console.warn('Failed to parse SSE data:', e);
@@ -294,7 +319,10 @@ export function ResearchProvider({ children }) {
         }
       }
 
-      dispatch({ type: ACTIONS.SET_STATUS, status: 'complete' });
+      // Only dispatch complete if no error occurred during stream
+      if (!hasError) {
+        dispatch({ type: ACTIONS.SET_STATUS, status: 'complete' });
+      }
     } catch (error) {
       if (error.name === 'AbortError') {
         // Stream was intentionally aborted, not an error
@@ -353,9 +381,41 @@ export function ResearchProvider({ children }) {
     dispatch({ type: ACTIONS.CLEAR_FOLLOWUP });
   }, [abortFollowUp]);
 
+  // Load a saved report from conversation history (no streaming)
+  const loadSavedReport = useCallback((savedData) => {
+    // Abort any existing streams
+    abortStream();
+    abortFollowUp();
+
+    dispatch({
+      type: ACTIONS.LOAD_SAVED_REPORT,
+      ticker: savedData.ticker,
+      reportMeta: savedData.reportMeta,
+      streamedContent: savedData.streamedContent,
+      activeSectionId: savedData.activeSectionId,  // Restore ToC highlight state
+      followUpMessages: savedData.followUpMessages || [],
+    });
+  }, [abortStream, abortFollowUp]);
+
   // Send follow-up question
   const sendFollowUp = useCallback(async (question, token = null) => {
-    if (!state.selectedTicker || state.isFollowUpStreaming) return;
+    // DEBUG: Log state before validation
+    console.log('[FollowUp DEBUG] State before request:', {
+      selectedTicker: state.selectedTicker,
+      activeSectionId: state.activeSectionId,
+      isFollowUpStreaming: state.isFollowUpStreaming,
+      question: question,
+      questionLength: question?.length,
+      questionType: typeof question,
+    });
+
+    if (!state.selectedTicker || state.isFollowUpStreaming) {
+      console.warn('[FollowUp DEBUG] Early return - validation failed:', {
+        selectedTicker: state.selectedTicker,
+        isFollowUpStreaming: state.isFollowUpStreaming,
+      });
+      return;
+    }
 
     // Add user message immediately
     const userMessageId = `user-${Date.now()}`;
@@ -369,6 +429,21 @@ export function ResearchProvider({ children }) {
     abortFollowUp();
     followUpAbortRef.current = new AbortController();
 
+    // Build request body
+    const requestBody = {
+      ticker: state.selectedTicker,
+      question: question,
+      section_id: state.activeSectionId,
+    };
+
+    // DEBUG: Log the exact request being sent
+    console.log('[FollowUp DEBUG] Request details:', {
+      url: `${API_BASE}/research/followup`,
+      method: 'POST',
+      body: requestBody,
+      bodyStringified: JSON.stringify(requestBody),
+    });
+
     try {
       const response = await fetch(`${API_BASE}/research/followup`, {
         method: 'POST',
@@ -376,16 +451,28 @@ export function ResearchProvider({ children }) {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({
-          ticker: state.selectedTicker,
-          question: question,
-          section_id: state.activeSectionId,
-        }),
+        body: JSON.stringify(requestBody),
         signal: followUpAbortRef.current.signal,
       });
 
+      // DEBUG: Log response status
+      console.log('[FollowUp DEBUG] Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries()),
+      });
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // DEBUG: Try to get error details from response body
+        let errorBody = null;
+        try {
+          errorBody = await response.clone().text();
+          console.error('[FollowUp DEBUG] Error response body:', errorBody);
+        } catch (e) {
+          console.error('[FollowUp DEBUG] Could not read error body:', e);
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
       }
 
       const reader = response.body.getReader();
@@ -428,6 +515,7 @@ export function ResearchProvider({ children }) {
     fetchSection,
     setActiveSection,
     reset,
+    loadSavedReport,  // Load report from history without streaming
     // Follow-up methods
     sendFollowUp,
     clearFollowUp,
@@ -452,6 +540,12 @@ export function useResearch() {
 
 // SSE event handler
 function handleSSEEvent(eventType, data, dispatch) {
+  // Guard against null/undefined data to prevent crashes from malformed SSE events
+  if (!data) {
+    console.warn('SSE event received with null/undefined data:', eventType);
+    return;
+  }
+
   switch (eventType) {
     case 'connected':
       dispatch({ type: ACTIONS.SET_STATUS, status: 'streaming' });

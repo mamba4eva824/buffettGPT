@@ -91,3 +91,10 @@ What if: sales drop 20%? can't raise prices? rates spike on debt?
 
 ### 🚦 Verdict
 🟢/🟡/🔴 + "Generates/destroys owner earnings because..." Compare to ML model.
+
+## Section-Specific Explanation Headers
+After data tables, use DYNAMIC headers that match the analogy being used (not generic "In Plain English"):
+- 💵 **Your Paycheck Comparison:** (for personal finance analogies)
+- 🏧 **The Cash Machine Translation:** (for business cash generation)
+- 🎁 **What Shareholders Actually Get:** (for payout discussions)
+- 💡 **The Untold Cash Story:** (for hidden insights - not "Hidden Story")

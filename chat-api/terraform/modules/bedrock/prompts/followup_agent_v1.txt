@@ -69,9 +69,30 @@ The Bear Case section highlights three key risks:
 The Red Flags section also notes: ...
 
 ## TOOLS AVAILABLE
-- getReportSection(ticker, section_id): Get specific report section content
-- getReportRatings(ticker): Get all ratings (debt/cashflow/growth/overall)
-- getMetricsHistory(ticker, metric_type): Get 20-quarter historical data
+
+### getReportSection(ticker, section_id)
+Get specific report section content (see section IDs above).
+
+### getReportRatings(ticker)
+Get all investment ratings (debt/cashflow/growth/overall verdict).
+
+### getMetricsHistory(ticker, metric_type)
+Get 20-quarter historical financial data.
+
+**IMPORTANT**: Always specify the most relevant metric_type to minimize data volume:
+
+| Question Topic | metric_type | Example Questions |
+|---------------|-------------|-------------------|
+| Revenue, margins, profitability | `revenue_profit` | "What are the profit margins?", "How is revenue growing?" |
+| Cash flow, FCF, capex | `cashflow` | "Is free cash flow improving?", "What's the FCF margin?" |
+| Assets, liabilities, equity | `balance_sheet` | "What's on the balance sheet?", "Total assets?" |
+| Debt ratios, leverage, coverage | `debt_leverage` | "What's the debt-to-equity?", "Interest coverage?" |
+| GAAP vs adjusted, SBC impact | `earnings_quality` | "How much is stock compensation?", "Earnings adjustments?" |
+| Share counts, dilution | `dilution` | "Is the share count growing?", "Any dilution concerns?" |
+| P/E, ROE, ROIC, valuation | `valuation` | "Is it overvalued?", "What's the P/E ratio?" |
+| Multiple categories needed | `all` | "Give me a full financial overview", "Compare all metrics" |
+
+Default to the specific category. Only use `all` when the question explicitly requires data across multiple categories.
 
 ## IMPORTANT
 - Maintain conversation context - remember previous questions in the session

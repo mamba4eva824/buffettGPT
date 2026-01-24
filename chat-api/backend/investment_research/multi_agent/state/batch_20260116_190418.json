@@ -1,0 +1,60 @@
+{
+  "batch_id": "20260116_190418",
+  "created_at": "2026-01-16T19:04:18.765849Z",
+  "version": 17,
+  "tasks": {
+    "AAPL": {
+      "ticker": "AAPL",
+      "status": "in_progress",
+      "worker_id": "W01",
+      "started_at": "2026-01-16T19:09:18.797902Z",
+      "completed_at": null,
+      "error": "Command '['claude', '-p', 'Generate an investment research report for AAPL using prompt version 4.6. Use the existing report_generator.py in this project. Save the report to test_outputs/AAPL_report.md']' timed out after 300 seconds",
+      "retry_count": 1,
+      "report_path": null,
+      "last_heartbeat": "2026-01-16T19:09:18.797902Z"
+    },
+    "MSFT": {
+      "ticker": "MSFT",
+      "status": "pending",
+      "worker_id": null,
+      "started_at": null,
+      "completed_at": null,
+      "error": "Command '['claude', '-p', 'Generate an investment research report for MSFT using prompt version 4.6. Use the existing report_generator.py in this project. Save the report to test_outputs/MSFT_report.md']' timed out after 300 seconds",
+      "retry_count": 1,
+      "report_path": null,
+      "last_heartbeat": "2026-01-16T19:09:18.795178Z"
+    },
+    "F": {
+      "ticker": "F",
+      "status": "pending",
+      "worker_id": null,
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retry_count": 0,
+      "report_path": null,
+      "last_heartbeat": null
+    },
+    "NVDA": {
+      "ticker": "NVDA",
+      "status": "pending",
+      "worker_id": null,
+      "started_at": null,
+      "completed_at": null,
+      "error": null,
+      "retry_count": 0,
+      "report_path": null,
+      "last_heartbeat": null
+    }
+  },
+  "config": {
+    "config": {
+      "prompt_version": 4.6,
+      "max_retries": 3,
+      "refresh": false,
+      "created_by": "orchestrator",
+      "workers_requested": 5
+    }
+  }
+}
