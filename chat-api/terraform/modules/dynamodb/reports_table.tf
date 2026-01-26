@@ -33,6 +33,11 @@ resource "aws_dynamodb_table" "investment_reports_v2" {
     type = "S"
   }
 
+  attribute {
+    name = "company_name"
+    type = "S"
+  }
+
   # GSI for querying sections by part (executive=1, detailed=2, realtalk=3)
   global_secondary_index {
     name            = "part-index"
@@ -46,6 +51,15 @@ resource "aws_dynamodb_table" "investment_reports_v2" {
     name            = "generated-at-index"
     hash_key        = "ticker"
     range_key       = "generated_at"
+    projection_type = "KEYS_ONLY"
+  }
+
+  # GSI for searching reports by company name
+  # Enables users to search by company name (e.g., "Apple") instead of just ticker
+  global_secondary_index {
+    name            = "company-name-index"
+    hash_key        = "company_name"
+    range_key       = "section_id"
     projection_type = "KEYS_ONLY"
   }
 
