@@ -389,7 +389,8 @@ def build_executive_item(
     generated_at: Optional[str] = None,
     model: Optional[str] = None,
     prompt_version: Optional[str] = None,
-    fiscal_year: Optional[int] = None
+    fiscal_year: Optional[int] = None,
+    company_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Build a single 00_executive item containing ToC + ratings + merged Executive Summary.
@@ -406,6 +407,7 @@ def build_executive_item(
         model: Model used to generate the report
         prompt_version: Version of the prompt used
         fiscal_year: Fiscal year of the report
+        company_name: Full company name for search (e.g., 'Apple Inc.')
 
     Returns:
         Dictionary ready for DynamoDB storage with structure:
@@ -455,6 +457,8 @@ def build_executive_item(
         item['prompt_version'] = prompt_version
     if fiscal_year:
         item['fiscal_year'] = fiscal_year
+    if company_name:
+        item['company_name'] = company_name
 
     return item
 

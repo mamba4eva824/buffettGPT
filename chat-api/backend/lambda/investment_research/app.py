@@ -73,6 +73,7 @@ from services.followup_service import (
     get_report_ratings,
     get_available_reports,
     get_section_id_from_name,
+    search_reports_in_dynamodb,
 )
 
 # Configure logging
@@ -610,8 +611,11 @@ async def search_reports_by_company(
     """
     Search for reports by company name or ticker.
 
-    Uses static company_names dictionary for prefix matching.
-    Allows users to type "Apple" and find AAPL reports.
+    Queries DynamoDB investment-reports-v2 table for reports matching
+    the search query. Allows users to type "Apple" and find AAPL reports.
+
+    Falls back to static company_names dictionary if DynamoDB search
+    returns no results (for companies without generated reports).
 
     Args:
         q: Search query (matches company name or ticker, case insensitive)
@@ -619,16 +623,30 @@ async def search_reports_by_company(
     Returns:
         JSONResponse with matching ticker/name pairs
     """
-    from investment_research.company_names import search_companies
+    # Primary: Search in DynamoDB for reports that actually exist
+    db_result = search_reports_in_dynamodb(q, limit=10)
 
-    # Get matching companies from static dictionary
-    matches = search_companies(q, limit=10)
+    if db_result.get('success') and db_result.get('count', 0) > 0:
+        return JSONResponse(content={
+            "success": True,
+            "query": q,
+            "count": db_result['count'],
+            "results": db_result['results'],
+            "source": "dynamodb",
+            "timestamp": datetime.utcnow().isoformat() + 'Z'
+        })
+
+    # Fallback: Search static dictionary (useful for suggesting companies
+    # that don't have reports yet, or if DynamoDB is temporarily unavailable)
+    from investment_research.company_names import search_companies
+    static_matches = search_companies(q, limit=10)
 
     return JSONResponse(content={
         "success": True,
         "query": q,
-        "count": len(matches),
-        "results": matches,
+        "count": len(static_matches),
+        "results": static_matches,
+        "source": "static",
         "timestamp": datetime.utcnow().isoformat() + 'Z'
     })
 

@@ -33,6 +33,7 @@ from investment_research.section_parser import (
     build_executive_item,
     get_detailed_section_items
 )
+from investment_research.company_names import get_company_name_or_ticker
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -437,6 +438,9 @@ class ReportGenerator:
         generated_at = datetime.utcnow().isoformat() + 'Z'
         ttl = int((datetime.utcnow() + timedelta(days=120)).timestamp())
 
+        # Get company name for search functionality
+        company_name = get_company_name_or_ticker(ticker)
+
         # Build executive item (00_executive): ToC + ratings + Part 1 sections combined
         executive_item = build_executive_item(
             sections=sections,
@@ -445,7 +449,8 @@ class ReportGenerator:
             generated_at=generated_at,
             model='claude-opus-4-5-20251101',
             prompt_version=f'v{self.prompt_version}',
-            fiscal_year=fiscal_year
+            fiscal_year=fiscal_year,
+            company_name=company_name
         )
         executive_item['ttl'] = ttl
 

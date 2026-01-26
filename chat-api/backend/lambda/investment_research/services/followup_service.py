@@ -343,6 +343,85 @@ def get_report_by_company_name(company_name: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def search_reports_in_dynamodb(query: str, limit: int = 10) -> Dict[str, Any]:
+    """
+    Search for reports by company name or ticker in DynamoDB.
+
+    Performs a case-insensitive search on both ticker and company_name fields
+    by scanning executive items (00_executive) and filtering client-side.
+
+    For large datasets, consider implementing ElasticSearch or DynamoDB Streams
+    to a search index. This scan-based approach works well for < 1000 reports.
+
+    Args:
+        query: Search query (matches company name or ticker, case insensitive)
+        limit: Maximum number of results to return (default 10)
+
+    Returns:
+        Dict with success status and list of matching ticker/name pairs
+    """
+    from boto3.dynamodb.conditions import Attr
+
+    table = dynamodb.Table(REPORTS_TABLE_V2)
+    query_lower = query.lower()
+
+    try:
+        # Scan for all executive items (one per ticker)
+        # Filter for section_id = '00_executive' to get one item per report
+        response = table.scan(
+            FilterExpression=Attr('section_id').eq('00_executive'),
+            ProjectionExpression='ticker, company_name'
+        )
+
+        items = response.get('Items', [])
+
+        # Handle pagination for large datasets
+        while 'LastEvaluatedKey' in response:
+            response = table.scan(
+                FilterExpression=Attr('section_id').eq('00_executive'),
+                ProjectionExpression='ticker, company_name',
+                ExclusiveStartKey=response['LastEvaluatedKey']
+            )
+            items.extend(response.get('Items', []))
+
+        # Client-side case-insensitive filtering
+        results = []
+        for item in items:
+            ticker = item.get('ticker', '')
+            company_name = item.get('company_name', ticker)  # Fallback to ticker
+
+            # Check if query matches ticker or company name (case insensitive)
+            if query_lower in ticker.lower() or query_lower in company_name.lower():
+                results.append({
+                    'ticker': ticker,
+                    'name': company_name
+                })
+
+                if len(results) >= limit:
+                    break
+
+        # Sort results: exact ticker matches first, then by ticker alphabetically
+        results.sort(key=lambda x: (
+            0 if x['ticker'].lower() == query_lower else 1,
+            x['ticker'].lower()
+        ))
+
+        return {
+            'success': True,
+            'count': len(results),
+            'results': results[:limit]
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching reports for '{query}': {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'count': 0,
+            'results': []
+        }
+
+
 # =============================================================================
 # Bedrock Agent Integration
 # =============================================================================
