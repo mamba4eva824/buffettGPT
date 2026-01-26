@@ -172,7 +172,10 @@ def verify_jwt_token(token: str) -> Dict[str, Any]:
 
 
 # Endpoints that don't require authentication
-PUBLIC_PATHS = {"/health"}
+PUBLIC_PATHS = {"/health", "/reports/search"}
+
+# Path prefixes that don't require authentication (read-only report data)
+PUBLIC_PATH_PREFIXES = ("/report/", "/reports/v2/")
 
 
 class JWTAuthMiddleware(BaseHTTPMiddleware):
@@ -184,17 +187,21 @@ class JWTAuthMiddleware(BaseHTTPMiddleware):
 
     Public endpoints (no auth required):
     - /health
+    - /reports/search
+    - /report/* (read-only report data)
+    - /reports/v2/* (read-only report data)
 
     Protected endpoints (JWT required):
-    - /followup
-    - /report/*
-    - /reports
-    - All other endpoints
+    - /followup (invokes Claude Haiku - paid)
     """
 
     async def dispatch(self, request: Request, call_next):
         # Allow public paths without authentication
         if request.url.path in PUBLIC_PATHS:
+            return await call_next(request)
+
+        # Allow public path prefixes (read-only report endpoints)
+        if request.url.path.startswith(PUBLIC_PATH_PREFIXES):
             return await call_next(request)
 
         # Extract Authorization header
