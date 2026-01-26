@@ -46,6 +46,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     "uvicorn>=0.27.0" \
     "sse-starlette>=1.6.0" \
     "pydantic>=2.0.0" \
+    "PyJWT>=2.8.0" \
     --target "${LAMBDA_TASK_ROOT}"
 
 # Copy application files
