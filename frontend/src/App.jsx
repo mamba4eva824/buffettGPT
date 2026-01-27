@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import AnalysisView from "./components/analysis/AnalysisView.jsx";
 import StreamingText from "./components/analysis/StreamingText.jsx";
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
@@ -11,6 +13,7 @@ import logger from "./utils/logger.js";
 import { ResearchProvider, useResearch } from "./contexts/ResearchContext.jsx";
 import SectionCard from "./components/research/SectionCard.jsx";
 import ResearchLayout from "./components/research/ResearchLayout.jsx";
+import { useCompanySearch } from "./hooks/useCompanySearch.js";
 
 // Research API URL for status checks
 const RESEARCH_API_URL = import.meta.env.VITE_RESEARCH_API_URL || 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
@@ -783,6 +786,35 @@ function ChatApp() {
     clearFollowUp,
   } = useResearch();
 
+  // Company search autocomplete
+  const {
+    results: searchResults,
+    loading: isSearching,
+    search: searchCompanies,
+    clearResults: clearSearchResults,
+  } = useCompanySearch();
+
+  // Handle company search input change
+  const handleSearchInputChange = useCallback((value) => {
+    // Only search in investment-research mode and not in follow-up mode
+    const isInFollowUpMode = showInvestmentResearch && reportMeta && researchTicker;
+    if (selectedMode === 'investment-research' && !isInFollowUpMode) {
+      searchCompanies(value);
+    }
+  }, [selectedMode, showInvestmentResearch, reportMeta, researchTicker, searchCompanies]);
+
+  // Store selected ticker from autocomplete to pass to doSend
+  const selectedTickerRef = useRef(null);
+
+  // Handle company selection from autocomplete
+  const handleCompanySelect = useCallback((result) => {
+    // Store the ticker for doSend to use
+    selectedTickerRef.current = result.ticker;
+    // Set input to company name for display
+    setInput(result.name);
+    clearSearchResults();
+  }, [clearSearchResults]);
+
   // Only auto-show executive summary when streaming starts
   // Other sections appear only when user clicks ToC items
   useEffect(() => {
@@ -1172,6 +1204,10 @@ function ChatApp() {
       setInput("");
     }
 
+    // Get ticker from autocomplete ref if set, then clear it
+    const tickerFromAutocomplete = selectedTickerRef.current;
+    selectedTickerRef.current = null;
+
     // Create conversation if needed (for authenticated users)
     // Use different title prefix based on mode to enable proper history loading
     if (isAuthenticated && !selectedConversation && messages.length === 0) {
@@ -1222,8 +1258,8 @@ function ChatApp() {
       return;
     }
 
-    // Extract company/ticker from natural language query
-    const extractedCompany = extractCompanyFromQuery(messageText);
+    // Use ticker from autocomplete if set, otherwise extract from text
+    const extractedCompany = tickerFromAutocomplete || extractCompanyFromQuery(messageText);
     setAnalysisTicker(extractedCompany);
 
     // Mode-based routing: Investment Research vs Buffett (Prediction Ensemble)
@@ -1888,6 +1924,10 @@ function ChatApp() {
                     isConnecting={isConnecting}
                     selectedMode={selectedMode}
                     onModeChange={setSelectedMode}
+                    searchResults={searchResults}
+                    isSearching={isSearching}
+                    onResultSelect={handleCompanySelect}
+                    onInputChange={handleSearchInputChange}
                   />
                 </div>
               </div>
@@ -1967,6 +2007,10 @@ function ChatApp() {
                           selectedMode={selectedMode}
                           onModeChange={setSelectedMode}
                           isFollowUpMode={!!reportMeta && !!researchTicker}
+                          searchResults={searchResults}
+                          isSearching={isSearching}
+                          onResultSelect={handleCompanySelect}
+                          onInputChange={handleSearchInputChange}
                         />
                       </>
                     }
@@ -2029,8 +2073,10 @@ function ChatApp() {
                                     className="w-full h-full rounded-full"
                                   />
                                 </div>
-                                <div className="flex-1 bg-slate-50 dark:bg-slate-700 rounded-xl p-4 text-sm prose prose-sm dark:prose-invert max-w-none">
-                                  {msg.content}
+                                <div className="flex-1 bg-slate-50 dark:bg-slate-700 rounded-xl p-4 text-sm prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-h2:text-lg prose-h3:text-base prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-white prose-table:text-xs prose-th:bg-slate-100 dark:prose-th:bg-slate-600 prose-th:p-2 prose-td:p-2">
+                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                    {msg.content}
+                                  </ReactMarkdown>
                                   {msg.isStreaming && (
                                     <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
                                   )}
@@ -2120,6 +2166,10 @@ function ChatApp() {
                     selectedMode={selectedMode}
                     onModeChange={setSelectedMode}
                     isFollowUpMode={showInvestmentResearch && !!reportMeta && !!researchTicker}
+                    searchResults={searchResults}
+                    isSearching={isSearching}
+                    onResultSelect={handleCompanySelect}
+                    onInputChange={handleSearchInputChange}
                   />
                 </div>
                 )}
@@ -2287,9 +2337,17 @@ function SearchComposer({
   suggestionsLoading = false,
   selectedMode = 'buffett',
   onModeChange,
-  isFollowUpMode = false
+  isFollowUpMode = false,
+  // Autocomplete props
+  searchResults = [],
+  isSearching = false,
+  onResultSelect,
+  onInputChange
 }) {
   const inputRef = useRef(null);
+  const dropdownRef = useRef(null);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
   // Determine placeholder text
   const placeholderText = isConnecting
@@ -2298,53 +2356,167 @@ function SearchComposer({
       ? "Ask a follow-up question about the report..."
       : "Enter a company name or ticker...";
 
+  // Show dropdown when there are results or loading, and in investment-research mode
+  const shouldShowDropdown = showDropdown &&
+    selectedMode === 'investment-research' &&
+    !isFollowUpMode &&
+    (searchResults.length > 0 || isSearching);
+
+  // Handle input change
+  const handleInputChange = (e) => {
+    const value = e.target.value;
+    setInput(value);
+    setShowDropdown(true);
+    setHighlightedIndex(-1);
+    onInputChange?.(value);
+  };
+
+  // Handle result selection
+  const handleSelect = (result) => {
+    setShowDropdown(false);
+    setHighlightedIndex(-1);
+    onResultSelect?.(result);
+  };
+
+  // Handle keyboard navigation
+  const handleKeyDown = (e) => {
+    if (!shouldShowDropdown) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (input.trim()) doSend();
+      }
+      return;
+    }
+
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setHighlightedIndex(prev =>
+          prev < searchResults.length - 1 ? prev + 1 : prev
+        );
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setHighlightedIndex(prev => prev > 0 ? prev - 1 : -1);
+        break;
+      case "Enter":
+        e.preventDefault();
+        if (highlightedIndex >= 0 && searchResults[highlightedIndex]) {
+          handleSelect(searchResults[highlightedIndex]);
+        } else if (input.trim()) {
+          setShowDropdown(false);
+          doSend();
+        }
+        break;
+      case "Escape":
+        setShowDropdown(false);
+        setHighlightedIndex(-1);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target) &&
+          inputRef.current && !inputRef.current.contains(event.target)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   return (
     <div className="mx-auto max-w-3xl px-2 md:px-0">
       {/* Search Bar Container - iOS 26 liquid glass style */}
-      <div className="relative flex items-center rounded-full border border-slate-200/80 dark:border-slate-600/50 bg-white/90 dark:bg-slate-700/80 backdrop-blur-xl shadow-lg px-5 py-3.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
-        {/* Input */}
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder={placeholderText}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              if (input.trim()) doSend();
-            }
-          }}
-          disabled={isConnecting}
-          className="peer block w-full bg-transparent text-sm md:text-[15px] placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none dark:text-slate-100"
-        />
-
-        {/* Analysis Mode Dropdown */}
-        <div className="ml-3 mr-1 flex-shrink-0">
-          <AnalysisModeDropdown
-            selectedMode={selectedMode}
-            onModeChange={onModeChange}
+      <div className="relative">
+        <div className="relative flex items-center rounded-full border border-slate-200/80 dark:border-slate-600/50 bg-white/90 dark:bg-slate-700/80 backdrop-blur-xl shadow-lg px-5 py-3.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
+          {/* Input */}
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder={placeholderText}
+            value={input}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setShowDropdown(true)}
+            disabled={isConnecting}
+            className="peer block w-full bg-transparent text-sm md:text-[15px] placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none dark:text-slate-100"
+            autoComplete="off"
           />
+
+          {/* Analysis Mode Dropdown */}
+          <div className="ml-3 mr-1 flex-shrink-0">
+            <AnalysisModeDropdown
+              selectedMode={selectedMode}
+              onModeChange={onModeChange}
+            />
+          </div>
+
+          {/* Send button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!input.trim() || isConnecting) return;
+              setShowDropdown(false);
+              doSend();
+            }}
+            disabled={!input.trim() || isConnecting}
+            className={classNames(
+              "flex-shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full shadow-sm transition-all duration-200",
+              (!input.trim() || isConnecting)
+                ? "bg-indigo-400 dark:bg-indigo-600/50 cursor-not-allowed text-white"
+                : "bg-indigo-600 hover:bg-indigo-700 hover:scale-105 dark:bg-indigo-600 dark:hover:bg-indigo-500 cursor-pointer text-white"
+            )}
+          >
+            {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </button>
         </div>
 
-        {/* Send button */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!input.trim() || isConnecting) return;
-            doSend();
-          }}
-          disabled={!input.trim() || isConnecting}
-          className={classNames(
-            "flex-shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full shadow-sm transition-all duration-200",
-            (!input.trim() || isConnecting)
-              ? "bg-indigo-400 dark:bg-indigo-600/50 cursor-not-allowed text-white"
-              : "bg-indigo-600 hover:bg-indigo-700 hover:scale-105 dark:bg-indigo-600 dark:hover:bg-indigo-500 cursor-pointer text-white"
-          )}
-        >
-          {isConnecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </button>
+        {/* Autocomplete Dropdown */}
+        {shouldShowDropdown && (
+          <div
+            ref={dropdownRef}
+            className="absolute z-50 w-full mt-2 py-2 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl max-h-64 overflow-y-auto"
+          >
+            {isSearching ? (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
+                <span className="ml-2 text-sm text-slate-500 dark:text-slate-400">Searching...</span>
+              </div>
+            ) : searchResults.length > 0 ? (
+              searchResults.slice(0, 7).map((result, index) => (
+                <button
+                  key={result.ticker}
+                  type="button"
+                  onClick={() => handleSelect(result)}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  className={classNames(
+                    "w-full px-4 py-2.5 text-left flex items-center gap-3 transition-colors",
+                    highlightedIndex === index
+                      ? "bg-indigo-50 dark:bg-indigo-900/30"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                  )}
+                >
+                  <span className="font-semibold text-indigo-600 dark:text-indigo-400 min-w-[60px]">
+                    {result.ticker}
+                  </span>
+                  <span className="text-sm text-slate-600 dark:text-slate-300 truncate">
+                    {result.name}
+                  </span>
+                </button>
+              ))
+            ) : input.trim().length > 0 ? (
+              <div className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+                No companies found for &quot;{input.trim()}&quot;
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* Follow-up suggestion pills */}
