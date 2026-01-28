@@ -364,12 +364,28 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     - API Gateway HTTP_PROXY: Returns non-streaming JSON response
     """
     request_context = event.get('requestContext', {})
+    headers = event.get('headers', {}) or {}
+
+    # DEBUG: Log key event fields to understand invocation source
+    logger.info(f"Event keys: {list(event.keys())}")
+    logger.info(f"RequestContext keys: {list(request_context.keys())}")
+    logger.info(f"Headers: {json.dumps({k: v for k, v in headers.items() if k.lower().startswith(('x-', 'via', 'forwarded'))})}")
 
     # Detect invocation source:
-    # - Lambda Function URL: has 'http' in requestContext (e.g., requestContext.http.method)
-    # - API Gateway REST API via HTTP_PROXY: has 'httpMethod' at top level or requestContext.httpMethod
+    # - Lambda Function URL (direct): has 'http' in requestContext (e.g., requestContext.http.method)
+    # - API Gateway REST API via HTTP_PROXY:
+    #   * Has 'httpMethod' at top level or requestContext.httpMethod (standard API Gateway)
+    #   * OR has x-amzn-apigateway-api-id header (forwarded from API Gateway)
+    #   * OR has x-forwarded-for header set by API Gateway
     is_function_url = 'http' in request_context
-    is_api_gateway = event.get('httpMethod') or request_context.get('httpMethod')
+    is_api_gateway = (
+        event.get('httpMethod') or
+        request_context.get('httpMethod') or
+        headers.get('x-amzn-apigateway-api-id') or
+        headers.get('X-Amzn-Apigateway-Api-Id') or
+        # Check if forwarded through API Gateway - presence of these headers indicates proxy
+        (headers.get('x-forwarded-for') and headers.get('x-forwarded-port'))
+    )
 
     logger.info(f"Invocation detection: is_function_url={is_function_url}, is_api_gateway={is_api_gateway}")
 
