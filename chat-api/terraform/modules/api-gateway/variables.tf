@@ -137,6 +137,12 @@ variable "investment_research_function_url" {
   default     = ""
 }
 
+variable "analysis_followup_function_url" {
+  description = "Function URL for Analysis Follow-up Lambda (HTTP_PROXY target for /research/followup)"
+  type        = string
+  default     = ""
+}
+
 variable "investment_research_function_name" {
   description = "Name of the Investment Research Lambda function"
   type        = string

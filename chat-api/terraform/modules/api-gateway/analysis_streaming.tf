@@ -776,7 +776,7 @@ resource "aws_api_gateway_integration" "research_followup_lambda" {
   integration_http_method = "POST"
   type                    = "HTTP_PROXY"
 
-  uri = "${trimsuffix(var.investment_research_function_url, "/")}/followup"
+  uri = var.analysis_followup_function_url
 
   request_parameters = {
     "integration.request.header.Authorization" = "method.request.header.Authorization"
