@@ -140,7 +140,9 @@ def save_followup_message(
         return None
 
     try:
-        timestamp_unix = int(datetime.utcnow().timestamp())
+        # Use milliseconds for timestamp to prevent key collisions when saving
+        # user question and assistant response in quick succession
+        timestamp_unix = int(datetime.utcnow().timestamp() * 1000)
         timestamp_iso = datetime.utcnow().isoformat() + 'Z'
         message_id = str(uuid.uuid4())
 

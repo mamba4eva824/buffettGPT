@@ -17,6 +17,9 @@ const initialState = {
   followUpMessages: [], // [{id, type:'user'|'assistant', content, isStreaming, timestamp}]
   isFollowUpStreaming: false,
   currentFollowUpMessageId: null,
+  collapsedFollowUpIds: [], // Track which follow-up messages are collapsed
+  // Interaction timeline - tracks chronological order of section views and follow-ups
+  interactionLog: [], // [{type: 'section'|'followup', id: string, timestamp: string}]
 };
 
 // Action types
@@ -29,6 +32,7 @@ const ACTIONS = {
   SECTION_END: 'SECTION_END',
   SET_ACTIVE_SECTION: 'SET_ACTIVE_SECTION',
   SET_SECTION: 'SET_SECTION',
+  CLEAR_STREAMING_SECTION: 'CLEAR_STREAMING_SECTION',  // Clear currentStreamingSection after animation
   SET_ERROR: 'SET_ERROR',
   RESET: 'RESET',
   LOAD_SAVED_REPORT: 'LOAD_SAVED_REPORT',  // Load pre-saved report from history
@@ -39,12 +43,18 @@ const ACTIONS = {
   FOLLOWUP_END: 'FOLLOWUP_END',
   FOLLOWUP_ERROR: 'FOLLOWUP_ERROR',
   CLEAR_FOLLOWUP: 'CLEAR_FOLLOWUP',
+  TOGGLE_FOLLOWUP_COLLAPSE: 'TOGGLE_FOLLOWUP_COLLAPSE',
+  // Interaction timeline actions
+  LOG_SECTION_INTERACTION: 'LOG_SECTION_INTERACTION',
+  LOG_FOLLOWUP_INTERACTION: 'LOG_FOLLOWUP_INTERACTION',
+  SET_INTERACTION_LOG: 'SET_INTERACTION_LOG',
 };
 
 // Reducer
 function researchReducer(state, action) {
   switch (action.type) {
     case ACTIONS.START_RESEARCH:
+      console.log('[Reducer DEBUG] START_RESEARCH - resetting interactionLog to []');
       return {
         ...initialState,
         selectedTicker: action.ticker,
@@ -121,6 +131,8 @@ function researchReducer(state, action) {
         ...state,
         // Update status to 'complete' if we were in 'loading' state (reference format fetch)
         streamStatus: state.streamStatus === 'loading' ? 'complete' : state.streamStatus,
+        // If animate flag is set, mark this section as streaming to trigger typewriter effect
+        currentStreamingSection: action.animate ? action.sectionId : state.currentStreamingSection,
         streamedContent: {
           ...state.streamedContent,
           [action.sectionId]: {
@@ -132,6 +144,12 @@ function researchReducer(state, action) {
             word_count: action.word_count,
           },
         },
+      };
+
+    case ACTIONS.CLEAR_STREAMING_SECTION:
+      return {
+        ...state,
+        currentStreamingSection: null,
       };
 
     case ACTIONS.SET_ERROR:
@@ -160,6 +178,8 @@ function researchReducer(state, action) {
         // Restore saved activeSectionId, or fall back to first ToC item
         activeSectionId: action.activeSectionId || action.reportMeta?.toc?.[0]?.section_id || '01_executive_summary',
         followUpMessages: action.followUpMessages || [],
+        // Restore interaction log for chronological ordering
+        interactionLog: action.interactionLog || [],
       };
 
     // Follow-up chat actions
@@ -231,6 +251,54 @@ function researchReducer(state, action) {
         followUpMessages: [],
         isFollowUpStreaming: false,
         currentFollowUpMessageId: null,
+        collapsedFollowUpIds: [],
+        // Keep section interactions, remove follow-up interactions
+        interactionLog: state.interactionLog.filter(entry => entry.type === 'section'),
+      };
+
+    case ACTIONS.TOGGLE_FOLLOWUP_COLLAPSE:
+      return {
+        ...state,
+        collapsedFollowUpIds: state.collapsedFollowUpIds.includes(action.messageId)
+          ? state.collapsedFollowUpIds.filter(id => id !== action.messageId)
+          : [...state.collapsedFollowUpIds, action.messageId],
+      };
+
+    // Interaction timeline actions
+    case ACTIONS.LOG_SECTION_INTERACTION:
+      // DEBUG: Log when this action is received
+      console.log('[Reducer DEBUG] LOG_SECTION_INTERACTION:', {
+        sectionId: action.sectionId,
+        currentInteractionLog: state.interactionLog.map(e => e.id),
+        isDuplicate: state.interactionLog.some(entry => entry.type === 'section' && entry.id === action.sectionId),
+      });
+      // Don't log duplicate section interactions
+      if (state.interactionLog.some(entry => entry.type === 'section' && entry.id === action.sectionId)) {
+        console.log('[Reducer DEBUG] Skipping duplicate');
+        return state;
+      }
+      console.log('[Reducer DEBUG] Adding to interactionLog');
+      return {
+        ...state,
+        interactionLog: [
+          ...state.interactionLog,
+          { type: 'section', id: action.sectionId, timestamp: action.timestamp || new Date().toISOString() },
+        ],
+      };
+
+    case ACTIONS.LOG_FOLLOWUP_INTERACTION:
+      return {
+        ...state,
+        interactionLog: [
+          ...state.interactionLog,
+          { type: 'followup', id: action.messageId, timestamp: action.timestamp || new Date().toISOString() },
+        ],
+      };
+
+    case ACTIONS.SET_INTERACTION_LOG:
+      return {
+        ...state,
+        interactionLog: action.interactionLog || [],
       };
 
     default:
@@ -334,7 +402,11 @@ export function ResearchProvider({ children }) {
   }, [abortStream]);
 
   // Fetch a specific section on-demand
-  const fetchSection = useCallback(async (ticker, sectionId, token = null) => {
+  // Options: { animate: true } - triggers typewriter effect (default for ToC clicks)
+  //          { animate: false } - instant display (for bulk restore)
+  const fetchSection = useCallback(async (ticker, sectionId, token = null, options = {}) => {
+    const { animate = true } = options;
+
     try {
       const url = `${API_BASE}/research/report/${ticker.toUpperCase()}/section/${sectionId}`;
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
@@ -345,6 +417,8 @@ export function ResearchProvider({ children }) {
       }
 
       const data = await response.json();
+
+      // Set section content - with animate flag to trigger typewriter effect
       dispatch({
         type: ACTIONS.SET_SECTION,
         sectionId: data.section_id,
@@ -353,7 +427,15 @@ export function ResearchProvider({ children }) {
         part: data.part,
         icon: data.icon,
         word_count: data.word_count,
+        animate: animate,  // When true, sets currentStreamingSection for typewriter
       });
+
+      // Clear streaming state after animation has time to start
+      if (animate) {
+        setTimeout(() => {
+          dispatch({ type: ACTIONS.CLEAR_STREAMING_SECTION });
+        }, 100);
+      }
 
       return data;
     } catch (error) {
@@ -381,6 +463,11 @@ export function ResearchProvider({ children }) {
     dispatch({ type: ACTIONS.CLEAR_FOLLOWUP });
   }, [abortFollowUp]);
 
+  // Toggle collapse state for a follow-up message
+  const toggleFollowUpCollapse = useCallback((messageId) => {
+    dispatch({ type: ACTIONS.TOGGLE_FOLLOWUP_COLLAPSE, messageId });
+  }, []);
+
   // Load a saved report from conversation history (no streaming)
   const loadSavedReport = useCallback((savedData) => {
     // Abort any existing streams
@@ -394,11 +481,36 @@ export function ResearchProvider({ children }) {
       streamedContent: savedData.streamedContent,
       activeSectionId: savedData.activeSectionId,  // Restore ToC highlight state
       followUpMessages: savedData.followUpMessages || [],
+      interactionLog: savedData.interactionLog || [],  // Restore interaction timeline
     });
   }, [abortStream, abortFollowUp]);
 
+  // Log a section interaction to the timeline
+  const logSectionInteraction = useCallback((sectionId) => {
+    dispatch({
+      type: ACTIONS.LOG_SECTION_INTERACTION,
+      sectionId,
+      timestamp: new Date().toISOString(),
+    });
+  }, []);
+
+  // Log a follow-up interaction to the timeline
+  const logFollowUpInteraction = useCallback((messageId) => {
+    dispatch({
+      type: ACTIONS.LOG_FOLLOWUP_INTERACTION,
+      messageId,
+      timestamp: new Date().toISOString(),
+    });
+  }, []);
+
+  // Set interaction log directly (for restoring from saved state)
+  const setInteractionLog = useCallback((interactionLog) => {
+    dispatch({ type: ACTIONS.SET_INTERACTION_LOG, interactionLog });
+  }, []);
+
   // Send follow-up question
-  const sendFollowUp = useCallback(async (question, token = null) => {
+  // conversationId is required for backend to save messages to DynamoDB
+  const sendFollowUp = useCallback(async (question, token = null, conversationId = null) => {
     // DEBUG: Log state before validation
     console.log('[FollowUp DEBUG] State before request:', {
       selectedTicker: state.selectedTicker,
@@ -407,6 +519,7 @@ export function ResearchProvider({ children }) {
       question: question,
       questionLength: question?.length,
       questionType: typeof question,
+      conversationId: conversationId,
     });
 
     if (!state.selectedTicker || state.isFollowUpStreaming) {
@@ -424,16 +537,24 @@ export function ResearchProvider({ children }) {
       messageId: userMessageId,
       content: question,
     });
+    // Log to interaction timeline
+    dispatch({
+      type: ACTIONS.LOG_FOLLOWUP_INTERACTION,
+      messageId: userMessageId,
+      timestamp: new Date().toISOString(),
+    });
 
     // Abort any existing follow-up stream
     abortFollowUp();
     followUpAbortRef.current = new AbortController();
 
     // Build request body
+    // session_id is required by backend to save messages to the correct conversation
     const requestBody = {
       ticker: state.selectedTicker,
       question: question,
       section_id: state.activeSectionId,
+      session_id: conversationId,  // Maps to conversation_id in DynamoDB
     };
 
     // DEBUG: Log the exact request being sent
@@ -520,6 +641,11 @@ export function ResearchProvider({ children }) {
     sendFollowUp,
     clearFollowUp,
     abortFollowUp,
+    toggleFollowUpCollapse,
+    // Interaction timeline methods
+    logSectionInteraction,
+    logFollowUpInteraction,
+    setInteractionLog,
   };
 
   return (
@@ -610,6 +736,12 @@ function handleSSEEvent(eventType, data, dispatch) {
         type: ACTIONS.FOLLOWUP_START,
         messageId: data.message_id,
       });
+      // Log assistant response to interaction timeline
+      dispatch({
+        type: ACTIONS.LOG_FOLLOWUP_INTERACTION,
+        messageId: data.message_id,
+        timestamp: new Date().toISOString(),
+      });
       break;
 
     case 'followup_chunk':
@@ -621,6 +753,7 @@ function handleSSEEvent(eventType, data, dispatch) {
       break;
 
     case 'followup_end':
+      console.log('[ResearchContext] Received followup_end event:', data.message_id);
       dispatch({
         type: ACTIONS.FOLLOWUP_END,
         messageId: data.message_id,

@@ -784,6 +784,12 @@ function ChatApp() {
     isFollowUpStreaming,
     sendFollowUp,
     clearFollowUp,
+    collapsedFollowUpIds,
+    toggleFollowUpCollapse,
+    // Interaction timeline
+    interactionLog,
+    logSectionInteraction,
+    setInteractionLog,
   } = useResearch();
 
   // Company search autocomplete
@@ -818,16 +824,38 @@ function ChatApp() {
   // Only auto-show executive summary when streaming starts
   // Other sections appear only when user clicks ToC items
   useEffect(() => {
+    // DEBUG: Log every time this effect runs
+    console.log('[ExecSummary Effect DEBUG] Effect triggered:', {
+      currentStreamingSection,
+      isResearchStreaming,
+      condition1: !!currentStreamingSection,
+      condition2: !!isResearchStreaming,
+      isExecSummary: currentStreamingSection === '01_executive_summary',
+    });
+
     if (currentStreamingSection && isResearchStreaming) {
       // Only auto-add executive summary - other sections require ToC click
       if (currentStreamingSection === '01_executive_summary') {
+        console.log('[ExecSummary Effect DEBUG] Adding exec summary to all arrays');
         setVisibleSections(prev => {
           if (prev.includes(currentStreamingSection)) return prev;
           return [...prev, currentStreamingSection];
         });
+        // IMPORTANT: Also add to userExpandedSections for persistence
+        // This ensures exec summary is saved even if user only clicks other sections
+        setUserExpandedSections(prev => {
+          if (prev.includes(currentStreamingSection)) return prev;
+          return [...prev, currentStreamingSection];
+        });
+        // CRITICAL FIX: Also add to interactionLog for persistence
+        // Use logSectionInteraction (not setInteractionLog) because setInteractionLog doesn't support
+        // functional updates - it dispatches the value directly. logSectionInteraction properly uses
+        // the reducer which has built-in duplicate detection.
+        console.log('[ExecSummary Effect DEBUG] Calling logSectionInteraction for exec summary');
+        logSectionInteraction(currentStreamingSection);
       }
     }
-  }, [currentStreamingSection, isResearchStreaming]);
+  }, [currentStreamingSection, isResearchStreaming, logSectionInteraction]);
 
   // Toggle section collapse
   const toggleSectionCollapse = useCallback((sectionId) => {
@@ -853,6 +881,9 @@ function ChatApp() {
       if (prev.includes(sectionId)) return prev;
       return [...prev, sectionId];
     });
+
+    // Log to interaction timeline (tracks chronological order with follow-ups)
+    logSectionInteraction(sectionId);
 
     // Expand section if collapsed
     setCollapsedSections(prev => prev.filter(id => id !== sectionId));
@@ -883,7 +914,7 @@ function ChatApp() {
         console.error('Failed to fetch section:', err);
       }
     }
-  }, [setActiveSection, streamedContent, isResearchStreaming, fetchSection, researchTicker, token]);
+  }, [setActiveSection, streamedContent, isResearchStreaming, fetchSection, researchTicker, token, logSectionInteraction]);
 
   // Get ordered sections from ToC for rendering - filtered by visibility (on-demand loading)
   const orderedSections = useMemo(() => {
@@ -903,6 +934,54 @@ function ChatApp() {
       .filter(section => section && section.content); // Only show sections with content
   }, [reportMeta?.toc, streamedContent, visibleSections, showInvestmentResearch]);
 
+  // Build interleaved timeline from interaction log (sections and follow-ups in chronological order)
+  const interactionTimeline = useMemo(() => {
+    // DEBUG: Log interactionLog state
+    console.log('[interactionTimeline DEBUG] Computing timeline:', {
+      interactionLogLength: interactionLog?.length,
+      interactionLogEntries: interactionLog?.map(e => e.id),
+      hasExecSummary: interactionLog?.some(e => e.id === '01_executive_summary'),
+    });
+
+    if (!showInvestmentResearch || !reportMeta?.toc) return [];
+
+    // If no interaction log, fall back to old behavior (sections first, then follow-ups)
+    if (!interactionLog || interactionLog.length === 0) {
+      console.log('[interactionTimeline DEBUG] Using fallback (orderedSections)');
+      return [
+        ...orderedSections.map(section => ({ type: 'section', data: section })),
+        ...followUpMessages.map(msg => ({ type: 'followup', data: msg })),
+      ];
+    }
+
+    console.log('[interactionTimeline DEBUG] Using interactionLog path');
+    // Build timeline: sections from interactionLog, then all follow-ups
+    // Note: We don't match follow-ups by ID since backend generates different IDs than frontend.
+    // Follow-ups are fetched directly from messages table and already sorted by timestamp.
+    const sectionEntries = interactionLog
+      .filter(entry => entry.type === 'section')
+      .map(entry => {
+        const tocItem = reportMeta.toc.find(t => t.section_id === entry.id);
+        const sectionContent = streamedContent[entry.id];
+        if (!tocItem || !sectionContent?.content) return null;
+        return {
+          type: 'section',
+          data: {
+            ...tocItem,
+            ...sectionContent,
+            section_id: entry.id,
+          },
+        };
+      })
+      .filter(Boolean);
+
+    // Append all follow-ups (already sorted by timestamp from loading logic)
+    return [
+      ...sectionEntries,
+      ...followUpMessages.map(msg => ({ type: 'followup', data: msg })),
+    ];
+  }, [showInvestmentResearch, reportMeta?.toc, interactionLog, orderedSections, followUpMessages, streamedContent]);
+
   // Calculate progress for streaming indicator
   const researchProgress = useMemo(() => {
     const total = reportMeta?.toc?.length || 0;
@@ -916,6 +995,8 @@ function ChatApp() {
   const lastSavedSectionsRef = useRef(0);
   // Track last saved activeSectionId to detect ToC clicks
   const lastSavedActiveSectionRef = useRef(null);
+  // Track which conversation the current research state belongs to (prevents cross-contamination)
+  const researchStateConversationRef = useRef(null);
 
   // Use conversations hook for managing chat history
   const {
@@ -938,15 +1019,23 @@ function ChatApp() {
 
   // Save research report reference to conversation when streaming completes OR sections/active section change
   // NOTE: We only save metadata + reference, NOT full content (stored in investment_reports_v2)
+  const lastSavedInteractionLogLengthRef = useRef(0);
   useEffect(() => {
     // Only save when:
     // 1. Streaming completed (streamStatus === 'complete') OR we have loaded sections
     // 2. We have report data to save
     // 3. We have a conversation to save to
-    // 4. EITHER: Initial save (savedResearchRef not set) OR sections have increased OR active section changed
+    // 4. EITHER: Initial save (savedResearchRef not set) OR sections have increased OR active section changed OR interaction log changed
+    // 5. CRITICAL: Research state belongs to the current conversation (prevents cross-contamination)
     const isInitialSave = savedResearchRef.current !== selectedConversation?.conversation_id;
     const sectionsIncreased = userExpandedSections.length > lastSavedSectionsRef.current;
     const activeSectionChanged = activeSectionId && activeSectionId !== lastSavedActiveSectionRef.current;
+    const interactionLogChanged = interactionLog.length > lastSavedInteractionLogLengthRef.current;
+
+    // CRITICAL: Prevent saving stale research state to wrong conversation during switch
+    // This guards against the race condition where selectedConversation changes but researchTicker
+    // is still from the previous conversation's research context
+    const isResearchStateForCurrentConversation = researchStateConversationRef.current === selectedConversation?.conversation_id;
 
     // DEBUG: Log state for ToC persistence debugging
     console.log('[ToC Save DEBUG]', {
@@ -956,8 +1045,13 @@ function ChatApp() {
       activeSectionChanged,
       isInitialSave,
       sectionsIncreased,
+      interactionLogChanged,
+      interactionLogLength: interactionLog.length,
       hasReportMeta: !!reportMeta,
       conversationId: selectedConversation?.conversation_id,
+      researchStateConversationRef: researchStateConversationRef.current,
+      isResearchStateForCurrentConversation,
+      researchTicker,
     });
 
     // Allow save when streaming is complete OR when we have loaded content (for ToC clicks after load)
@@ -969,98 +1063,72 @@ function ChatApp() {
       Object.keys(streamedContent).length > 0 &&
       selectedConversation?.conversation_id &&
       token &&
-      (isInitialSave || sectionsIncreased || activeSectionChanged);
+      isResearchStateForCurrentConversation &&  // CRITICAL: Only save if research state belongs to this conversation
+      (isInitialSave || sectionsIncreased || activeSectionChanged || interactionLogChanged);
 
     if (shouldSave) {
       // Mark as saved to prevent duplicate saves
       savedResearchRef.current = selectedConversation.conversation_id;
       lastSavedSectionsRef.current = userExpandedSections.length;
       lastSavedActiveSectionRef.current = activeSectionId;
+      lastSavedInteractionLogLengthRef.current = interactionLog.length;
+
+      // DEBUG: Log exactly what we're about to save
+      // IMPORTANT: Always ensure executive summary is included in visible_sections
+      // This handles the case where exec summary is shown by default but user only clicks other sections
+      const sectionsToSave = userExpandedSections.includes('01_executive_summary')
+        ? userExpandedSections
+        : ['01_executive_summary', ...userExpandedSections];
+
+      // IMPORTANT: Also ensure executive summary is in interaction_log for rendering after load
+      // This is a defensive safeguard - the streaming auto-add effect should add it, but this ensures consistency
+      const interactionLogToSave = interactionLog.some(e => e.type === 'section' && e.id === '01_executive_summary')
+        ? interactionLog
+        : [{ type: 'section', id: '01_executive_summary', timestamp: new Date().toISOString() }, ...interactionLog];
+
+      const researchStateToSave = {
+        ticker: researchTicker,
+        generated_at: reportMeta?.generated_at,
+        report_table: 'investment-reports-v2',
+        active_section_id: activeSectionId,
+        visible_sections: sectionsToSave,
+        interaction_log: interactionLogToSave,  // Chronological order of sections and follow-ups (with exec summary safeguard)
+        toc: reportMeta?.toc,
+        ratings: reportMeta?.ratings,
+        total_word_count: reportMeta?.total_word_count,
+        last_updated: new Date().toISOString(),
+      };
+      console.log('[ToC Save DEBUG] Saving research state to API:', {
+        conversationId: selectedConversation.conversation_id,
+        visible_sections: researchStateToSave.visible_sections,
+        visible_sections_length: researchStateToSave.visible_sections?.length,
+        active_section_id: researchStateToSave.active_section_id,
+        fullPayload: researchStateToSave,
+      });
 
       // Save research state to conversation metadata (not messages table)
       // This is cleaner than creating new message records on each ToC click
       conversationsApi.updateResearchState(
         selectedConversation.conversation_id,
-        {
-          ticker: researchTicker,
-          generated_at: reportMeta?.generated_at,
-          report_table: 'investment-reports-v2',
-          active_section_id: activeSectionId,
-          visible_sections: userExpandedSections,
-          toc: reportMeta?.toc,
-          ratings: reportMeta?.ratings,
-          total_word_count: reportMeta?.total_word_count,
-          last_updated: new Date().toISOString(),
-        },
+        researchStateToSave,
         token
-      ).catch(err => {
+      ).then(() => {
+        console.log('[ToC Save DEBUG] Save successful for visible_sections:', researchStateToSave.visible_sections);
+      }).catch(err => {
         logger.error('Failed to save research state to conversation metadata:', err);
+        console.error('[ToC Save DEBUG] Save FAILED:', err);
         // Reset saved ref so it can retry
         savedResearchRef.current = null;
       });
     }
-  }, [streamStatus, showInvestmentResearch, reportMeta, streamedContent, userExpandedSections, activeSectionId, selectedConversation?.conversation_id, token, researchTicker]);
+  }, [streamStatus, showInvestmentResearch, reportMeta, streamedContent, userExpandedSections, activeSectionId, interactionLog, selectedConversation?.conversation_id, token, researchTicker]);
 
   // NOTE: Removed the re-save effect for on-demand sections since we no longer store content.
   // Sections are now fetched from investment_reports_v2 on-demand when conversation loads.
 
-  // Save follow-up messages when they complete streaming
-  // This persists Q&A history so it loads with the conversation
-  const lastSavedFollowUpCountRef = useRef(0);
-  useEffect(() => {
-    // Only save when:
-    // 1. We have follow-up messages
-    // 2. We have a conversation to save to
-    // 3. The last message is a completed assistant response
-    // 4. We haven't already saved this count
-    if (!followUpMessages.length || !selectedConversation?.conversation_id || !token) {
-      return;
-    }
-
-    const lastMessage = followUpMessages[followUpMessages.length - 1];
-    const isCompleted = lastMessage && !lastMessage.isStreaming && lastMessage.type === 'assistant';
-
-    if (!isCompleted || followUpMessages.length <= lastSavedFollowUpCountRef.current) {
-      return;
-    }
-
-    // Find the new messages to save (since last save)
-    const newMessages = followUpMessages.slice(lastSavedFollowUpCountRef.current);
-    lastSavedFollowUpCountRef.current = followUpMessages.length;
-
-    // Save each new message
-    for (const msg of newMessages) {
-      const messageData = msg.type === 'user'
-        ? {
-            _type: 'followup_question',
-            ticker: researchTicker,
-            question: msg.content,
-            timestamp: msg.timestamp,
-          }
-        : {
-            _type: 'followup_response',
-            ticker: researchTicker,
-            response: msg.content,
-            timestamp: msg.timestamp,
-          };
-
-      conversationsApi.saveMessage(
-        selectedConversation.conversation_id,
-        {
-          message_type: msg.type === 'user' ? 'user' : 'assistant',
-          content: JSON.stringify(messageData),
-        },
-        token
-      ).catch(err => {
-        logger.error('Failed to save follow-up message:', err);
-      });
-    }
-  }, [followUpMessages, selectedConversation?.conversation_id, token, researchTicker]);
-
-  // Reset follow-up save counter when conversation changes
-  useEffect(() => {
-    lastSavedFollowUpCountRef.current = 0;
-  }, [selectedConversation?.conversation_id]);
+  // NOTE: Follow-up messages are now saved by the backend (analysis_followup.py) as the single
+  // source of truth. The frontend only fetches messages via GET request on conversation load.
+  // This prevents duplicate saves and timestamp collision issues in DynamoDB.
 
   const { status, sessionId, messages, connect, disconnect, setMessages, switchConversation } = useAwsWebSocket({
     wsUrl,
@@ -1210,12 +1278,14 @@ function ChatApp() {
 
     // Create conversation if needed (for authenticated users)
     // Use different title prefix based on mode to enable proper history loading
+    let newConversationId = selectedConversation?.conversation_id;
     if (isAuthenticated && !selectedConversation && messages.length === 0) {
       const modePrefix = selectedMode === 'investment-research' ? 'Research' : 'Analysis';
       const title = `${modePrefix}: ${messageText.slice(0, 40)}${messageText.length > 40 ? '...' : ''}`;
       const newConv = await createConversation(title);
       if (newConv) {
         setSelectedConversation(newConv);
+        newConversationId = newConv.conversation_id;
       }
     }
 
@@ -1228,7 +1298,9 @@ function ChatApp() {
 
     if (isInFollowUpMode) {
       // Follow-up question about the current report
-      sendFollowUp(messageText, token);
+      // Note: Interaction logging happens inside sendFollowUp in ResearchContext
+      // Pass conversation_id so backend can save messages to correct conversation
+      sendFollowUp(messageText, token, selectedConversation?.conversation_id);
       if (!overrideText) {
         setInput("");
       }
@@ -1286,9 +1358,18 @@ function ChatApp() {
       setCollapsedSections([]); // Reset collapsed state for new research
       setUserExpandedSections(['01_executive_summary']); // Reset user-clicked sections for new research
       setVisibleSections(['01_executive_summary']); // Auto-show executive summary
+      // Track which conversation this research state belongs to (prevents cross-contamination on switch)
+      researchStateConversationRef.current = newConversationId;
+      lastSavedInteractionLogLengthRef.current = 1; // Start at 1 (exec summary added below)
 
       // Start the research stream
       startResearch(extractedCompany, token);
+
+      // CRITICAL FIX: Add exec summary to interactionLog immediately after research starts
+      // The effect-based approach (relying on currentStreamingSection changes) is unreliable
+      // because React batches state updates and the effect may never see the intermediate state.
+      // By calling logSectionInteraction directly, we guarantee exec summary is in interactionLog.
+      logSectionInteraction('01_executive_summary');
     } else {
       // Buffett mode (default) - uses ML inference via Prediction Ensemble Lambda
       setShowAnalysis(true);
@@ -1357,6 +1438,15 @@ function ChatApp() {
     try {
       const { conversation, messages } = await loadConversationHistory(conversationId, token);
 
+      // DEBUG: Log raw API response to trace visible_sections persistence issue
+      console.log('[ToC Load DEBUG] loadConversationHistory response:', {
+        conversationId,
+        conversation_metadata: conversation?.metadata,
+        research_state: conversation?.metadata?.research_state,
+        visible_sections_from_api: conversation?.metadata?.research_state?.visible_sections,
+        messages_count: messages?.length,
+      });
+
       // Format messages for display
       const formattedMessages = messages
         .map((m) => {
@@ -1408,12 +1498,24 @@ function ChatApp() {
         const researchState = conversation?.metadata?.research_state;
         let savedResearchData = null;
 
+        // DEBUG: Log raw conversation object to see what's coming from API
+        console.log('[ToC Load DEBUG] Raw conversation from API:', {
+          conversation_id: conversation?.conversation_id,
+          metadata: conversation?.metadata,
+          metadata_research_state: conversation?.metadata?.research_state,
+          metadata_keys: conversation?.metadata ? Object.keys(conversation.metadata) : 'no metadata',
+        });
+
         if (researchState) {
           // Found research state in conversation metadata (new format)
           console.log('[ToC Load DEBUG] Found research state in metadata:', {
             ticker: researchState.ticker,
             active_section_id: researchState.active_section_id,
             visible_sections: researchState.visible_sections,
+            visible_sections_type: typeof researchState.visible_sections,
+            visible_sections_isArray: Array.isArray(researchState.visible_sections),
+            visible_sections_length: researchState.visible_sections?.length,
+            interaction_log: researchState.interaction_log,
           });
 
           // Convert metadata format to expected savedResearchData format
@@ -1428,6 +1530,7 @@ function ChatApp() {
             },
             visibleSections: researchState.visible_sections,
             activeSectionId: researchState.active_section_id,
+            interactionLog: researchState.interaction_log || [],  // Restore interaction timeline
           };
         } else {
           // FALLBACK: Try to find saved research report data in the messages (legacy format)
@@ -1475,6 +1578,20 @@ function ChatApp() {
               isStreaming: false,
               timestamp: data.timestamp || msg.timestamp,
             };
+          })
+          // Sort by inner JSON timestamp (ensures correct Q&A order even if DB save order was wrong)
+          .sort((a, b) => {
+            const timeA = new Date(a.timestamp).getTime();
+            const timeB = new Date(b.timestamp).getTime();
+            if (isNaN(timeA) && isNaN(timeB)) return 0;
+            if (isNaN(timeA)) return 1;
+            if (isNaN(timeB)) return -1;
+            return timeA - timeB;
+          })
+          // Deduplicate messages with identical content (legacy bug fix)
+          .filter((msg, index, arr) => {
+            // Keep only the first occurrence of each unique content
+            return arr.findIndex(m => m.content === msg.content && m.type === msg.type) === index;
           });
 
         // Extract ticker from saved data or from title
@@ -1504,8 +1621,35 @@ function ChatApp() {
 
           if (isReferenceFormat) {
             // NEW FORMAT: Reference-only - fetch sections on-demand from investment_reports_v2
-            const savedVisibleSections = savedResearchData.visibleSections || ['01_executive_summary'];
+            // Use length check instead of || to handle empty array (which is truthy but should default)
+            console.log('[ToC Load DEBUG] isReferenceFormat - computing savedVisibleSections:', {
+              'savedResearchData.visibleSections': savedResearchData.visibleSections,
+              'type': typeof savedResearchData.visibleSections,
+              'isArray': Array.isArray(savedResearchData.visibleSections),
+              'length': savedResearchData.visibleSections?.length,
+              'lengthCheck': savedResearchData.visibleSections?.length > 0,
+            });
+            // IMPORTANT: Always ensure executive summary is included when loading
+            // Start with the saved sections or default to exec summary only
+            let savedVisibleSections = savedResearchData.visibleSections?.length > 0
+              ? [...savedResearchData.visibleSections]
+              : ['01_executive_summary'];
+            // Always include exec summary if not already present
+            if (!savedVisibleSections.includes('01_executive_summary')) {
+              savedVisibleSections = ['01_executive_summary', ...savedVisibleSections];
+            }
+            console.log('[ToC Load DEBUG] Computed savedVisibleSections:', savedVisibleSections);
             const savedActiveSectionId = savedResearchData.activeSectionId || savedVisibleSections[0] || '01_executive_summary';
+            // Load interaction log and ensure exec summary is included for rendering
+            let savedInteractionLog = savedResearchData.interactionLog || [];
+            if (savedVisibleSections.includes('01_executive_summary') &&
+                !savedInteractionLog.some(e => e.type === 'section' && e.id === '01_executive_summary')) {
+              // Prepend exec summary to interaction log so it renders
+              savedInteractionLog = [
+                { type: 'section', id: '01_executive_summary', timestamp: new Date().toISOString() },
+                ...savedInteractionLog
+              ];
+            }
 
             // Check if report still exists and is not expired
             const status = await checkReportStatus(ticker, token);
@@ -1529,9 +1673,16 @@ function ChatApp() {
                 streamedContent: {},  // Empty - report expired
                 activeSectionId: savedActiveSectionId,  // Restore ToC highlight
                 followUpMessages: savedFollowUpMessages,
+                interactionLog: savedInteractionLog,  // Restore interaction timeline
               });
+              // Track which conversation this research state belongs to (prevents cross-contamination on switch)
+              researchStateConversationRef.current = conversationId;
+              // Set counters to prevent re-saving loaded data
+              lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
+              lastSavedSectionsRef.current = savedVisibleSections.length;
             } else {
               // Report exists - load metadata and fetch sections on-demand
+              console.log('[ToC Load DEBUG] Report exists - calling setUserExpandedSections and setVisibleSections with:', savedVisibleSections);
               setUserExpandedSections(savedVisibleSections);
               setVisibleSections(savedVisibleSections);
               setCollapsedSections([...savedVisibleSections]);
@@ -1543,12 +1694,19 @@ function ChatApp() {
                 streamedContent: {},  // Empty - fetch on-demand
                 activeSectionId: savedActiveSectionId,  // Restore ToC highlight
                 followUpMessages: savedFollowUpMessages,
+                interactionLog: savedInteractionLog,  // Restore interaction timeline
               });
+              // Track which conversation this research state belongs to (prevents cross-contamination on switch)
+              researchStateConversationRef.current = conversationId;
+              // Set counters to prevent re-saving loaded data
+              lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
+              lastSavedSectionsRef.current = savedVisibleSections.length;
 
               // Fetch visible sections in parallel from investment_reports_v2
+              // Use animate: false for instant display when restoring saved conversations
               try {
                 await Promise.all(
-                  savedVisibleSections.map(sectionId => fetchSection(ticker, sectionId, token))
+                  savedVisibleSections.map(sectionId => fetchSection(ticker, sectionId, token, { animate: false }))
                 );
                 // Scroll to restored active section after content loads
                 setTimeout(() => {
@@ -1564,9 +1722,28 @@ function ChatApp() {
             }
           } else if (isLegacyFormat) {
             // LEGACY FORMAT: Full content embedded - load directly (backward compatible)
-            const savedVisibleSections = savedResearchData.visibleSections || ['01_executive_summary'];
+            // Use length check instead of || to handle empty array (which is truthy but should default)
+            // IMPORTANT: Always ensure executive summary is included when loading
+            let savedVisibleSections = savedResearchData.visibleSections?.length > 0
+              ? [...savedResearchData.visibleSections]
+              : ['01_executive_summary'];
+            // Always include exec summary if not already present
+            if (!savedVisibleSections.includes('01_executive_summary')) {
+              savedVisibleSections = ['01_executive_summary', ...savedVisibleSections];
+            }
             // Legacy format may not have activeSectionId, fall back to first visible section
             const savedActiveSectionId = savedResearchData.activeSectionId || savedVisibleSections[0] || '01_executive_summary';
+            // Legacy format won't have interaction log, use empty array (fallback behavior)
+            // Ensure exec summary is included for rendering
+            let savedInteractionLog = savedResearchData.interactionLog || [];
+            if (savedVisibleSections.includes('01_executive_summary') &&
+                !savedInteractionLog.some(e => e.type === 'section' && e.id === '01_executive_summary')) {
+              // Prepend exec summary to interaction log so it renders
+              savedInteractionLog = [
+                { type: 'section', id: '01_executive_summary', timestamp: new Date().toISOString() },
+                ...savedInteractionLog
+              ];
+            }
             setUserExpandedSections(savedVisibleSections);
             setVisibleSections(savedVisibleSections);
             setCollapsedSections([...savedVisibleSections]);
@@ -1577,7 +1754,13 @@ function ChatApp() {
               streamedContent: savedResearchData.streamedContent,
               activeSectionId: savedActiveSectionId,  // Restore ToC highlight
               followUpMessages: savedFollowUpMessages,
+              interactionLog: savedInteractionLog,  // Restore interaction timeline (empty for legacy)
             });
+            // Track which conversation this research state belongs to (prevents cross-contamination on switch)
+            researchStateConversationRef.current = conversationId;
+            // Set counters to prevent re-saving loaded data
+            lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
+            lastSavedSectionsRef.current = savedVisibleSections.length;
 
             // Scroll to restored active section after content renders
             setTimeout(() => {
@@ -1591,12 +1774,18 @@ function ChatApp() {
             // (Fallback for older conversations before this feature)
             setUserExpandedSections(['01_executive_summary']);
             setVisibleSections(['01_executive_summary']);
+            setInteractionLog([{ type: 'section', id: '01_executive_summary', timestamp: new Date().toISOString() }]);
+            // Track which conversation this research state belongs to (prevents cross-contamination on switch)
+            researchStateConversationRef.current = conversationId;
+            lastSavedInteractionLogLengthRef.current = 1; // Reset for fresh research
             startResearch(ticker, token);
           }
 
           // Filter out the research report JSON messages from display
+          // This includes both assistant messages (report data, followup responses)
+          // AND user messages (followup questions) that are stored as JSON
           const displayMessages = formattedMessages.filter(msg => {
-            if (msg.type === 'assistant' && msg.content?.startsWith('{')) {
+            if (msg.content?.startsWith('{')) {
               try {
                 const data = JSON.parse(msg.content);
                 // Filter out report data and follow-up messages (handled separately)
@@ -1644,6 +1833,8 @@ function ChatApp() {
           setSavedAnalysisResults(hasContent ? analysisResults : null);  // 2. Results
           setAnalysisComplete(hasContent);  // 3. Completion state
           setShowInvestmentResearch(false);  // 4. Make sure research is off
+          // Clear research state tracking since this is an analysis conversation, not research
+          researchStateConversationRef.current = null;
           setShowAnalysis(true);  // 5. Show the view
           setAnalysisTicker(ticker);  // 6. TRIGGER - set last!
           // Don't set messages - we'll show AnalysisView instead
@@ -1657,6 +1848,8 @@ function ChatApp() {
       setShowAnalysis(false);
       setShowInvestmentResearch(false);
       setAnalysisComplete(false);
+      // Clear research state tracking since this is not a research conversation
+      researchStateConversationRef.current = null;
       setMessages(formattedMessages);
     } catch (error) {
       logger.error('Error loading conversation messages:', error);
@@ -1977,7 +2170,9 @@ function ChatApp() {
                       resetResearch();
                       setVisibleSections([]);
                     }}
-                    onRetry={() => startResearch(analysisTicker, token)}
+                    onRetry={() => {
+                      startResearch(analysisTicker, token);
+                    }}
                     onRegenerateExpired={() => {
                       setReportExpired(false);
                       setExpiredReportMeta(null);
@@ -2031,60 +2226,107 @@ function ChatApp() {
                       );
                     })}
 
-                    {/* Research sections */}
-                    {orderedSections.map((section) => (
-                      <div key={section.section_id} id={`section-${section.section_id}`} className="mx-auto w-full max-w-2xl">
-                        <SectionCard
-                          section={section}
-                          isStreaming={currentStreamingSection === section.section_id}
-                          isCollapsed={collapsedSections.includes(section.section_id)}
-                          onToggleCollapse={() => toggleSectionCollapse(section.section_id)}
-                        />
-                      </div>
-                    ))}
+                    {/* Interleaved timeline: sections and follow-ups in chronological order */}
+                    {interactionTimeline.map((item, index) => {
+                      if (item.type === 'section') {
+                        const section = item.data;
+                        return (
+                          <div key={`section-${section.section_id}`} id={`section-${section.section_id}`} className="mx-auto w-full max-w-2xl">
+                            <SectionCard
+                              section={section}
+                              isStreaming={currentStreamingSection === section.section_id}
+                              isCollapsed={collapsedSections.includes(section.section_id)}
+                              onToggleCollapse={() => toggleSectionCollapse(section.section_id)}
+                            />
+                          </div>
+                        );
+                      } else if (item.type === 'followup') {
+                        const msg = item.data;
+                        const isCollapsed = collapsedFollowUpIds.includes(msg.id);
+                        const contentLines = msg.content.split('\n');
+                        const previewLineCount = 5;
+                        const hasMoreContent = contentLines.length > previewLineCount;
+                        const previewContent = contentLines.slice(0, previewLineCount).join('\n');
 
-                    {/* Loading state when research started but no sections yet */}
-                    {orderedSections.length === 0 && !researchError && (isResearchStreaming || streamStatus === 'connecting') && (
-                      <div className="flex items-center justify-center h-32 text-slate-400 dark:text-slate-500">
-                        <p>Loading research report...</p>
-                      </div>
-                    )}
+                        // Check if this is the first followup in the timeline (show header)
+                        const isFirstFollowup = interactionTimeline.slice(0, index).every(i => i.type !== 'followup');
 
-                    {/* Follow-up conversation */}
-                    {followUpMessages.length > 0 && (
-                      <div className="mx-auto w-full max-w-2xl mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                        <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-4 px-4">
-                          Follow-up Questions
-                        </div>
-                        {followUpMessages.map((msg) => (
-                          <div key={msg.id} className="mb-4 px-4">
-                            {msg.type === 'user' ? (
-                              <div className="flex justify-end">
-                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full text-sm max-w-[80%]">
-                                  {msg.content}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="flex gap-3">
-                                <div className="h-7 w-7 shrink-0">
-                                  <img
-                                    src="/buffett-memoji.png"
-                                    alt="Assistant"
-                                    className="w-full h-full rounded-full"
-                                  />
-                                </div>
-                                <div className="flex-1 bg-slate-50 dark:bg-slate-700 rounded-xl p-4 text-sm prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-h2:text-lg prose-h3:text-base prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-white prose-table:text-xs prose-th:bg-slate-100 dark:prose-th:bg-slate-600 prose-th:p-2 prose-td:p-2">
-                                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                    {msg.content}
-                                  </ReactMarkdown>
-                                  {msg.isStreaming && (
-                                    <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
-                                  )}
+                        return (
+                          <div key={`followup-${msg.id}`} className="mx-auto w-full max-w-2xl">
+                            {isFirstFollowup && (
+                              <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                                <div className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-4 px-4">
+                                  Follow-up Questions
                                 </div>
                               </div>
                             )}
+                            <div className="mb-4 px-4">
+                              {msg.type === 'user' ? (
+                                <div className="flex justify-end">
+                                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-full text-sm max-w-[80%]">
+                                    {msg.content}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex gap-3">
+                                  <div className="h-7 w-7 shrink-0">
+                                    <img
+                                      src="/buffett-memoji.png"
+                                      alt="Assistant"
+                                      className="w-full h-full rounded-full"
+                                    />
+                                  </div>
+                                  <div className="flex-1 bg-slate-50 dark:bg-slate-700 rounded-xl p-4 text-sm prose prose-sm dark:prose-invert max-w-none prose-headings:font-semibold prose-h2:text-lg prose-h3:text-base prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-white prose-table:text-xs prose-th:bg-slate-100 dark:prose-th:bg-slate-600 prose-th:p-2 prose-td:p-2 relative">
+                                    {/* Collapse/Expand button */}
+                                    {!msg.isStreaming && hasMoreContent && (
+                                      <button
+                                        onClick={() => toggleFollowUpCollapse(msg.id)}
+                                        className="absolute top-2 right-2 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors flex items-center gap-1 bg-slate-100 dark:bg-slate-600 px-2 py-1 rounded-md"
+                                      >
+                                        {isCollapsed ? (
+                                          <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                            Expand
+                                          </>
+                                        ) : (
+                                          <>
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                            </svg>
+                                            Collapse
+                                          </>
+                                        )}
+                                      </button>
+                                    )}
+                                    <div className={isCollapsed ? 'pr-20' : ''}>
+                                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                        {isCollapsed ? previewContent : msg.content}
+                                      </ReactMarkdown>
+                                      {isCollapsed && hasMoreContent && (
+                                        <div className="text-slate-400 dark:text-slate-500 text-xs mt-2 italic">
+                                          ...content collapsed
+                                        </div>
+                                      )}
+                                    </div>
+                                    {msg.isStreaming && (
+                                      <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        ))}
+                        );
+                      }
+                      return null;
+                    })}
+
+                    {/* Loading state when research started but no sections yet */}
+                    {interactionTimeline.length === 0 && !researchError && (isResearchStreaming || streamStatus === 'connecting') && (
+                      <div className="flex items-center justify-center h-32 text-slate-400 dark:text-slate-500">
+                        <p>Loading research report...</p>
                       </div>
                     )}
 
