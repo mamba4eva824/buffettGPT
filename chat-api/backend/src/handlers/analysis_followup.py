@@ -13,8 +13,10 @@ import boto3
 import os
 import logging
 import jwt
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
+from decimal import Decimal
 from functools import lru_cache
 
 # Configure logging
@@ -87,6 +89,88 @@ bedrock_client = boto3.client(
     region_name=os.environ.get('BEDROCK_REGION', 'us-east-1')
 )
 
+# Initialize DynamoDB for message persistence
+dynamodb = boto3.resource('dynamodb')
+CHAT_MESSAGES_TABLE = os.environ.get('CHAT_MESSAGES_TABLE')
+ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
+PROJECT_NAME = os.environ.get('PROJECT_NAME', 'buffett-chat-api')
+
+# Initialize messages table (lazy initialization to handle missing env var gracefully)
+messages_table = None
+if CHAT_MESSAGES_TABLE:
+    messages_table = dynamodb.Table(CHAT_MESSAGES_TABLE)
+
+
+def convert_floats_to_decimals(item):
+    """Convert all float values to Decimal for DynamoDB compatibility."""
+    if isinstance(item, dict):
+        return {key: convert_floats_to_decimals(value) for key, value in item.items()}
+    elif isinstance(item, list):
+        return [convert_floats_to_decimals(value) for value in item]
+    elif isinstance(item, float):
+        return Decimal(str(item))
+    else:
+        return item
+
+
+def save_followup_message(
+    session_id: str,
+    message_type: str,
+    content: str,
+    user_id: str,
+    agent_type: str,
+    ticker: str = ''
+) -> Optional[str]:
+    """
+    Save a follow-up message to DynamoDB.
+
+    Args:
+        session_id: The session/conversation ID
+        message_type: 'user' or 'assistant'
+        content: The message content
+        user_id: The user's ID
+        agent_type: The agent type (debt, cashflow, growth)
+        ticker: The stock ticker symbol
+
+    Returns:
+        The message_id if saved successfully, None otherwise
+    """
+    if not messages_table:
+        logger.warning("Messages table not configured, skipping message persistence")
+        return None
+
+    try:
+        timestamp_unix = int(datetime.utcnow().timestamp())
+        timestamp_iso = datetime.utcnow().isoformat() + 'Z'
+        message_id = str(uuid.uuid4())
+
+        message_record = {
+            'conversation_id': session_id,
+            'timestamp': timestamp_unix,
+            'message_id': message_id,
+            'message_type': message_type,
+            'content': content,
+            'user_id': user_id,
+            'created_at': timestamp_iso,
+            'status': 'completed' if message_type == 'assistant' else 'received',
+            'environment': ENVIRONMENT,
+            'project': PROJECT_NAME,
+            'metadata': {
+                'source': 'investment_research_followup',
+                'agent_type': agent_type,
+                'ticker': ticker
+            }
+        }
+
+        messages_table.put_item(Item=convert_floats_to_decimals(message_record))
+        logger.info(f"Saved {message_type} message {message_id} for session {session_id}")
+        return message_id
+
+    except Exception as e:
+        logger.error(f"Failed to save {message_type} message to DynamoDB: {e}", exc_info=True)
+        return None
+
+
 # Agent configuration
 AGENT_CONFIG = {
     'debt': {
@@ -109,11 +193,17 @@ def format_sse_event(data: str, event_type: str = "message") -> str:
     return f"event: {event_type}\ndata: {data}\n\n"
 
 
-def stream_followup_response(event: Dict[str, Any], context: Any):
+def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str = 'anonymous'):
     """
     Stream follow-up question response.
 
     Uses the same sessionId from initial analysis to maintain context.
+    Saves both user questions and assistant responses to DynamoDB.
+
+    Args:
+        event: API Gateway event
+        context: Lambda context
+        user_id: The authenticated user's ID
     """
     try:
         # Response metadata
@@ -159,6 +249,8 @@ def stream_followup_response(event: Dict[str, Any], context: Any):
 
         if not agent_id or not agent_alias:
             # Fallback response if agent not configured
+            fallback_response = f"I understand you're asking about {ticker}'s {agent_type} analysis: \"{question}\"\n\n*Full follow-up responses require Bedrock agent configuration.*\n"
+
             yield format_sse_event(json.dumps({
                 "type": "chunk",
                 "text": f"I understand you're asking about {ticker}'s {agent_type} analysis: \"{question}\"\n\n",
@@ -171,6 +263,11 @@ def stream_followup_response(event: Dict[str, Any], context: Any):
                 "timestamp": datetime.utcnow().isoformat() + 'Z'
             }), "chunk")
 
+            # Save user question even for fallback
+            save_followup_message(session_id, 'user', question, user_id, agent_type, ticker)
+            # Save fallback response
+            save_followup_message(session_id, 'assistant', fallback_response, user_id, agent_type, ticker)
+
             yield format_sse_event(json.dumps({
                 "type": "complete",
                 "session_id": session_id,
@@ -179,6 +276,16 @@ def stream_followup_response(event: Dict[str, Any], context: Any):
             return
 
         logger.info(f"Follow-up question for session {session_id}: {question[:100]}...")
+
+        # Save user question to DynamoDB
+        user_message_id = save_followup_message(
+            session_id=session_id,
+            message_type='user',
+            content=question,
+            user_id=user_id,
+            agent_type=agent_type,
+            ticker=ticker
+        )
 
         # Invoke agent with same session (maintains context)
         response = bedrock_client.invoke_agent(
@@ -189,23 +296,37 @@ def stream_followup_response(event: Dict[str, Any], context: Any):
             streamingConfigurations={'streamFinalResponse': True}
         )
 
-        # Stream response chunks
+        # Stream response chunks and collect full response
+        full_response = ""
         for event_item in response.get('completion', []):
             if 'chunk' in event_item:
                 chunk = event_item['chunk']
                 if 'bytes' in chunk:
                     chunk_text = chunk['bytes'].decode('utf-8')
+                    full_response += chunk_text
                     yield format_sse_event(json.dumps({
                         "type": "chunk",
                         "text": chunk_text,
                         "timestamp": datetime.utcnow().isoformat() + 'Z'
                     }), "chunk")
 
+        # Save assistant response to DynamoDB
+        assistant_message_id = save_followup_message(
+            session_id=session_id,
+            message_type='assistant',
+            content=full_response,
+            user_id=user_id,
+            agent_type=agent_type,
+            ticker=ticker
+        )
+
         # Completion event
         yield format_sse_event(json.dumps({
             "type": "complete",
             "session_id": session_id,
             "agent_type": agent_type,
+            "user_message_id": user_message_id,
+            "assistant_message_id": assistant_message_id,
             "timestamp": datetime.utcnow().isoformat() + 'Z'
         }), "complete")
 
@@ -262,10 +383,13 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         else:
             return error_response(401, "Unauthorized - valid JWT token required")
 
+    # Extract user_id from JWT claims
+    user_id = user_claims.get('user_id', user_claims.get('sub', 'anonymous'))
+
     # Lambda Function URL - use streaming
     if 'http' in request_context:
         logger.info("Streaming follow-up response")
-        yield from stream_followup_response(event, context)
+        yield from stream_followup_response(event, context, user_id=user_id)
         return
 
     # API Gateway - standard response
@@ -274,6 +398,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         question = body.get('question', '').strip()
         session_id = body.get('session_id')
         agent_type = body.get('agent_type', 'debt')
+        ticker = body.get('ticker', '')
 
         if not question:
             return error_response(400, "Question is required")
@@ -287,6 +412,16 @@ def lambda_handler(event: Dict[str, Any], context: Any):
 
         if not agent_id or not agent_alias:
             return error_response(503, f"Agent {agent_type} not configured")
+
+        # Save user question to DynamoDB
+        user_message_id = save_followup_message(
+            session_id=session_id,
+            message_type='user',
+            content=question,
+            user_id=user_id,
+            agent_type=agent_type,
+            ticker=ticker
+        )
 
         # Invoke agent
         response = bedrock_client.invoke_agent(
@@ -305,6 +440,16 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 if 'bytes' in chunk:
                     full_response += chunk['bytes'].decode('utf-8')
 
+        # Save assistant response to DynamoDB
+        assistant_message_id = save_followup_message(
+            session_id=session_id,
+            message_type='assistant',
+            content=full_response,
+            user_id=user_id,
+            agent_type=agent_type,
+            ticker=ticker
+        )
+
         return {
             'statusCode': 200,
             'headers': {
@@ -316,6 +461,8 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 'response': full_response,
                 'session_id': session_id,
                 'agent_type': agent_type,
+                'user_message_id': user_message_id,
+                'assistant_message_id': assistant_message_id,
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             })
         }
