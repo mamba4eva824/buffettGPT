@@ -358,15 +358,27 @@ def lambda_handler(event: Dict[str, Any], context: Any):
 
     The session_id must match the one from the initial analysis
     to maintain conversation context.
+
+    Invocation modes:
+    - Lambda Function URL (direct): Uses RESPONSE_STREAM for SSE streaming
+    - API Gateway HTTP_PROXY: Returns non-streaming JSON response
     """
     request_context = event.get('requestContext', {})
+
+    # Detect invocation source:
+    # - Lambda Function URL: has 'http' in requestContext (e.g., requestContext.http.method)
+    # - API Gateway REST API via HTTP_PROXY: has 'httpMethod' at top level or requestContext.httpMethod
+    is_function_url = 'http' in request_context
+    is_api_gateway = event.get('httpMethod') or request_context.get('httpMethod')
+
+    logger.info(f"Invocation detection: is_function_url={is_function_url}, is_api_gateway={is_api_gateway}")
 
     # JWT Authentication - verify token before processing
     user_claims = verify_jwt_token(event)
     if not user_claims:
         logger.warning("Unauthorized request - invalid or missing JWT token")
         # For streaming, yield auth error
-        if 'http' in request_context:
+        if is_function_url and not is_api_gateway:
             def auth_error_stream():
                 yield {
                     "statusCode": 401,
@@ -388,13 +400,15 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     # Extract user_id from JWT claims
     user_id = user_claims.get('user_id', user_claims.get('sub', 'anonymous'))
 
-    # Lambda Function URL - use streaming
-    if 'http' in request_context:
-        logger.info("Streaming follow-up response")
+    # Lambda Function URL (direct call) - use streaming
+    # BUT if called via API Gateway HTTP_PROXY, use non-streaming even if 'http' is present
+    if is_function_url and not is_api_gateway:
+        logger.info("Streaming follow-up response (direct Function URL)")
         yield from stream_followup_response(event, context, user_id=user_id)
         return
 
-    # API Gateway - standard response
+    # API Gateway REST API (via HTTP_PROXY) or standard Lambda invocation - non-streaming response
+    logger.info("Non-streaming follow-up response (API Gateway or standard invocation)")
     try:
         body = json.loads(event.get('body', '{}'))
         question = body.get('question', '').strip()
