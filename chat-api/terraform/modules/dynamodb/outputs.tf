@@ -96,6 +96,19 @@ output "metrics_history_cache_table_arn" {
 }
 
 # ================================================
+# Token Usage Table (ACTIVE)
+# ================================================
+output "token_usage_table_name" {
+  description = "Name of the token usage tracking table"
+  value       = aws_dynamodb_table.token_usage.name
+}
+
+output "token_usage_table_arn" {
+  description = "ARN of the token usage tracking table"
+  value       = aws_dynamodb_table.token_usage.arn
+}
+
+# ================================================
 # Summary Output
 # ================================================
 output "table_summary" {
@@ -114,6 +127,9 @@ output "table_summary" {
     investment_research = {
       investment_reports_v2 = aws_dynamodb_table.investment_reports_v2.name
       metrics_history_cache = aws_dynamodb_table.metrics_history_cache.name
+    }
+    token_tracking = {
+      token_usage = aws_dynamodb_table.token_usage.name
     }
   }
 }
