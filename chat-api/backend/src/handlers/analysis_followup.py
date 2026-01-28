@@ -2,10 +2,10 @@
 Analysis Follow-Up Handler
 
 Handles follow-up questions after ensemble analysis.
-Uses Bedrock session memory to maintain conversation context.
+Uses Bedrock ConverseStream API for direct model access with token tracking.
 
-The same sessionId from the initial analysis is reused,
-allowing the agent to remember the previous analysis.
+Conversation history is retrieved from DynamoDB to maintain context
+across multiple follow-up questions.
 """
 
 import json
@@ -14,10 +14,11 @@ import os
 import logging
 import jwt
 import uuid
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 from decimal import Decimal
 from functools import lru_cache
+from boto3.dynamodb.conditions import Key
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -83,9 +84,10 @@ def verify_jwt_token(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         logger.error(f"JWT verification error: {e}")
         return None
 
-# Initialize Bedrock client
-bedrock_client = boto3.client(
-    'bedrock-agent-runtime',
+
+# Initialize Bedrock Runtime client for ConverseStream API
+bedrock_runtime = boto3.client(
+    'bedrock-runtime',
     region_name=os.environ.get('BEDROCK_REGION', 'us-east-1')
 )
 
@@ -100,6 +102,44 @@ messages_table = None
 if CHAT_MESSAGES_TABLE:
     messages_table = dynamodb.Table(CHAT_MESSAGES_TABLE)
 
+# Model configuration
+MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0')
+MAX_TOKENS = int(os.environ.get('CONVERSE_MAX_TOKENS', '2048'))
+TEMPERATURE = float(os.environ.get('CONVERSE_TEMPERATURE', '0.7'))
+
+# System prompts for each analyst type (replaces Bedrock Agent instructions)
+SYSTEM_PROMPTS = {
+    'debt': """You are an expert debt analyst specializing in corporate financial analysis.
+You have previously analyzed a company's debt structure, leverage ratios, and credit profile.
+When answering follow-up questions:
+- Reference specific metrics like debt-to-equity, interest coverage, and debt maturity schedules
+- Explain the implications of debt levels on the company's financial health
+- Compare to industry benchmarks when relevant
+- Be concise but thorough in your analysis
+- Use markdown formatting for clarity""",
+
+    'cashflow': """You are an expert cash flow analyst specializing in corporate financial analysis.
+You have previously analyzed a company's cash flow statement, free cash flow generation, and working capital.
+When answering follow-up questions:
+- Reference specific metrics like operating cash flow, free cash flow, and cash conversion cycle
+- Explain the sustainability and quality of cash flows
+- Discuss capital allocation decisions and their implications
+- Be concise but thorough in your analysis
+- Use markdown formatting for clarity""",
+
+    'growth': """You are an expert growth analyst specializing in corporate financial analysis.
+You have previously analyzed a company's revenue growth, market position, and expansion potential.
+When answering follow-up questions:
+- Reference specific metrics like revenue CAGR, market share, and growth drivers
+- Explain the sustainability of growth and competitive advantages
+- Discuss risks to the growth thesis
+- Be concise but thorough in your analysis
+- Use markdown formatting for clarity"""
+}
+
+# Maximum conversation history to include (to manage token usage)
+MAX_HISTORY_MESSAGES = int(os.environ.get('MAX_HISTORY_MESSAGES', '10'))
+
 
 def convert_floats_to_decimals(item):
     """Convert all float values to Decimal for DynamoDB compatibility."""
@@ -113,13 +153,56 @@ def convert_floats_to_decimals(item):
         return item
 
 
+def get_conversation_history(session_id: str) -> List[Dict[str, Any]]:
+    """
+    Retrieve conversation history from DynamoDB for context.
+
+    Args:
+        session_id: The session/conversation ID
+
+    Returns:
+        List of messages in ConverseStream format: [{'role': 'user'|'assistant', 'content': [{'text': '...'}]}]
+    """
+    if not messages_table:
+        logger.warning("Messages table not configured, no conversation history available")
+        return []
+
+    try:
+        # Query messages for this session, sorted by timestamp
+        response = messages_table.query(
+            KeyConditionExpression=Key('conversation_id').eq(session_id),
+            ScanIndexForward=True,  # Chronological order (oldest first)
+            Limit=MAX_HISTORY_MESSAGES
+        )
+
+        messages = []
+        for item in response.get('Items', []):
+            message_type = item.get('message_type')
+            content = item.get('content', '')
+
+            # Only include user and assistant messages
+            if message_type in ('user', 'assistant'):
+                messages.append({
+                    'role': message_type,
+                    'content': [{'text': content}]
+                })
+
+        logger.info(f"Retrieved {len(messages)} messages from history for session {session_id}")
+        return messages
+
+    except Exception as e:
+        logger.error(f"Failed to retrieve conversation history: {e}", exc_info=True)
+        return []
+
+
 def save_followup_message(
     session_id: str,
     message_type: str,
     content: str,
     user_id: str,
     agent_type: str,
-    ticker: str = ''
+    ticker: str = '',
+    token_usage: Optional[Dict[str, int]] = None
 ) -> Optional[str]:
     """
     Save a follow-up message to DynamoDB.
@@ -131,6 +214,7 @@ def save_followup_message(
         user_id: The user's ID
         agent_type: The agent type (debt, cashflow, growth)
         ticker: The stock ticker symbol
+        token_usage: Optional token usage metrics from ConverseStream
 
     Returns:
         The message_id if saved successfully, None otherwise
@@ -144,6 +228,16 @@ def save_followup_message(
         timestamp_iso = datetime.utcnow().isoformat() + 'Z'
         message_id = str(uuid.uuid4())
 
+        metadata = {
+            'source': 'investment_research_followup',
+            'agent_type': agent_type,
+            'ticker': ticker
+        }
+
+        # Add token usage to metadata if available
+        if token_usage:
+            metadata['token_usage'] = token_usage
+
         message_record = {
             'conversation_id': session_id,
             'timestamp': timestamp_unix,
@@ -155,11 +249,7 @@ def save_followup_message(
             'status': 'completed' if message_type == 'assistant' else 'received',
             'environment': ENVIRONMENT,
             'project': PROJECT_NAME,
-            'metadata': {
-                'source': 'investment_research_followup',
-                'agent_type': agent_type,
-                'ticker': ticker
-            }
+            'metadata': metadata
         }
 
         messages_table.put_item(Item=convert_floats_to_decimals(message_record))
@@ -171,33 +261,78 @@ def save_followup_message(
         return None
 
 
-# Agent configuration
-AGENT_CONFIG = {
-    'debt': {
-        'agent_id': os.environ.get('DEBT_AGENT_ID'),
-        'agent_alias': os.environ.get('DEBT_AGENT_ALIAS'),
-    },
-    'cashflow': {
-        'agent_id': os.environ.get('CASHFLOW_AGENT_ID'),
-        'agent_alias': os.environ.get('CASHFLOW_AGENT_ALIAS'),
-    },
-    'growth': {
-        'agent_id': os.environ.get('GROWTH_AGENT_ID'),
-        'agent_alias': os.environ.get('GROWTH_AGENT_ALIAS'),
-    }
-}
-
-
 def format_sse_event(data: str, event_type: str = "message") -> str:
     """Format data as Server-Sent Event."""
     return f"event: {event_type}\ndata: {data}\n\n"
 
 
+def call_converse_stream(
+    messages: List[Dict[str, Any]],
+    system_prompt: str,
+    ticker: str = ''
+) -> tuple:
+    """
+    Call Bedrock ConverseStream API.
+
+    Args:
+        messages: Conversation history in ConverseStream format
+        system_prompt: System prompt for the analyst type
+        ticker: Stock ticker for additional context
+
+    Yields:
+        Tuples of (event_type, data) where event_type is 'chunk', 'metadata', or 'error'
+    """
+    # Add ticker context to system prompt if available
+    full_system_prompt = system_prompt
+    if ticker:
+        full_system_prompt += f"\n\nYou are analyzing {ticker}."
+
+    try:
+        response = bedrock_runtime.converse_stream(
+            modelId=MODEL_ID,
+            messages=messages,
+            system=[{'text': full_system_prompt}],
+            inferenceConfig={
+                'maxTokens': MAX_TOKENS,
+                'temperature': TEMPERATURE
+            }
+        )
+
+        full_response = ""
+        token_usage = None
+
+        for event in response.get('stream', []):
+            # Handle text chunks
+            if 'contentBlockDelta' in event:
+                delta = event['contentBlockDelta'].get('delta', {})
+                if 'text' in delta:
+                    chunk_text = delta['text']
+                    full_response += chunk_text
+                    yield ('chunk', chunk_text)
+
+            # Handle metadata with token usage
+            if 'metadata' in event:
+                usage = event['metadata'].get('usage', {})
+                token_usage = {
+                    'inputTokens': usage.get('inputTokens', 0),
+                    'outputTokens': usage.get('outputTokens', 0),
+                    'totalTokens': usage.get('totalTokens', 0)
+                }
+                yield ('metadata', token_usage)
+
+        # Yield the complete response
+        yield ('complete', full_response)
+
+    except Exception as e:
+        logger.error(f"ConverseStream error: {e}", exc_info=True)
+        yield ('error', str(e))
+
+
 def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str = 'anonymous'):
     """
-    Stream follow-up question response.
+    Stream follow-up question response using ConverseStream API.
 
-    Uses the same sessionId from initial analysis to maintain context.
+    Retrieves conversation history from DynamoDB and uses it to maintain context.
     Saves both user questions and assistant responses to DynamoDB.
 
     Args:
@@ -242,37 +377,13 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             }), "error")
             return
 
-        # Get agent config
-        config = AGENT_CONFIG.get(agent_type, {})
-        agent_id = config.get('agent_id')
-        agent_alias = config.get('agent_alias')
-
-        if not agent_id or not agent_alias:
-            # Fallback response if agent not configured
-            fallback_response = f"I understand you're asking about {ticker}'s {agent_type} analysis: \"{question}\"\n\n*Full follow-up responses require Bedrock agent configuration.*\n"
-
+        # Get system prompt for agent type
+        system_prompt = SYSTEM_PROMPTS.get(agent_type)
+        if not system_prompt:
             yield format_sse_event(json.dumps({
-                "type": "chunk",
-                "text": f"I understand you're asking about {ticker}'s {agent_type} analysis: \"{question}\"\n\n",
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
-            }), "chunk")
-
-            yield format_sse_event(json.dumps({
-                "type": "chunk",
-                "text": "*Full follow-up responses require Bedrock agent configuration.*\n",
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
-            }), "chunk")
-
-            # Save user question even for fallback
-            save_followup_message(session_id, 'user', question, user_id, agent_type, ticker)
-            # Save fallback response
-            save_followup_message(session_id, 'assistant', fallback_response, user_id, agent_type, ticker)
-
-            yield format_sse_event(json.dumps({
-                "type": "complete",
-                "session_id": session_id,
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
-            }), "complete")
+                "type": "error",
+                "message": f"Unknown agent type: {agent_type}"
+            }), "error")
             return
 
         logger.info(f"Follow-up question for session {session_id}: {question[:100]}...")
@@ -287,37 +398,58 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             ticker=ticker
         )
 
-        # Invoke agent with same session (maintains context)
-        response = bedrock_client.invoke_agent(
-            agentId=agent_id,
-            agentAliasId=agent_alias,
-            sessionId=session_id,  # Same session = remembers context
-            inputText=question,
-            streamingConfigurations={'streamFinalResponse': True}
-        )
+        # Get conversation history from DynamoDB
+        conversation_history = get_conversation_history(session_id)
 
-        # Stream response chunks and collect full response
+        # Add the new user message to history
+        conversation_history.append({
+            'role': 'user',
+            'content': [{'text': question}]
+        })
+
+        # Call ConverseStream API
         full_response = ""
-        for event_item in response.get('completion', []):
-            if 'chunk' in event_item:
-                chunk = event_item['chunk']
-                if 'bytes' in chunk:
-                    chunk_text = chunk['bytes'].decode('utf-8')
-                    full_response += chunk_text
-                    yield format_sse_event(json.dumps({
-                        "type": "chunk",
-                        "text": chunk_text,
-                        "timestamp": datetime.utcnow().isoformat() + 'Z'
-                    }), "chunk")
+        token_usage = None
 
-        # Save assistant response to DynamoDB
+        for event_type, data in call_converse_stream(conversation_history, system_prompt, ticker):
+            if event_type == 'chunk':
+                yield format_sse_event(json.dumps({
+                    "type": "chunk",
+                    "text": data,
+                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                }), "chunk")
+
+            elif event_type == 'metadata':
+                token_usage = data
+                # Send token usage info to client
+                yield format_sse_event(json.dumps({
+                    "type": "token_usage",
+                    "input_tokens": data['inputTokens'],
+                    "output_tokens": data['outputTokens'],
+                    "total_tokens": data['totalTokens'],
+                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                }), "token_usage")
+
+            elif event_type == 'complete':
+                full_response = data
+
+            elif event_type == 'error':
+                yield format_sse_event(json.dumps({
+                    "type": "error",
+                    "message": data,
+                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                }), "error")
+                return
+
+        # Save assistant response to DynamoDB (with token usage)
         assistant_message_id = save_followup_message(
             session_id=session_id,
             message_type='assistant',
             content=full_response,
             user_id=user_id,
             agent_type=agent_type,
-            ticker=ticker
+            ticker=ticker,
+            token_usage=token_usage
         )
 
         # Completion event
@@ -327,6 +459,7 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             "agent_type": agent_type,
             "user_message_id": user_message_id,
             "assistant_message_id": assistant_message_id,
+            "token_usage": token_usage,
             "timestamp": datetime.utcnow().isoformat() + 'Z'
         }), "complete")
 
@@ -339,6 +472,89 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
         }), "error")
 
 
+def process_non_streaming_request(
+    question: str,
+    session_id: str,
+    agent_type: str,
+    ticker: str,
+    user_id: str
+) -> Dict[str, Any]:
+    """
+    Process a non-streaming follow-up request.
+
+    Args:
+        question: The user's question
+        session_id: Session ID for conversation context
+        agent_type: Type of analyst (debt, cashflow, growth)
+        ticker: Stock ticker symbol
+        user_id: User identifier
+
+    Returns:
+        Response dict with success status, response text, and token usage
+    """
+    # Get system prompt
+    system_prompt = SYSTEM_PROMPTS.get(agent_type)
+    if not system_prompt:
+        return {
+            'success': False,
+            'error': f"Unknown agent type: {agent_type}"
+        }
+
+    # Save user question
+    user_message_id = save_followup_message(
+        session_id=session_id,
+        message_type='user',
+        content=question,
+        user_id=user_id,
+        agent_type=agent_type,
+        ticker=ticker
+    )
+
+    # Get conversation history
+    conversation_history = get_conversation_history(session_id)
+    conversation_history.append({
+        'role': 'user',
+        'content': [{'text': question}]
+    })
+
+    # Call ConverseStream and collect response
+    full_response = ""
+    token_usage = None
+
+    for event_type, data in call_converse_stream(conversation_history, system_prompt, ticker):
+        if event_type == 'complete':
+            full_response = data
+        elif event_type == 'metadata':
+            token_usage = data
+        elif event_type == 'error':
+            return {
+                'success': False,
+                'error': data
+            }
+
+    # Save assistant response
+    assistant_message_id = save_followup_message(
+        session_id=session_id,
+        message_type='assistant',
+        content=full_response,
+        user_id=user_id,
+        agent_type=agent_type,
+        ticker=ticker,
+        token_usage=token_usage
+    )
+
+    return {
+        'success': True,
+        'response': full_response,
+        'session_id': session_id,
+        'agent_type': agent_type,
+        'user_message_id': user_message_id,
+        'assistant_message_id': assistant_message_id,
+        'token_usage': token_usage,
+        'timestamp': datetime.utcnow().isoformat() + 'Z'
+    }
+
+
 def lambda_handler(event: Dict[str, Any], context: Any):
     """
     Handle follow-up questions to analysis.
@@ -347,15 +563,14 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     {
         "question": "Why is the debt analyst bearish?",
         "session_id": "ensemble-abc123",  // Required - from initial analysis
-        "agent_type": "debt",             // Which agent to ask
+        "agent_type": "debt",             // Which analyst to ask (debt, cashflow, growth)
         "ticker": "AAPL"                  // For context
     }
 
     Authentication:
     - Requires valid JWT token in Authorization header (Bearer token)
 
-    The session_id must match the one from the initial analysis
-    to maintain conversation context.
+    Response includes token usage metrics from ConverseStream API.
     """
     request_context = event.get('requestContext', {})
 
@@ -388,7 +603,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
 
     # Lambda Function URL - use streaming
     if 'http' in request_context:
-        logger.info("Streaming follow-up response")
+        logger.info("Streaming follow-up response via ConverseStream")
         yield from stream_followup_response(event, context, user_id=user_id)
         return
 
@@ -406,49 +621,20 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         if not session_id:
             return error_response(400, "session_id is required for follow-up questions")
 
-        config = AGENT_CONFIG.get(agent_type, {})
-        agent_id = config.get('agent_id')
-        agent_alias = config.get('agent_alias')
+        if agent_type not in SYSTEM_PROMPTS:
+            return error_response(400, f"Invalid agent_type: {agent_type}. Must be one of: {list(SYSTEM_PROMPTS.keys())}")
 
-        if not agent_id or not agent_alias:
-            return error_response(503, f"Agent {agent_type} not configured")
-
-        # Save user question to DynamoDB
-        user_message_id = save_followup_message(
+        # Process the request
+        result = process_non_streaming_request(
+            question=question,
             session_id=session_id,
-            message_type='user',
-            content=question,
-            user_id=user_id,
             agent_type=agent_type,
-            ticker=ticker
+            ticker=ticker,
+            user_id=user_id
         )
 
-        # Invoke agent
-        response = bedrock_client.invoke_agent(
-            agentId=agent_id,
-            agentAliasId=agent_alias,
-            sessionId=session_id,
-            inputText=question,
-            streamingConfigurations={'streamFinalResponse': True}
-        )
-
-        # Collect full response
-        full_response = ""
-        for event_item in response.get('completion', []):
-            if 'chunk' in event_item:
-                chunk = event_item['chunk']
-                if 'bytes' in chunk:
-                    full_response += chunk['bytes'].decode('utf-8')
-
-        # Save assistant response to DynamoDB
-        assistant_message_id = save_followup_message(
-            session_id=session_id,
-            message_type='assistant',
-            content=full_response,
-            user_id=user_id,
-            agent_type=agent_type,
-            ticker=ticker
-        )
+        if not result.get('success'):
+            return error_response(500, result.get('error', 'Unknown error'))
 
         return {
             'statusCode': 200,
@@ -456,15 +642,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 'Content-Type': 'application/json',
                 'Access-Control-Allow-Origin': '*'
             },
-            'body': json.dumps({
-                'success': True,
-                'response': full_response,
-                'session_id': session_id,
-                'agent_type': agent_type,
-                'user_message_id': user_message_id,
-                'assistant_message_id': assistant_message_id,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            })
+            'body': json.dumps(result)
         }
 
     except Exception as e:
