@@ -1,11 +1,14 @@
 """
 Analysis Follow-Up Handler
 
-Handles follow-up questions after ensemble analysis.
-Uses Bedrock ConverseStream API for direct model access with token tracking.
+Handles follow-up questions for investment research reports.
+Uses Bedrock ConverseStream API with Claude 4.5 Haiku for direct model access
+with exact token tracking.
 
-Conversation history is retrieved from DynamoDB to maintain context
-across multiple follow-up questions.
+Key features:
+- Conversation history retrieved from DynamoDB for multi-turn context
+- System prompt loaded from Terraform-managed environment variable
+- Token usage metrics returned for billing/limiting purposes
 """
 
 import json
@@ -103,39 +106,12 @@ if CHAT_MESSAGES_TABLE:
     messages_table = dynamodb.Table(CHAT_MESSAGES_TABLE)
 
 # Model configuration
-MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'anthropic.claude-3-haiku-20240307-v1:0')
+MODEL_ID = os.environ.get('BEDROCK_MODEL_ID', 'us.anthropic.claude-4-5-haiku-20251101-v1:0')
 MAX_TOKENS = int(os.environ.get('CONVERSE_MAX_TOKENS', '2048'))
 TEMPERATURE = float(os.environ.get('CONVERSE_TEMPERATURE', '0.7'))
 
-# System prompts for each analyst type (replaces Bedrock Agent instructions)
-SYSTEM_PROMPTS = {
-    'debt': """You are an expert debt analyst specializing in corporate financial analysis.
-You have previously analyzed a company's debt structure, leverage ratios, and credit profile.
-When answering follow-up questions:
-- Reference specific metrics like debt-to-equity, interest coverage, and debt maturity schedules
-- Explain the implications of debt levels on the company's financial health
-- Compare to industry benchmarks when relevant
-- Be concise but thorough in your analysis
-- Use markdown formatting for clarity""",
-
-    'cashflow': """You are an expert cash flow analyst specializing in corporate financial analysis.
-You have previously analyzed a company's cash flow statement, free cash flow generation, and working capital.
-When answering follow-up questions:
-- Reference specific metrics like operating cash flow, free cash flow, and cash conversion cycle
-- Explain the sustainability and quality of cash flows
-- Discuss capital allocation decisions and their implications
-- Be concise but thorough in your analysis
-- Use markdown formatting for clarity""",
-
-    'growth': """You are an expert growth analyst specializing in corporate financial analysis.
-You have previously analyzed a company's revenue growth, market position, and expansion potential.
-When answering follow-up questions:
-- Reference specific metrics like revenue CAGR, market share, and growth drivers
-- Explain the sustainability of growth and competitive advantages
-- Discuss risks to the growth thesis
-- Be concise but thorough in your analysis
-- Use markdown formatting for clarity"""
-}
+# System prompt loaded from environment variable (set by Terraform)
+SYSTEM_PROMPT = os.environ.get('FOLLOWUP_SYSTEM_PROMPT', '')
 
 # Maximum conversation history to include (to manage token usage)
 MAX_HISTORY_MESSAGES = int(os.environ.get('MAX_HISTORY_MESSAGES', '10'))
@@ -200,7 +176,6 @@ def save_followup_message(
     message_type: str,
     content: str,
     user_id: str,
-    agent_type: str,
     ticker: str = '',
     token_usage: Optional[Dict[str, int]] = None
 ) -> Optional[str]:
@@ -212,7 +187,6 @@ def save_followup_message(
         message_type: 'user' or 'assistant'
         content: The message content
         user_id: The user's ID
-        agent_type: The agent type (debt, cashflow, growth)
         ticker: The stock ticker symbol
         token_usage: Optional token usage metrics from ConverseStream
 
@@ -230,7 +204,6 @@ def save_followup_message(
 
         metadata = {
             'source': 'investment_research_followup',
-            'agent_type': agent_type,
             'ticker': ticker
         }
 
@@ -360,7 +333,6 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
         body = json.loads(body_str)
         question = body.get('question', '').strip()
         session_id = body.get('session_id')
-        agent_type = body.get('agent_type', 'debt')
         ticker = body.get('ticker', '')
 
         if not question:
@@ -377,12 +349,10 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             }), "error")
             return
 
-        # Get system prompt for agent type
-        system_prompt = SYSTEM_PROMPTS.get(agent_type)
-        if not system_prompt:
+        if not SYSTEM_PROMPT:
             yield format_sse_event(json.dumps({
                 "type": "error",
-                "message": f"Unknown agent type: {agent_type}"
+                "message": "System prompt not configured"
             }), "error")
             return
 
@@ -394,7 +364,6 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             message_type='user',
             content=question,
             user_id=user_id,
-            agent_type=agent_type,
             ticker=ticker
         )
 
@@ -411,7 +380,7 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
         full_response = ""
         token_usage = None
 
-        for event_type, data in call_converse_stream(conversation_history, system_prompt, ticker):
+        for event_type, data in call_converse_stream(conversation_history, SYSTEM_PROMPT, ticker):
             if event_type == 'chunk':
                 yield format_sse_event(json.dumps({
                     "type": "chunk",
@@ -447,7 +416,6 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             message_type='assistant',
             content=full_response,
             user_id=user_id,
-            agent_type=agent_type,
             ticker=ticker,
             token_usage=token_usage
         )
@@ -456,7 +424,6 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
         yield format_sse_event(json.dumps({
             "type": "complete",
             "session_id": session_id,
-            "agent_type": agent_type,
             "user_message_id": user_message_id,
             "assistant_message_id": assistant_message_id,
             "token_usage": token_usage,
@@ -475,7 +442,6 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
 def process_non_streaming_request(
     question: str,
     session_id: str,
-    agent_type: str,
     ticker: str,
     user_id: str
 ) -> Dict[str, Any]:
@@ -485,19 +451,16 @@ def process_non_streaming_request(
     Args:
         question: The user's question
         session_id: Session ID for conversation context
-        agent_type: Type of analyst (debt, cashflow, growth)
         ticker: Stock ticker symbol
         user_id: User identifier
 
     Returns:
         Response dict with success status, response text, and token usage
     """
-    # Get system prompt
-    system_prompt = SYSTEM_PROMPTS.get(agent_type)
-    if not system_prompt:
+    if not SYSTEM_PROMPT:
         return {
             'success': False,
-            'error': f"Unknown agent type: {agent_type}"
+            'error': "System prompt not configured"
         }
 
     # Save user question
@@ -506,7 +469,6 @@ def process_non_streaming_request(
         message_type='user',
         content=question,
         user_id=user_id,
-        agent_type=agent_type,
         ticker=ticker
     )
 
@@ -521,7 +483,7 @@ def process_non_streaming_request(
     full_response = ""
     token_usage = None
 
-    for event_type, data in call_converse_stream(conversation_history, system_prompt, ticker):
+    for event_type, data in call_converse_stream(conversation_history, SYSTEM_PROMPT, ticker):
         if event_type == 'complete':
             full_response = data
         elif event_type == 'metadata':
@@ -538,7 +500,6 @@ def process_non_streaming_request(
         message_type='assistant',
         content=full_response,
         user_id=user_id,
-        agent_type=agent_type,
         ticker=ticker,
         token_usage=token_usage
     )
@@ -547,7 +508,6 @@ def process_non_streaming_request(
         'success': True,
         'response': full_response,
         'session_id': session_id,
-        'agent_type': agent_type,
         'user_message_id': user_message_id,
         'assistant_message_id': assistant_message_id,
         'token_usage': token_usage,
@@ -557,20 +517,20 @@ def process_non_streaming_request(
 
 def lambda_handler(event: Dict[str, Any], context: Any):
     """
-    Handle follow-up questions to analysis.
+    Handle follow-up questions to investment analysis reports.
 
     Request Format:
     {
         "question": "Why is the debt analyst bearish?",
         "session_id": "ensemble-abc123",  // Required - from initial analysis
-        "agent_type": "debt",             // Which analyst to ask (debt, cashflow, growth)
-        "ticker": "AAPL"                  // For context
+        "ticker": "AAPL"                  // Stock ticker for context
     }
 
     Authentication:
     - Requires valid JWT token in Authorization header (Bearer token)
 
     Response includes token usage metrics from ConverseStream API.
+    System prompt is loaded from FOLLOWUP_SYSTEM_PROMPT environment variable.
     """
     request_context = event.get('requestContext', {})
 
@@ -612,7 +572,6 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         body = json.loads(event.get('body', '{}'))
         question = body.get('question', '').strip()
         session_id = body.get('session_id')
-        agent_type = body.get('agent_type', 'debt')
         ticker = body.get('ticker', '')
 
         if not question:
@@ -621,14 +580,10 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         if not session_id:
             return error_response(400, "session_id is required for follow-up questions")
 
-        if agent_type not in SYSTEM_PROMPTS:
-            return error_response(400, f"Invalid agent_type: {agent_type}. Must be one of: {list(SYSTEM_PROMPTS.keys())}")
-
         # Process the request
         result = process_non_streaming_request(
             question=question,
             session_id=session_id,
-            agent_type=agent_type,
             ticker=ticker,
             user_id=user_id
         )
