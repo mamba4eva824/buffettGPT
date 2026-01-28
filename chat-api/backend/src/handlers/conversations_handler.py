@@ -305,6 +305,13 @@ def get_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
         if not conversation:
             return create_response(404, {'error': 'Conversation not found'})
 
+        # DEBUG: Log metadata for visible_sections persistence issue
+        metadata = conversation.get('metadata', {})
+        research_state = metadata.get('research_state', {}) if metadata else {}
+        logger.info(f"[ToC DEBUG] get_conversation - metadata present: {bool(metadata)}, research_state present: {bool(research_state)}")
+        if research_state:
+            logger.info(f"[ToC DEBUG] get_conversation - visible_sections: {research_state.get('visible_sections')}, active_section_id: {research_state.get('active_section_id')}")
+
         # Verify ownership
         conv_user_id = str(conversation.get('user_id', ''))
         request_user_id = str(user_id)
@@ -373,7 +380,11 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
         for msg in messages:
             if 'timestamp' in msg and isinstance(msg['timestamp'], (int, float)):
                 # Keep original Unix timestamp, add ISO version for frontend
-                msg['timestamp_iso'] = datetime.utcfromtimestamp(msg['timestamp']).isoformat() + 'Z'
+                # Handle both milliseconds (new) and seconds (legacy) timestamps
+                ts = msg['timestamp']
+                if ts > 10000000000:  # Milliseconds (13+ digits)
+                    ts = ts / 1000
+                msg['timestamp_iso'] = datetime.utcfromtimestamp(ts).isoformat() + 'Z'
 
         return create_response(200, {
             'conversation_id': conversation_id,
@@ -428,7 +439,9 @@ def save_conversation_message(event: Dict[str, Any]) -> Dict[str, Any]:
             return create_response(403, {'error': 'Access denied'})
 
         # Create message record
-        timestamp_unix = int(datetime.utcnow().timestamp())
+        # Use milliseconds for timestamp to prevent key collisions when saving
+        # multiple messages in quick succession
+        timestamp_unix = int(datetime.utcnow().timestamp() * 1000)
         timestamp_iso = datetime.utcnow().isoformat() + 'Z'
         message_id = str(uuid.uuid4())
 
@@ -581,9 +594,19 @@ def update_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
             metadata_updates = convert_floats_to_decimal(body['metadata'])
             existing_metadata = conversation.get('metadata') or {}
 
+            # DEBUG: Log what we're receiving and merging
+            research_state = metadata_updates.get('research_state', {})
+            logger.info(f"[ToC DEBUG] update_conversation - incoming research_state keys: {list(research_state.keys()) if research_state else 'none'}")
+            if research_state:
+                logger.info(f"[ToC DEBUG] update_conversation - visible_sections: {research_state.get('visible_sections')}, active_section_id: {research_state.get('active_section_id')}")
+
             # Merge new metadata keys into existing metadata
             # This preserves existing keys while adding/updating new ones
             merged_metadata = {**existing_metadata, **metadata_updates}
+
+            # DEBUG: Log merged result
+            merged_research_state = merged_metadata.get('research_state', {})
+            logger.info(f"[ToC DEBUG] update_conversation - merged visible_sections: {merged_research_state.get('visible_sections') if merged_research_state else 'none'}")
 
             # Replace entire metadata attribute with merged value
             update_expr.append('#metadata = :metadata')
