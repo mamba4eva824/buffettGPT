@@ -247,6 +247,7 @@ module "api_gateway" {
   enable_research_api                 = true
   investment_research_function_url    = module.lambda.investment_research_docker_function_url
   investment_research_function_name   = module.lambda.investment_research_docker_function_name
+  analysis_followup_function_url      = module.lambda.analysis_followup_url
 
   common_tags = local.common_tags
 }
