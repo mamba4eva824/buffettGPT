@@ -6,6 +6,11 @@ Uses Bedrock session memory to maintain conversation context.
 
 The same sessionId from the initial analysis is reused,
 allowing the agent to remember the previous analysis.
+
+Integrates with TokenUsageTracker for monthly token limiting:
+- Pre-request validation to check if user is within limit
+- Post-request recording of token consumption
+- Support for threshold notifications (80%, 90%, 100%)
 """
 
 import json
@@ -19,10 +24,16 @@ from datetime import datetime
 from decimal import Decimal
 from functools import lru_cache
 
-# Configure logging
+# Import token usage tracker
+from utils.token_usage_tracker import TokenUsageTracker
+
+# Import tool executor for orchestration loop
+from utils.tool_executor import execute_tool, DecimalEncoder
+
+# Configure logging - must set level on root logger for Lambda
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
-logging.basicConfig(level=getattr(logging, log_level))
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
+logger.setLevel(getattr(logging, log_level))
 
 # Secrets Manager client for JWT
 secrets_client = boto3.client('secretsmanager')
@@ -83,11 +94,27 @@ def verify_jwt_token(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         logger.error(f"JWT verification error: {e}")
         return None
 
-# Initialize Bedrock client
-bedrock_client = boto3.client(
+# Initialize Bedrock clients
+# bedrock-agent-runtime: For invoke_agent API (agent with action groups)
+bedrock_agent_client = boto3.client(
     'bedrock-agent-runtime',
     region_name=os.environ.get('BEDROCK_REGION', 'us-east-1')
 )
+
+# bedrock-runtime: For converse_stream API (direct model invocation with token tracking)
+bedrock_runtime_client = boto3.client(
+    'bedrock-runtime',
+    region_name=os.environ.get('BEDROCK_REGION', 'us-east-1')
+)
+
+# Model ID for direct invocation (Claude 4.5 Haiku via cross-region inference profile)
+FOLLOWUP_MODEL_ID = os.environ.get(
+    'FOLLOWUP_MODEL_ID',
+    'us.anthropic.claude-4-5-haiku-20250514-v1:0'
+)
+
+# Keep backward compatibility alias
+bedrock_client = bedrock_agent_client
 
 # Initialize DynamoDB for message persistence
 dynamodb = boto3.resource('dynamodb')
@@ -99,6 +126,128 @@ PROJECT_NAME = os.environ.get('PROJECT_NAME', 'buffett-chat-api')
 messages_table = None
 if CHAT_MESSAGES_TABLE:
     messages_table = dynamodb.Table(CHAT_MESSAGES_TABLE)
+
+# Initialize token usage tracker
+TOKEN_USAGE_TABLE = os.environ.get('TOKEN_USAGE_TABLE')
+token_tracker = TokenUsageTracker(table_name=TOKEN_USAGE_TABLE) if TOKEN_USAGE_TABLE else TokenUsageTracker()
+
+
+# =============================================================================
+# TOOL CONFIGURATION - Replaces Bedrock Agent Action Groups
+# =============================================================================
+
+FOLLOWUP_TOOLS = {
+    "tools": [
+        {
+            "toolSpec": {
+                "name": "getReportSection",
+                "description": "Retrieves a specific section from a company's investment report. Use when the user asks about specific aspects of analysis like growth, debt, valuation, risks, etc.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {
+                                "type": "string",
+                                "description": "Stock ticker symbol in uppercase (e.g., AAPL, MSFT, GOOGL)"
+                            },
+                            "section_id": {
+                                "type": "string",
+                                "enum": [
+                                    "01_executive_summary",
+                                    "06_growth",
+                                    "07_profit",
+                                    "08_valuation",
+                                    "09_earnings",
+                                    "10_cashflow",
+                                    "11_debt",
+                                    "12_dilution",
+                                    "13_bull",
+                                    "14_bear",
+                                    "15_warnings",
+                                    "16_vibe",
+                                    "17_realtalk"
+                                ],
+                                "description": "Section identifier: 01_executive_summary (overview), 06_growth (revenue/earnings growth), 07_profit (margins), 08_valuation (P/E, etc.), 09_earnings (quality), 10_cashflow (FCF), 11_debt (leverage), 12_dilution (share count), 13_bull (positive case), 14_bear (risks), 15_warnings (red flags), 16_vibe (sentiment), 17_realtalk (bottom line)"
+                            }
+                        },
+                        "required": ["ticker", "section_id"]
+                    }
+                }
+            }
+        },
+        {
+            "toolSpec": {
+                "name": "getReportRatings",
+                "description": "Gets the investment ratings, confidence scores, and overall verdict for a company. Use when the user asks about ratings, recommendations, or the overall investment thesis.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {
+                                "type": "string",
+                                "description": "Stock ticker symbol in uppercase"
+                            }
+                        },
+                        "required": ["ticker"]
+                    }
+                }
+            }
+        },
+        {
+            "toolSpec": {
+                "name": "getMetricsHistory",
+                "description": "Retrieves historical financial metrics for trend analysis. Use when the user asks about trends, historical performance, or comparisons over time.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {
+                                "type": "string",
+                                "description": "Stock ticker symbol in uppercase"
+                            },
+                            "metric_type": {
+                                "type": "string",
+                                "enum": [
+                                    "all",
+                                    "revenue_profit",
+                                    "cashflow",
+                                    "balance_sheet",
+                                    "debt_leverage",
+                                    "earnings_quality",
+                                    "dilution",
+                                    "valuation"
+                                ],
+                                "description": "Category of metrics to retrieve. Use 'all' for comprehensive view or specific category for focused analysis.",
+                                "default": "all"
+                            },
+                            "quarters": {
+                                "type": "integer",
+                                "description": "Number of quarters of history (1-40, default 8 for recent trends, 20 for long-term)",
+                                "default": 8,
+                                "minimum": 1,
+                                "maximum": 40
+                            }
+                        },
+                        "required": ["ticker"]
+                    }
+                }
+            }
+        },
+        {
+            "toolSpec": {
+                "name": "getAvailableReports",
+                "description": "Lists all companies with available investment reports. Use when the user asks what companies are covered or wants to explore available analyses.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
+                }
+            }
+        }
+    ]
+}
 
 
 def convert_floats_to_decimals(item):
@@ -195,12 +344,55 @@ def format_sse_event(data: str, event_type: str = "message") -> str:
     return f"event: {event_type}\ndata: {data}\n\n"
 
 
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate token count for text.
+
+    Uses a rough approximation of ~4 characters per token for Claude models.
+    This is conservative to ensure we don't undercount.
+
+    Args:
+        text: The text to estimate tokens for.
+
+    Returns:
+        Estimated token count.
+    """
+    if not text:
+        return 0
+    # Claude models average ~4 characters per token
+    # Using 3.5 to be slightly conservative (won't undercount)
+    return max(1, int(len(text) / 3.5))
+
+
+def create_token_limit_error_response(limit_check: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Create a standardized error response for token limit exceeded.
+
+    Args:
+        limit_check: Response from TokenUsageTracker.check_limit()
+
+    Returns:
+        Error response dict for API Gateway or SSE.
+    """
+    return {
+        'error': 'token_limit_exceeded',
+        'message': 'Monthly token limit reached. Your usage will reset at the start of next month.',
+        'usage': {
+            'total_tokens': limit_check.get('total_tokens', 0),
+            'token_limit': limit_check.get('token_limit', 0),
+            'percent_used': limit_check.get('percent_used', 100.0),
+            'reset_date': limit_check.get('reset_date', '')
+        }
+    }
+
+
 def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str = 'anonymous'):
     """
     Stream follow-up question response.
 
     Uses the same sessionId from initial analysis to maintain context.
     Saves both user questions and assistant responses to DynamoDB.
+    Integrates with TokenUsageTracker for monthly token limiting.
 
     Args:
         event: API Gateway event
@@ -244,6 +436,19 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             }), "error")
             return
 
+        # =====================================================
+        # TOKEN LIMIT CHECK - Pre-request validation
+        # =====================================================
+        limit_check = token_tracker.check_limit(user_id)
+        if not limit_check.get('allowed', True):
+            logger.warning(f"Token limit exceeded for user {user_id}: {limit_check}")
+            yield format_sse_event(json.dumps({
+                "type": "token_limit_exceeded",
+                **create_token_limit_error_response(limit_check),
+                "timestamp": datetime.utcnow().isoformat() + 'Z'
+            }), "error")
+            return
+
         # Get agent config
         config = AGENT_CONFIG.get(agent_type, {})
         agent_id = config.get('agent_id')
@@ -270,6 +475,11 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             # Save fallback response
             save_followup_message(session_id, 'assistant', fallback_response, user_id, agent_type, ticker)
 
+            # Record minimal token usage for fallback (estimated)
+            input_tokens = estimate_tokens(question)
+            output_tokens = estimate_tokens(fallback_response)
+            token_tracker.record_usage(user_id, input_tokens, output_tokens)
+
             yield format_sse_event(json.dumps({
                 "type": "complete",
                 "session_id": session_id,
@@ -279,7 +489,223 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
 
         logger.info(f"Follow-up question for session {session_id}: {question[:100]}...")
 
-        # Save user question to DynamoDB
+        # =====================================================
+        # USE CONVERSE_STREAM API with TOOL USE ORCHESTRATION
+        # =====================================================
+
+        # Build initial messages
+        messages = [
+            {
+                "role": "user",
+                "content": [{"text": question}]
+            }
+        ]
+
+        # Enhanced system prompt - layman-friendly financial analyst for millennials/gen-z
+        system_prompt = f"""You're a financial analyst who explains investing like talking to a friend. Your reader is 25-35, may have student loans, and wants to build wealth but doesn't speak Wall Street.
+
+ZERO JARGON POLICY - Always translate finance-speak:
+- Free Cash Flow → "money left over after paying all the bills"
+- FCF Margin → "what they keep from each dollar as real cash"
+- Operating Cash Flow → "cash that actually came in"
+- Debt-to-Equity → "how much they borrowed vs what they own"
+- Interest Coverage → "can they pay their loans? They make Xx their loan payments"
+- Net Debt → "what they still owe after using their savings"
+- Net Cash → "extra savings after paying all debt"
+- Gross Margin → "keeps X cents from every dollar of sales"
+- Net Margin → "takes home X cents per dollar"
+- P/E Ratio → "years of profits to pay back your investment"
+- ROE → "how much profit they make from shareholder money"
+- Dilution → "your slice of the pie is shrinking"
+
+TONE:
+- Casual and conversational — like texting a smart friend
+- Use analogies: "It's like having a $50K mortgage while keeping $80K in savings"
+- Make numbers tangible: "$99B is enough to buy every NFL team... twice"
+- Be direct: "Here's the deal..." or "Bottom line:"
+
+TOOL USAGE:
+- For SPECIFIC {ticker} numbers/metrics → MUST use tools (never guess)
+- For general finance concepts → just explain it
+- For trends/comparisons → use getMetricsHistory
+
+AVAILABLE TOOLS:
+1. getReportSection(ticker, section_id) - Get report sections:
+   07_profit (margins), 06_growth, 08_valuation, 10_cashflow, 11_debt,
+   13_bull (bull case), 14_bear (risks), 15_warnings, 01_executive_summary
+
+2. getReportRatings(ticker) - Investment ratings and verdict
+
+3. getMetricsHistory(ticker, metric_type, quarters) - Historical metrics:
+   metric_types: revenue_profit, cashflow, balance_sheet, debt_leverage, all
+   quarters: 8 (recent) to 20 (long-term)
+
+4. getAvailableReports() - List available company reports
+
+Keep it real, keep it short, make them feel smarter when they're done reading.
+
+Current context: {ticker} | {agent_type} analysis"""
+
+        # Track tokens across all turns
+        total_input_tokens = 0
+        total_output_tokens = 0
+        full_response = ""
+        max_turns = 10  # Safety limit to prevent infinite loops
+        turn_count = 0
+
+        # =====================================================
+        # ORCHESTRATION LOOP - Handle tool calls
+        # =====================================================
+        while turn_count < max_turns:
+            turn_count += 1
+            logger.info(f"[STREAMING] Orchestration turn {turn_count}/{max_turns} for session {session_id}, question: {question[:50]}...")
+
+            # Call converse_stream with tools
+            response = bedrock_runtime_client.converse_stream(
+                modelId=FOLLOWUP_MODEL_ID,
+                messages=messages,
+                system=[{"text": system_prompt}],
+                toolConfig=FOLLOWUP_TOOLS,
+                inferenceConfig={
+                    "maxTokens": 2048,
+                    "temperature": 0.7
+                }
+            )
+
+            # Track this turn's content
+            assistant_content = []
+            current_text_block = ""
+            current_tool_use = None
+            stop_reason = None
+
+            for stream_event in response.get('stream', []):
+
+                # Content block start - initialize text or tool use
+                if 'contentBlockStart' in stream_event:
+                    start = stream_event['contentBlockStart'].get('start', {})
+                    if 'toolUse' in start:
+                        current_tool_use = {
+                            'toolUseId': start['toolUse']['toolUseId'],
+                            'name': start['toolUse']['name'],
+                            'input': ''
+                        }
+
+                # Content block delta - accumulate text or tool input
+                if 'contentBlockDelta' in stream_event:
+                    delta = stream_event['contentBlockDelta'].get('delta', {})
+
+                    if 'text' in delta:
+                        chunk_text = delta['text']
+                        current_text_block += chunk_text
+                        full_response += chunk_text
+                        # Stream text immediately to client
+                        yield format_sse_event(json.dumps({
+                            "type": "chunk",
+                            "text": chunk_text,
+                            "timestamp": datetime.utcnow().isoformat() + 'Z'
+                        }), "chunk")
+
+                    if 'toolUse' in delta:
+                        # Accumulate tool input JSON
+                        if current_tool_use and 'input' in delta['toolUse']:
+                            current_tool_use['input'] += delta['toolUse']['input']
+
+                # Content block stop - finalize text or tool use block
+                if 'contentBlockStop' in stream_event:
+                    if current_text_block:
+                        assistant_content.append({"text": current_text_block})
+                        current_text_block = ""
+
+                    if current_tool_use and current_tool_use.get('name'):
+                        try:
+                            tool_input = json.loads(current_tool_use['input']) if current_tool_use['input'] else {}
+                        except json.JSONDecodeError:
+                            tool_input = {}
+
+                        assistant_content.append({
+                            "toolUse": {
+                                "toolUseId": current_tool_use['toolUseId'],
+                                "name": current_tool_use['name'],
+                                "input": tool_input
+                            }
+                        })
+                        current_tool_use = None
+
+                # Metadata - extract token counts
+                if 'metadata' in stream_event:
+                    usage = stream_event['metadata'].get('usage', {})
+                    total_input_tokens += usage.get('inputTokens', 0)
+                    total_output_tokens += usage.get('outputTokens', 0)
+                    logger.info(f"Turn {turn_count} tokens: input={usage.get('inputTokens', 0)}, output={usage.get('outputTokens', 0)}")
+
+                # Message stop - check stop reason
+                if 'messageStop' in stream_event:
+                    stop_reason = stream_event['messageStop'].get('stopReason')
+
+            # =====================================================
+            # HANDLE STOP REASON
+            # =====================================================
+            logger.info(f"[STREAMING] Turn {turn_count} stop_reason={stop_reason}, assistant_content_blocks={len(assistant_content)}")
+
+            if stop_reason == 'tool_use':
+                # Model wants to use tools - execute them and continue
+                tool_names = [b['toolUse']['name'] for b in assistant_content if 'toolUse' in b]
+                logger.info(f"[STREAMING] Tool use requested: {tool_names}")
+
+                # Add assistant message with tool calls
+                messages.append({
+                    "role": "assistant",
+                    "content": assistant_content
+                })
+
+                # Execute each tool and collect results
+                tool_results = []
+                for block in assistant_content:
+                    if 'toolUse' in block:
+                        tool_use = block['toolUse']
+                        tool_input = tool_use.get('input', {})
+                        logger.info(f"[STREAMING] Executing tool: {tool_use['name']} with input: {json.dumps(tool_input)}")
+
+                        # Execute the tool
+                        result = execute_tool(tool_use['name'], tool_input)
+
+                        # Log result summary
+                        result_success = result.get('success', False)
+                        result_error = result.get('error', None)
+                        logger.info(f"[STREAMING] Tool result: success={result_success}, error={result_error}, keys={list(result.keys())}")
+
+                        tool_results.append({
+                            "toolResult": {
+                                "toolUseId": tool_use['toolUseId'],
+                                "content": [{"text": json.dumps(result, cls=DecimalEncoder)}]
+                            }
+                        })
+
+                # Add tool results as user message
+                messages.append({
+                    "role": "user",
+                    "content": tool_results
+                })
+                logger.info(f"[STREAMING] Added {len(tool_results)} tool results, continuing to next turn...")
+
+                # Continue the loop for model to process results
+                continue
+
+            elif stop_reason == 'end_turn':
+                # Model finished responding - exit loop
+                logger.info(f"[STREAMING] End turn reached after {turn_count} turns, response length={len(full_response)}")
+                break
+
+            else:
+                # Unexpected stop reason (could be max_tokens, content_filtered, etc.)
+                logger.warning(f"[STREAMING] Unexpected stop reason: {stop_reason}, ending loop")
+                break
+
+        # =====================================================
+        # POST-LOOP: Save messages and record tokens
+        # =====================================================
+
+        # Save user question
         user_message_id = save_followup_message(
             session_id=session_id,
             message_type='user',
@@ -289,30 +715,7 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             ticker=ticker
         )
 
-        # Invoke agent with same session (maintains context)
-        response = bedrock_client.invoke_agent(
-            agentId=agent_id,
-            agentAliasId=agent_alias,
-            sessionId=session_id,  # Same session = remembers context
-            inputText=question,
-            streamingConfigurations={'streamFinalResponse': True}
-        )
-
-        # Stream response chunks and collect full response
-        full_response = ""
-        for event_item in response.get('completion', []):
-            if 'chunk' in event_item:
-                chunk = event_item['chunk']
-                if 'bytes' in chunk:
-                    chunk_text = chunk['bytes'].decode('utf-8')
-                    full_response += chunk_text
-                    yield format_sse_event(json.dumps({
-                        "type": "chunk",
-                        "text": chunk_text,
-                        "timestamp": datetime.utcnow().isoformat() + 'Z'
-                    }), "chunk")
-
-        # Save assistant response to DynamoDB
+        # Save assistant response
         assistant_message_id = save_followup_message(
             session_id=session_id,
             message_type='assistant',
@@ -322,13 +725,37 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             ticker=ticker
         )
 
-        # Completion event
+        # Record token usage (accumulated across all turns)
+        if total_input_tokens == 0 and total_output_tokens == 0:
+            logger.warning("No token metadata received, using estimation")
+            total_input_tokens = estimate_tokens(question)
+            total_output_tokens = estimate_tokens(full_response)
+
+        usage_result = token_tracker.record_usage(user_id, total_input_tokens, total_output_tokens)
+        logger.info(f"Total tokens for session: input={total_input_tokens}, output={total_output_tokens}, turns={turn_count}")
+
+        # Check for threshold notifications
+        threshold = usage_result.get('threshold_reached')
+        if threshold:
+            logger.info(f"User {user_id} reached {threshold} token threshold")
+
+        # Send completion event
         yield format_sse_event(json.dumps({
             "type": "complete",
             "session_id": session_id,
             "agent_type": agent_type,
             "user_message_id": user_message_id,
             "assistant_message_id": assistant_message_id,
+            "turns": turn_count,
+            "token_usage": {
+                "input_tokens": total_input_tokens,
+                "output_tokens": total_output_tokens,
+                "total_tokens": usage_result.get('total_tokens'),
+                "token_limit": usage_result.get('token_limit'),
+                "percent_used": usage_result.get('percent_used'),
+                "remaining_tokens": usage_result.get('remaining_tokens'),
+                "threshold_reached": threshold
+            },
             "timestamp": datetime.utcnow().isoformat() + 'Z'
         }), "complete")
 
@@ -393,7 +820,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     user_claims = verify_jwt_token(event)
     if not user_claims:
         logger.warning("Unauthorized request - invalid or missing JWT token")
-        # For streaming, yield auth error
+        # For streaming (direct Function URL), return a generator for auth error
         if is_function_url and not is_api_gateway:
             def auth_error_stream():
                 yield {
@@ -408,8 +835,10 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                     "error": "Unauthorized - valid JWT token required",
                     "timestamp": datetime.utcnow().isoformat() + 'Z'
                 })
-            yield from auth_error_stream()
-            return
+            # IMPORTANT: return the generator, don't yield from it
+            # Using yield from would make lambda_handler itself a generator,
+            # which breaks non-streaming invocations
+            return auth_error_stream()
         else:
             return error_response(401, "Unauthorized - valid JWT token required")
 
@@ -420,8 +849,9 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     # BUT if called via API Gateway HTTP_PROXY, use non-streaming even if 'http' is present
     if is_function_url and not is_api_gateway:
         logger.info("Streaming follow-up response (direct Function URL)")
-        yield from stream_followup_response(event, context, user_id=user_id)
-        return
+        # IMPORTANT: return the generator, don't yield from it
+        # Lambda's RESPONSE_STREAM mode handles returned generators correctly
+        return stream_followup_response(event, context, user_id=user_id)
 
     # API Gateway REST API (via HTTP_PROXY) or standard Lambda invocation - non-streaming response
     logger.info("Non-streaming follow-up response (API Gateway or standard invocation)")
@@ -437,6 +867,28 @@ def lambda_handler(event: Dict[str, Any], context: Any):
 
         if not session_id:
             return error_response(400, "session_id is required for follow-up questions")
+
+        # =====================================================
+        # TOKEN LIMIT CHECK - Pre-request validation
+        # =====================================================
+        limit_check = token_tracker.check_limit(user_id)
+        if not limit_check.get('allowed', True):
+            logger.warning(f"Token limit exceeded for user {user_id}: {limit_check}")
+            return {
+                'statusCode': 429,
+                'headers': {
+                    'Content-Type': 'application/json',
+                    'Access-Control-Allow-Origin': '*',
+                    'X-RateLimit-Limit': str(limit_check.get('token_limit', 0)),
+                    'X-RateLimit-Remaining': '0',
+                    'X-RateLimit-Reset': limit_check.get('reset_date', '')
+                },
+                'body': json.dumps({
+                    'success': False,
+                    **create_token_limit_error_response(limit_check),
+                    'timestamp': datetime.utcnow().isoformat() + 'Z'
+                })
+            }
 
         config = AGENT_CONFIG.get(agent_type, {})
         agent_id = config.get('agent_id')
@@ -455,22 +907,150 @@ def lambda_handler(event: Dict[str, Any], context: Any):
             ticker=ticker
         )
 
-        # Invoke agent
-        response = bedrock_client.invoke_agent(
-            agentId=agent_id,
-            agentAliasId=agent_alias,
-            sessionId=session_id,
-            inputText=question,
-            streamingConfigurations={'streamFinalResponse': True}
-        )
+        # =====================================================
+        # USE CONVERSE API with TOOL USE ORCHESTRATION (non-streaming)
+        # =====================================================
 
-        # Collect full response
+        # Enhanced system prompt - layman-friendly financial analyst for millennials/gen-z
+        system_prompt = f"""You're a financial analyst who explains investing like talking to a friend. Your reader is 25-35, may have student loans, and wants to build wealth but doesn't speak Wall Street.
+
+ZERO JARGON POLICY - Always translate finance-speak:
+- Free Cash Flow → "money left over after paying all the bills"
+- FCF Margin → "what they keep from each dollar as real cash"
+- Operating Cash Flow → "cash that actually came in"
+- Debt-to-Equity → "how much they borrowed vs what they own"
+- Interest Coverage → "can they pay their loans? They make Xx their loan payments"
+- Net Debt → "what they still owe after using their savings"
+- Net Cash → "extra savings after paying all debt"
+- Gross Margin → "keeps X cents from every dollar of sales"
+- Net Margin → "takes home X cents per dollar"
+- P/E Ratio → "years of profits to pay back your investment"
+- ROE → "how much profit they make from shareholder money"
+- Dilution → "your slice of the pie is shrinking"
+
+TONE:
+- Casual and conversational — like texting a smart friend
+- Use analogies: "It's like having a $50K mortgage while keeping $80K in savings"
+- Make numbers tangible: "$99B is enough to buy every NFL team... twice"
+- Be direct: "Here's the deal..." or "Bottom line:"
+
+TOOL USAGE:
+- For SPECIFIC {ticker} numbers/metrics → MUST use tools (never guess)
+- For general finance concepts → just explain it
+- For trends/comparisons → use getMetricsHistory
+
+AVAILABLE TOOLS:
+1. getReportSection(ticker, section_id) - Get report sections:
+   07_profit (margins), 06_growth, 08_valuation, 10_cashflow, 11_debt,
+   13_bull (bull case), 14_bear (risks), 15_warnings, 01_executive_summary
+
+2. getReportRatings(ticker) - Investment ratings and verdict
+
+3. getMetricsHistory(ticker, metric_type, quarters) - Historical metrics:
+   metric_types: revenue_profit, cashflow, balance_sheet, debt_leverage, all
+   quarters: 8 (recent) to 20 (long-term)
+
+4. getAvailableReports() - List available company reports
+
+Keep it real, keep it short, make them feel smarter when they're done reading.
+
+Current context: {ticker} | {agent_type} analysis"""
+
+        # Track tokens across all turns
+        total_input_tokens = 0
+        total_output_tokens = 0
         full_response = ""
-        for event_item in response.get('completion', []):
-            if 'chunk' in event_item:
-                chunk = event_item['chunk']
-                if 'bytes' in chunk:
-                    full_response += chunk['bytes'].decode('utf-8')
+        max_turns = 10
+        turn_count = 0
+
+        messages = [{"role": "user", "content": [{"text": question}]}]
+
+        logger.info(f"[NON-STREAMING] Starting orchestration: session={session_id}, ticker={ticker}, question={question[:80]}...")
+
+        # =====================================================
+        # ORCHESTRATION LOOP - Handle tool calls
+        # =====================================================
+        while turn_count < max_turns:
+            turn_count += 1
+            logger.info(f"[NON-STREAMING] Turn {turn_count}/{max_turns}, messages count={len(messages)}")
+
+            response = bedrock_runtime_client.converse(
+                modelId=FOLLOWUP_MODEL_ID,
+                messages=messages,
+                system=[{"text": system_prompt}],
+                toolConfig=FOLLOWUP_TOOLS,
+                inferenceConfig={"maxTokens": 2048, "temperature": 0.7}
+            )
+
+            # Extract token usage
+            usage = response.get('usage', {})
+            total_input_tokens += usage.get('inputTokens', 0)
+            total_output_tokens += usage.get('outputTokens', 0)
+            logger.info(f"Turn {turn_count} tokens: input={usage.get('inputTokens', 0)}, output={usage.get('outputTokens', 0)}")
+
+            # Get output message
+            output_message = response.get('output', {}).get('message', {})
+            stop_reason = response.get('stopReason', '')
+
+            # Process content blocks
+            assistant_content = output_message.get('content', [])
+            logger.info(f"[NON-STREAMING] Turn {turn_count} stop_reason={stop_reason}, content_blocks={len(assistant_content)}")
+
+            for block in assistant_content:
+                if 'text' in block:
+                    full_response += block['text']
+
+            if stop_reason == 'tool_use':
+                # Model wants to use tools - execute them and continue
+                tool_names = [b['toolUse']['name'] for b in assistant_content if 'toolUse' in b]
+                logger.info(f"[NON-STREAMING] Tool use requested: {tool_names}")
+
+                # Add assistant message
+                messages.append({"role": "assistant", "content": assistant_content})
+
+                # Execute tools
+                tool_results = []
+                for block in assistant_content:
+                    if 'toolUse' in block:
+                        tool_use = block['toolUse']
+                        tool_input = tool_use.get('input', {})
+                        logger.info(f"[NON-STREAMING] Executing tool: {tool_use['name']} with input: {json.dumps(tool_input)}")
+
+                        result = execute_tool(tool_use['name'], tool_input)
+
+                        # Log result summary
+                        result_success = result.get('success', False)
+                        result_error = result.get('error', None)
+                        logger.info(f"[NON-STREAMING] Tool result: success={result_success}, error={result_error}")
+
+                        tool_results.append({
+                            "toolResult": {
+                                "toolUseId": tool_use['toolUseId'],
+                                "content": [{"text": json.dumps(result, cls=DecimalEncoder)}]
+                            }
+                        })
+
+                messages.append({"role": "user", "content": tool_results})
+                logger.info(f"[NON-STREAMING] Added {len(tool_results)} tool results, continuing...")
+                continue
+
+            elif stop_reason == 'end_turn':
+                # Model finished responding - exit loop
+                logger.info(f"[NON-STREAMING] End turn after {turn_count} turns, response_length={len(full_response)}")
+                break
+
+            else:
+                # Unexpected stop reason (could be max_tokens, content_filtered, etc.)
+                logger.warning(f"[NON-STREAMING] Unexpected stop reason: {stop_reason}, ending loop")
+                break
+
+        logger.info(f"[NON-STREAMING] Complete: input_tokens={total_input_tokens}, output_tokens={total_output_tokens}, turns={turn_count}")
+
+        # Fall back to estimation if no token counts
+        if total_input_tokens == 0 and total_output_tokens == 0:
+            logger.warning("No token counts in converse response, using estimation")
+            total_input_tokens = estimate_tokens(question)
+            total_output_tokens = estimate_tokens(full_response)
 
         # Save assistant response to DynamoDB
         assistant_message_id = save_followup_message(
@@ -482,11 +1062,25 @@ def lambda_handler(event: Dict[str, Any], context: Any):
             ticker=ticker
         )
 
+        # =====================================================
+        # TOKEN USAGE RECORDING - Post-request (accumulated across turns)
+        # =====================================================
+        usage_result = token_tracker.record_usage(user_id, total_input_tokens, total_output_tokens)
+        logger.info(f"Token usage recorded for {user_id}: input={total_input_tokens}, output={total_output_tokens}, "
+                    f"total={usage_result.get('total_tokens')}, percent={usage_result.get('percent_used')}%")
+
+        threshold = usage_result.get('threshold_reached')
+        if threshold:
+            logger.info(f"User {user_id} reached {threshold} token threshold")
+
         return {
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
+                'Access-Control-Allow-Origin': '*',
+                'X-RateLimit-Limit': str(usage_result.get('token_limit', 0)),
+                'X-RateLimit-Remaining': str(usage_result.get('remaining_tokens', 0)),
+                'X-RateLimit-Reset': token_tracker.get_reset_date()
             },
             'body': json.dumps({
                 'success': True,
@@ -495,6 +1089,16 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 'agent_type': agent_type,
                 'user_message_id': user_message_id,
                 'assistant_message_id': assistant_message_id,
+                'turns': turn_count,
+                'token_usage': {
+                    'input_tokens': total_input_tokens,
+                    'output_tokens': total_output_tokens,
+                    'total_tokens': usage_result.get('total_tokens'),
+                    'token_limit': usage_result.get('token_limit'),
+                    'percent_used': usage_result.get('percent_used'),
+                    'remaining_tokens': usage_result.get('remaining_tokens'),
+                    'threshold_reached': threshold
+                },
                 'timestamp': datetime.utcnow().isoformat() + 'Z'
             })
         }
