@@ -378,7 +378,7 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
 
         # Convert Unix timestamps to ISO format for frontend display
         for msg in messages:
-            if 'timestamp' in msg and isinstance(msg['timestamp'], (int, float)):
+            if 'timestamp' in msg and isinstance(msg['timestamp'], (int, float, Decimal)):
                 # Keep original Unix timestamp, add ISO version for frontend
                 # Handle both milliseconds (new) and seconds (legacy) timestamps
                 ts = msg['timestamp']

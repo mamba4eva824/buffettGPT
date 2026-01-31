@@ -1455,11 +1455,15 @@ function ChatApp() {
 
           // If no timestamp_iso but we have Unix timestamp, convert it
           if (!m.timestamp_iso && m.timestamp) {
-            if (typeof m.timestamp === 'number') {
-              // Unix timestamp - convert to ISO string (UTC)
-              timestamp = new Date(m.timestamp * 1000).toISOString();
+            // Handle both number and string timestamps (DynamoDB Decimal comes as string)
+            const tsValue = typeof m.timestamp === 'string' ? parseFloat(m.timestamp) : m.timestamp;
+            if (!isNaN(tsValue)) {
+              // Determine if timestamp is in seconds or milliseconds
+              // Milliseconds will be 13+ digits (> 10000000000)
+              const msTimestamp = tsValue > 10000000000 ? tsValue : tsValue * 1000;
+              timestamp = new Date(msTimestamp).toISOString();
             } else {
-              // Assume it's already a string timestamp
+              // Assume it's already an ISO string timestamp
               timestamp = m.timestamp;
             }
           }
