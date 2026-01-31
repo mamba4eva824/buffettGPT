@@ -60,15 +60,9 @@ output "forex_cache_table_arn" {
   value       = aws_dynamodb_table.forex_rate_cache.arn
 }
 
-output "idempotency_cache_table_name" {
-  description = "Name of the idempotency cache table"
-  value       = aws_dynamodb_table.idempotency_cache.name
-}
-
-output "idempotency_cache_table_arn" {
-  description = "ARN of the idempotency cache table"
-  value       = aws_dynamodb_table.idempotency_cache.arn
-}
+# Idempotency Cache (ARCHIVED - 2025-01)
+# NOTE: idempotency_cache outputs were removed when prediction ensemble was archived.
+# See: archived/prediction_ensemble/
 
 # ================================================
 # Investment Research Tables (ACTIVE)
@@ -122,7 +116,7 @@ output "table_summary" {
       financial_data_cache = aws_dynamodb_table.financial_data_cache.name
       ticker_lookup        = aws_dynamodb_table.ticker_lookup_cache.name
       forex_cache          = aws_dynamodb_table.forex_rate_cache.name
-      idempotency_cache    = aws_dynamodb_table.idempotency_cache.name
+      # idempotency_cache removed (2025-01) - prediction ensemble archived
     }
     investment_research = {
       investment_reports_v2 = aws_dynamodb_table.investment_reports_v2.name

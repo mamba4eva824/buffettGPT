@@ -1,5 +1,6 @@
-# REST API for Streaming Analysis (Ensemble Analyzer)
+# REST API for Investment Research
 # Provides SSE streaming with centralized JWT authentication
+# NOTE: Analysis/ensemble routes were removed and archived (2025-01)
 
 locals {
   analysis_resource_prefix = "${var.project_name}-${var.environment}"
@@ -10,7 +11,7 @@ locals {
 resource "aws_api_gateway_rest_api" "analysis" {
   count       = var.enable_analysis_api ? 1 : 0
   name        = "${local.analysis_resource_prefix}-analysis-api"
-  description = "Streaming API for ensemble financial analysis"
+  description = "Streaming API for investment research"
 
   endpoint_configuration {
     types = ["REGIONAL"]  # Direct regional deployment in us-east-1, no CloudFront
@@ -20,30 +21,10 @@ resource "aws_api_gateway_rest_api" "analysis" {
     var.common_tags,
     {
       Name    = "${local.analysis_resource_prefix}-analysis-api"
-      Purpose = "Streaming Analysis REST API"
+      Purpose = "Streaming Research REST API"
       Service = "API Gateway"
     }
   )
-}
-
-# ============================================================================
-# API Resources
-# ============================================================================
-
-# /analysis resource
-resource "aws_api_gateway_resource" "analysis" {
-  count       = var.enable_analysis_api ? 1 : 0
-  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
-  parent_id   = aws_api_gateway_rest_api.analysis[0].root_resource_id
-  path_part   = "analysis"
-}
-
-# /analysis/{agent_type} resource
-resource "aws_api_gateway_resource" "analysis_agent" {
-  count       = var.enable_analysis_api ? 1 : 0
-  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
-  parent_id   = aws_api_gateway_resource.analysis[0].id
-  path_part   = "{agent_type}"
 }
 
 # ============================================================================
@@ -62,114 +43,6 @@ resource "aws_api_gateway_authorizer" "analysis_jwt" {
 }
 
 # ============================================================================
-# POST Method with JWT Authorization
-# ============================================================================
-
-resource "aws_api_gateway_method" "analysis_post" {
-  count         = var.enable_analysis_api ? 1 : 0
-  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
-  resource_id   = aws_api_gateway_resource.analysis_agent[0].id
-  http_method   = "POST"
-  authorization = var.enable_authorization ? "CUSTOM" : "NONE"
-  authorizer_id = var.enable_authorization ? aws_api_gateway_authorizer.analysis_jwt[0].id : null
-
-  request_parameters = {
-    "method.request.path.agent_type"       = true
-    "method.request.header.Authorization"  = false  # Optional - validated by authorizer
-    "method.request.header.Content-Type"   = false  # Optional
-  }
-}
-
-# ============================================================================
-# HTTP_PROXY Integration to Lambda Function URL
-# ============================================================================
-# Uses HTTP_PROXY to the Lambda Function URL for SSE streaming.
-# This avoids the 8-null-byte delimiter requirement of AWS_PROXY streaming.
-# JWT authentication is handled by the authorizer before reaching this integration.
-# ============================================================================
-
-resource "aws_api_gateway_integration" "analysis_lambda" {
-  count                   = var.enable_analysis_api ? 1 : 0
-  rest_api_id             = aws_api_gateway_rest_api.analysis[0].id
-  resource_id             = aws_api_gateway_resource.analysis_agent[0].id
-  http_method             = aws_api_gateway_method.analysis_post[0].http_method
-  integration_http_method = "POST"
-  type                    = "HTTP_PROXY"
-
-  # Point to Lambda Function URL with path parameter
-  # Function URL handles SSE streaming natively via Lambda Web Adapter
-  uri = "${trimsuffix(var.prediction_ensemble_function_url, "/")}/analysis/{agent_type}"
-
-  # Pass through request parameters to the Function URL
-  request_parameters = {
-    "integration.request.path.agent_type"      = "method.request.path.agent_type"
-    "integration.request.header.Authorization" = "method.request.header.Authorization"
-    "integration.request.header.Content-Type"  = "method.request.header.Content-Type"
-  }
-
-  # Ensure request body passes through unchanged
-  passthrough_behavior = "WHEN_NO_MATCH"
-
-  # HTTP_PROXY timeout (max 29 seconds)
-  # For longer operations, clients should handle reconnection
-  timeout_milliseconds = 29000
-}
-
-# ============================================================================
-# CORS Preflight (OPTIONS)
-# ============================================================================
-
-resource "aws_api_gateway_method" "analysis_options" {
-  count         = var.enable_analysis_api ? 1 : 0
-  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
-  resource_id   = aws_api_gateway_resource.analysis_agent[0].id
-  http_method   = "OPTIONS"
-  authorization = "NONE"
-}
-
-resource "aws_api_gateway_integration" "analysis_options" {
-  count       = var.enable_analysis_api ? 1 : 0
-  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
-  resource_id = aws_api_gateway_resource.analysis_agent[0].id
-  http_method = aws_api_gateway_method.analysis_options[0].http_method
-  type        = "MOCK"
-
-  request_templates = {
-    "application/json" = "{\"statusCode\": 200}"
-  }
-}
-
-resource "aws_api_gateway_method_response" "analysis_options" {
-  count       = var.enable_analysis_api ? 1 : 0
-  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
-  resource_id = aws_api_gateway_resource.analysis_agent[0].id
-  http_method = aws_api_gateway_method.analysis_options[0].http_method
-  status_code = "200"
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = true
-    "method.response.header.Access-Control-Allow-Methods" = true
-    "method.response.header.Access-Control-Allow-Origin"  = true
-  }
-}
-
-resource "aws_api_gateway_integration_response" "analysis_options" {
-  count       = var.enable_analysis_api ? 1 : 0
-  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
-  resource_id = aws_api_gateway_resource.analysis_agent[0].id
-  http_method = aws_api_gateway_method.analysis_options[0].http_method
-  status_code = aws_api_gateway_method_response.analysis_options[0].status_code
-
-  response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
-    "method.response.header.Access-Control-Allow-Origin"  = var.cloudfront_url != "" ? "'${var.cloudfront_url}'" : "'*'"
-  }
-
-  depends_on = [aws_api_gateway_integration.analysis_options]
-}
-
-# ============================================================================
 # Deployment and Stage
 # ============================================================================
 
@@ -179,15 +52,7 @@ resource "aws_api_gateway_deployment" "analysis" {
 
   triggers = {
     redeployment = sha1(jsonencode([
-      # Analysis API resources
-      aws_api_gateway_resource.analysis[0].id,
-      aws_api_gateway_resource.analysis_agent[0].id,
-      aws_api_gateway_method.analysis_post[0].id,
-      aws_api_gateway_integration.analysis_lambda[0].id,
-      aws_api_gateway_integration.analysis_lambda[0].type,
-      aws_api_gateway_integration.analysis_lambda[0].uri,
-      aws_api_gateway_method.analysis_options[0].id,
-      aws_api_gateway_integration.analysis_options[0].id,
+      # Gateway responses
       aws_api_gateway_gateway_response.analysis_default_4xx[0].id,
       aws_api_gateway_gateway_response.analysis_default_5xx[0].id,
       # Investment Research API resources (conditional)
@@ -230,8 +95,6 @@ resource "aws_api_gateway_deployment" "analysis" {
   }
 
   depends_on = [
-    aws_api_gateway_integration.analysis_lambda,
-    aws_api_gateway_integration.analysis_options,
     aws_api_gateway_gateway_response.analysis_default_4xx,
     aws_api_gateway_gateway_response.analysis_default_5xx,
     aws_api_gateway_integration.research_stream_lambda,
