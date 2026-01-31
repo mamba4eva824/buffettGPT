@@ -80,53 +80,20 @@ variable "common_tags" {
   default     = {}
 }
 
-# Debt Analyzer Variables
-variable "cloudfront_url" {
-  description = "CloudFront URL for CORS configuration"
-  type        = string
-  default     = ""
-}
+# ================================================
+# ML/Ensemble Variables (ARCHIVED - 2025-01)
+# ================================================
+# NOTE: The following variables were removed when prediction ensemble was archived:
+# - cloudfront_url, debt_analyzer_image_tag, model_s3_bucket, debt_analyzer_model_version
+# - financial_cache_table, idempotency_table, debt_analyzer_provisioned_concurrency
+# - prediction_ensemble_image_tag
+# See: archived/prediction_ensemble/
 
-variable "debt_analyzer_image_tag" {
-  description = "Docker image tag for debt analyzer Lambda"
-  type        = string
-  default     = "latest"
-}
-
-variable "model_s3_bucket" {
-  description = "S3 bucket containing ML models"
-  type        = string
-  default     = ""
-}
-
-variable "debt_analyzer_model_version" {
-  description = "Version of the debt analyzer ML model"
-  type        = string
-  default     = "1"
-}
-
-variable "financial_cache_table" {
-  description = "DynamoDB table name for financial data cache"
-  type        = string
-  default     = ""
-}
-
-variable "idempotency_table" {
-  description = "DynamoDB table name for idempotency tracking"
-  type        = string
-  default     = ""
-}
-
+# KMS key ARN for encryption
 variable "kms_key_arn" {
   description = "KMS key ARN for encryption"
   type        = string
   default     = ""
-}
-
-variable "debt_analyzer_provisioned_concurrency" {
-  description = "Provisioned concurrency for debt analyzer Lambda"
-  type        = number
-  default     = 0
 }
 
 # Function URL CORS Configuration
@@ -136,13 +103,7 @@ variable "cors_allowed_origins" {
   default     = ["http://localhost:3000", "http://localhost:5173"]
 }
 
-# Prediction Ensemble Variables
-variable "prediction_ensemble_image_tag" {
-  description = "Docker image tag for prediction ensemble Lambda"
-  type        = string
-  default     = "latest"
-}
-
+# Bedrock Model ID for ConverseStream API
 variable "bedrock_model_id" {
   description = "Bedrock model ID for ConverseStream API (Claude Haiku 4.5 via US cross-region inference profile)"
   type        = string

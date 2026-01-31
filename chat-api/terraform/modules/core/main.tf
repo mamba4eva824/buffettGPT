@@ -77,11 +77,12 @@ resource "aws_iam_policy" "lambda_policy" {
         Resource = [
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-${var.environment}-*",
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}-${var.environment}-*/index/*",
-          # Investment Reports tables (non-prefixed naming convention)
-          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/investment-reports-${var.environment}",
-          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/investment-reports-${var.environment}/index/*",
+          # Investment Reports V2 table (non-prefixed naming convention)
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/investment-reports-v2-${var.environment}",
-          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/investment-reports-v2-${var.environment}/index/*"
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/investment-reports-v2-${var.environment}/index/*",
+          # Metrics History table (pre-computed metrics by category)
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/metrics-history-${var.environment}",
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/metrics-history-${var.environment}/index/*"
         ]
       },
       # SQS Access

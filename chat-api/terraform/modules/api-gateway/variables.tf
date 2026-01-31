@@ -84,23 +84,13 @@ variable "common_tags" {
 # ============================================================================
 # Analysis Streaming API Variables
 # ============================================================================
+# NOTE: prediction_ensemble variables were removed when the ensemble was archived (2025-01)
+# The REST API is now used only for investment research endpoints
 
 variable "enable_analysis_api" {
-  description = "Enable the REST API for streaming analysis"
+  description = "Enable the REST API for investment research streaming"
   type        = bool
   default     = false
-}
-
-variable "prediction_ensemble_invoke_arn" {
-  description = "Invoke ARN of the prediction ensemble Lambda"
-  type        = string
-  default     = null
-}
-
-variable "prediction_ensemble_function_name" {
-  description = "Name of the prediction ensemble Lambda function"
-  type        = string
-  default     = null
 }
 
 variable "auth_verify_invoke_arn" {
@@ -113,12 +103,6 @@ variable "auth_verify_function_name" {
   description = "Name of the auth_verify Lambda function (for permissions)"
   type        = string
   default     = null
-}
-
-variable "prediction_ensemble_function_url" {
-  description = "Function URL for the prediction ensemble Lambda (for HTTP_PROXY integration)"
-  type        = string
-  default     = ""
 }
 
 # ============================================================================

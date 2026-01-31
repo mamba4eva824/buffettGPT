@@ -54,34 +54,19 @@ locals {
     KMS_KEY_ID          = module.core.kms_key_id
     CHAT_PROCESSING_QUEUE_URL = module.core.chat_processing_queue_url
 
-    # Bedrock Configuration - Use module outputs when available
-    BEDROCK_AGENT_ID    = try(module.bedrock.agent_id, var.bedrock_agent_id)
-    BEDROCK_AGENT_ALIAS = try(module.bedrock.agent_alias_id, var.bedrock_agent_alias)
+    # Bedrock Configuration
+    # NOTE: Primary agent (supervisor) was archived (2025-01) with prediction ensemble
+    # Using variable defaults for backward compatibility
+    BEDROCK_AGENT_ID    = var.bedrock_agent_id
+    BEDROCK_AGENT_ALIAS = var.bedrock_agent_alias
     BEDROCK_REGION      = var.bedrock_region
 
     # WebSocket endpoint for API Gateway Management API (needed by multiple functions)
     # Format: {api-id}.execute-api.{region}.amazonaws.com/{stage}
     WEBSOCKET_API_ENDPOINT = try("${module.api_gateway.websocket_api_id}.execute-api.us-east-1.amazonaws.com/${local.environment}", "")
 
-    # S3 Model Configuration (Ensemble Analysis)
-    MODEL_S3_BUCKET = module.s3.models_bucket_name
-    MODEL_S3_PREFIX = "ensemble/v1"
-
-    # Expert Agent Configuration (Ensemble Analysis)
-    # Using TSTALIASID which routes to DRAFT version (has action groups)
-    DEBT_AGENT_ID        = try(module.bedrock.debt_agent_id, "")
-    DEBT_AGENT_ALIAS     = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
-    CASHFLOW_AGENT_ID    = try(module.bedrock.cashflow_agent_id, "")
-    CASHFLOW_AGENT_ALIAS = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
-    GROWTH_AGENT_ID      = try(module.bedrock.growth_agent_id, "")
-    GROWTH_AGENT_ALIAS   = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
-
-    # Supervisor Agent Configuration (Phase 2)
-    SUPERVISOR_AGENT_ID    = try(module.bedrock.supervisor_agent_id, "")
-    SUPERVISOR_AGENT_ALIAS = try(module.bedrock.supervisor_agent_alias_id, "")
-    SUPERVISOR_ENABLED     = "true"
-    ORCHESTRATION_MODE     = "supervisor"
-    USE_ACTION_GROUP_MODE  = "true"  # Hybrid mode: agents call action groups with skip_inference=true
+    # NOTE: S3 Model Configuration removed (2025-01) - prediction ensemble archived
+    # See: archived/prediction_ensemble/
 
     # Follow-up Agent Configuration (for investment research follow-up questions)
     FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
@@ -95,6 +80,9 @@ locals {
     # Investment Research Tables (v1 removed, only v2 active)
     INVESTMENT_REPORTS_V2_TABLE = try(module.dynamodb.investment_reports_v2_table_name, "")
     METRICS_HISTORY_CACHE_TABLE = try(module.dynamodb.metrics_history_cache_table_name, "")
+
+    # Token Usage Tracking (monthly limits for follow-up agent)
+    TOKEN_USAGE_TABLE = try(module.dynamodb.token_usage_table_name, "")
 
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
@@ -144,16 +132,11 @@ module "dynamodb" {
 }
 
 # ================================================
-# S3 Module - Models Bucket
+# S3 Module (ARCHIVED - 2025-01)
 # ================================================
-
-module "s3" {
-  source = "../../modules/s3"
-
-  project_name = local.project_name
-  environment  = local.environment
-  common_tags  = local.common_tags
-}
+# NOTE: S3 models bucket was removed when prediction ensemble was archived.
+# It contained ML models (ensemble/v1/) and the ML layer (layers/ml-layer.zip).
+# See: archived/prediction_ensemble/terraform/s3/
 
 # ================================================
 # Lambda Module - Core Functions
@@ -181,15 +164,11 @@ module "lambda" {
   sqs_max_concurrency = 2
   common_tags         = local.common_tags
 
-  # ML Models S3 bucket for prediction ensemble
-  model_s3_bucket     = module.s3.models_bucket_name
-
   # KMS key for DynamoDB encryption
   kms_key_arn         = module.core.kms_key_arn
 
-  # Prediction Ensemble Docker image version
-  # v2.4.6: Fix race condition - cache verification before agent invocation
-  prediction_ensemble_image_tag = "v2.4.6"
+  # NOTE: model_s3_bucket and prediction_ensemble_image_tag removed (2025-01)
+  # See: archived/prediction_ensemble/
 
   # Followup Action Lambda (Bedrock action group handler)
   # Docker image pushed to ECR - enable Lambda creation
@@ -235,12 +214,10 @@ module "api_gateway" {
 
   # Analysis Streaming API (REST API with JWT auth)
   # Uses HTTP_PROXY integration to Lambda Function URL for SSE streaming
-  enable_analysis_api               = true
-  prediction_ensemble_invoke_arn    = module.lambda.prediction_ensemble_docker_invoke_arn
-  prediction_ensemble_function_name = module.lambda.prediction_ensemble_docker_function_name
-  prediction_ensemble_function_url  = module.lambda.prediction_ensemble_docker_function_url
-  auth_verify_invoke_arn            = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
-  auth_verify_function_name         = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
+  # NOTE: prediction_ensemble references removed (2025-01) - now only used for investment research
+  enable_analysis_api       = true
+  auth_verify_invoke_arn    = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
+  auth_verify_function_name = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
 
   # Investment Research API (REST API with JWT auth)
   # Uses HTTP_PROXY integration to Lambda Function URL for SSE streaming of cached reports
@@ -340,13 +317,8 @@ module "bedrock" {
   # Set to true to use versioned routing (prevents DRAFT routing issues)
   create_agent_version = true
 
-  # Action Groups for Expert Agents
-  # Uses dedicated data-fetcher-action Lambda (pure Python, no LWA)
-  # This resolves the Bedrock action group response format issue
-  # See: docs/TWO_LAMBDA_ARCHITECTURE.md
-  enable_action_groups              = true
-  action_group_lambda_arn           = module.lambda.ensemble_prediction_data_fetcher_action_arn
-  action_group_lambda_function_name = module.lambda.ensemble_prediction_data_fetcher_action_name
+  # NOTE: Expert Agent action groups removed (2025-01) - prediction ensemble archived
+  # See: archived/prediction_ensemble/
 
   # Action Group for Follow-up Agent
   # Uses dedicated followup-action Lambda for report data retrieval

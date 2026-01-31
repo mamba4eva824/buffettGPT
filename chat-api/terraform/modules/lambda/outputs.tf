@@ -6,11 +6,9 @@ output "dependencies_layer_arn" {
   value       = aws_lambda_layer_version.dependencies.arn
 }
 
-# ML Dependencies Layer ARN
-output "ml_dependencies_layer_arn" {
-  description = "ARN of the ML dependencies Lambda layer (numpy, scikit-learn)"
-  value       = aws_lambda_layer_version.ml_dependencies.arn
-}
+# ML Dependencies Layer ARN (ARCHIVED - 2025-01)
+# NOTE: ML dependencies layer was removed when prediction ensemble was archived.
+# See: archived/prediction_ensemble/
 
 # Function ARNs
 output "function_arns" {
@@ -106,26 +104,10 @@ output "analysis_followup_url" {
 }
 
 # ================================================
-# Prediction Ensemble Docker Outputs
+# Prediction Ensemble Docker Outputs (ARCHIVED - 2025-01)
 # ================================================
-
-output "prediction_ensemble_docker_arn" {
-  description = "ARN of the prediction ensemble Docker Lambda function"
-  value       = try(aws_lambda_function.prediction_ensemble_docker.arn, null)
-}
-
-output "prediction_ensemble_docker_ecr_url" {
-  description = "ECR repository URL for prediction ensemble"
-  value       = try(aws_ecr_repository.prediction_ensemble.repository_url, null)
-}
-
-output "prediction_ensemble_docker_invoke_arn" {
-  description = "Invoke ARN of the prediction ensemble Docker Lambda function"
-  value       = try(aws_lambda_function.prediction_ensemble_docker.invoke_arn, null)
-}
-
-# Note: prediction_ensemble_docker_function_name and prediction_ensemble_docker_function_url
-# are defined in prediction_ensemble_docker.tf
+# NOTE: prediction_ensemble_docker outputs were removed when the
+# prediction ensemble was archived. See: archived/prediction_ensemble/
 
 # ================================================
 # Investment Research Docker Outputs

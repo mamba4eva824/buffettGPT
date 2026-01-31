@@ -103,30 +103,11 @@ variable "create_agent_version" {
 }
 
 # ================================================
-# Action Group Variables (for Expert Agents)
-# ================================================
-
-variable "action_group_lambda_arn" {
-  description = "ARN of the Lambda function that handles action group invocations (ensemble analyzer)"
-  type        = string
-  default     = null
-}
-
-variable "action_group_lambda_function_name" {
-  description = "Name of the Lambda function that handles action group invocations"
-  type        = string
-  default     = null
-}
-
-variable "enable_action_groups" {
-  description = "Whether to create action groups for expert agents"
-  type        = bool
-  default     = false
-}
-
-# ================================================
 # Followup Agent Action Group Variables
 # ================================================
+# NOTE: Expert agent action group variables (action_group_lambda_arn,
+# action_group_lambda_function_name, enable_action_groups) were removed
+# when the prediction ensemble was archived (2025-01)
 
 variable "enable_followup_action_group" {
   description = "Whether to create action group for followup agent"
