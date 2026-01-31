@@ -16,11 +16,8 @@ on:
         required: false
         default: false
         type: boolean
-      build_prediction_ensemble:
-        description: 'Build Prediction Ensemble Docker Lambda'
-        required: false
-        default: false
-        type: boolean
+      # NOTE: build_prediction_ensemble removed (2025-01) - archived
+      # See: archived/prediction_ensemble/
       build_followup_action:
         description: 'Build Followup Action Docker Lambda (Bedrock action group handler)'
         required: false
@@ -75,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       investment_research_changed: ${{ steps.changes.outputs.investment_research }}
-      prediction_ensemble_changed: ${{ steps.changes.outputs.prediction_ensemble }}
+      # NOTE: prediction_ensemble_changed removed (2025-01) - archived
       followup_action_changed: ${{ steps.changes.outputs.followup_action }}
       any_docker_changed: ${{ steps.changes.outputs.any_docker }}
 
@@ -92,21 +89,18 @@ jobs:
           # For workflow_dispatch, default to false (use manual inputs)
           if [[ "${{ github.event_name }}" == "push" ]]; then
             IR_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/investment_research/" && echo "true" || echo "false")
-            PE_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/prediction_ensemble/" && echo "true" || echo "false")
+            # NOTE: prediction_ensemble removed (2025-01) - archived
             FA_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/followup_action/" && echo "true" || echo "false")
           else
             IR_CHANGED="false"
-            PE_CHANGED="false"
             FA_CHANGED="false"
           fi
 
           echo "investment_research=$IR_CHANGED" >> $GITHUB_OUTPUT
-          echo "prediction_ensemble=$PE_CHANGED" >> $GITHUB_OUTPUT
           echo "followup_action=$FA_CHANGED" >> $GITHUB_OUTPUT
-          echo "any_docker=$([[ $IR_CHANGED == 'true' || $PE_CHANGED == 'true' || $FA_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "any_docker=$([[ $IR_CHANGED == 'true' || $FA_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
           echo "Investment Research changed: $IR_CHANGED"
-          echo "Prediction Ensemble changed: $PE_CHANGED"
           echo "Followup Action changed: $FA_CHANGED"
 
   build-backend:
@@ -134,17 +128,9 @@ jobs:
           chmod +x scripts/build_lambdas.sh
           ./scripts/build_lambdas.sh
 
-      - name: Build ML Layer
-        working-directory: chat-api/backend
-        run: |
-          chmod +x scripts/build_ml_layer.sh
-          ./scripts/build_ml_layer.sh
-
-      - name: Build Data Fetcher Action Lambda
-        working-directory: chat-api/backend
-        run: |
-          chmod +x scripts/build_data_fetcher_action.sh
-          ./scripts/build_data_fetcher_action.sh
+      # NOTE: Build ML Layer and Build Data Fetcher Action Lambda steps removed (2025-01)
+      # These were part of the prediction ensemble that was archived.
+      # See: archived/prediction_ensemble/
 
       - name: Upload Lambda packages
         uses: actions/upload-artifact@v4
@@ -272,7 +258,6 @@ jobs:
       needs.detect-changes.outputs.any_docker_changed == 'true' ||
       inputs.build_all_docker == true ||
       inputs.build_investment_research == true ||
-      inputs.build_prediction_ensemble == true ||
       inputs.build_followup_action == true
     strategy:
       fail-fast: false  # Continue building other Lambdas if one fails
@@ -284,12 +269,8 @@ jobs:
             change_output: investment_research_changed
             manual_input: build_investment_research
             has_health_endpoint: true
-          - name: prediction-ensemble
-            dockerfile_dir: chat-api/backend/lambda/prediction_ensemble
-            ecr_repo: buffett/prediction-ensemble
-            change_output: prediction_ensemble_changed
-            manual_input: build_prediction_ensemble
-            has_health_endpoint: true
+          # NOTE: prediction-ensemble removed (2025-01) - archived
+          # See: archived/prediction_ensemble/
           - name: followup-action
             dockerfile_dir: chat-api/backend/lambda/followup_action
             ecr_repo: buffett/followup-action
@@ -304,10 +285,8 @@ jobs:
           LAMBDA_NAME: ${{ matrix.lambda.name }}
           BUILD_ALL: ${{ inputs.build_all_docker }}
           BUILD_IR: ${{ inputs.build_investment_research }}
-          BUILD_PE: ${{ inputs.build_prediction_ensemble }}
           BUILD_FA: ${{ inputs.build_followup_action }}
           IR_CHANGED: ${{ needs.detect-changes.outputs.investment_research_changed }}
-          PE_CHANGED: ${{ needs.detect-changes.outputs.prediction_ensemble_changed }}
           FA_CHANGED: ${{ needs.detect-changes.outputs.followup_action_changed }}
         run: |
           # Build if:
@@ -328,10 +307,7 @@ jobs:
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: manual input selected"
           fi
-          if [[ "$LAMBDA_NAME" == "prediction-ensemble" && "$BUILD_PE" == "true" ]]; then
-            SHOULD_BUILD="true"
-            echo "Building $LAMBDA_NAME: manual input selected"
-          fi
+          # NOTE: prediction-ensemble removed (2025-01) - archived
           if [[ "$LAMBDA_NAME" == "followup-action" && "$BUILD_FA" == "true" ]]; then
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: manual input selected"
@@ -342,10 +318,7 @@ jobs:
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: path changed"
           fi
-          if [[ "$LAMBDA_NAME" == "prediction-ensemble" && "$PE_CHANGED" == "true" ]]; then
-            SHOULD_BUILD="true"
-            echo "Building $LAMBDA_NAME: path changed"
-          fi
+          # NOTE: prediction-ensemble removed (2025-01) - archived
           if [[ "$LAMBDA_NAME" == "followup-action" && "$FA_CHANGED" == "true" ]]; then
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: path changed"
@@ -493,7 +466,6 @@ jobs:
           echo ""
           echo "Docker Lambda Builds:"
           echo "  Investment Research changed: ${{ needs.detect-changes.outputs.investment_research_changed }}"
-          echo "  Prediction Ensemble changed: ${{ needs.detect-changes.outputs.prediction_ensemble_changed }}"
           echo "  Followup Action changed: ${{ needs.detect-changes.outputs.followup_action_changed }}"
           echo "  Build job result: ${{ needs.build-docker-lambdas.result }}"
           echo ""
