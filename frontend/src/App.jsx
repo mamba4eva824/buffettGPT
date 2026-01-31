@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose, Zap } from "lucide-react";
+import TokenUsageDisplay from "./components/TokenUsageDisplay.jsx";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AnalysisView from "./components/analysis/AnalysisView.jsx";
@@ -790,6 +791,8 @@ function ChatApp() {
     interactionLog,
     logSectionInteraction,
     setInteractionLog,
+    // Token usage tracking
+    tokenUsage,
   } = useResearch();
 
   // Company search autocomplete
@@ -2450,6 +2453,16 @@ function ChatApp() {
               </div>
 
 
+
+              {/* Token Usage Section */}
+              <TokenUsageDisplay
+                tokenUsage={tokenUsage}
+                isAuthenticated={isAuthenticated}
+                onUpgrade={() => {
+                  // TODO: Open upgrade modal when Stripe integration is complete
+                  console.log('Upgrade clicked - Stripe integration coming soon');
+                }}
+              />
 
               <div className="rounded-lg bg-slate-50 dark:bg-slate-700 p-3 text-sm text-slate-600 dark:text-slate-300">
                 <div className="font-medium text-slate-800 dark:text-slate-200 mb-2">About Buffett</div>

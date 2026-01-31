@@ -174,7 +174,8 @@ module "lambda" {
   log_retention_days        = 7  # Short retention for dev
   
   reserved_concurrency = {
-    chat_processor = 2  # Low concurrency for dev
+    chat_processor    = 2   # Low concurrency - being deprecated
+    analysis_followup = 10  # Increased for production traffic
   }
   
   sqs_batch_window    = 10
