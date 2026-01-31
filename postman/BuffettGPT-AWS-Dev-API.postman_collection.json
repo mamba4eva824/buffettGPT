@@ -1,0 +1,1007 @@
+{
+  "info": {
+    "_postman_id": "buffettgpt-aws-dev-api",
+    "name": "BuffettGPT AWS Dev API",
+    "description": "API collection for testing BuffettGPT AWS dev environment - Authentication, Conversations, Follow-up Analysis, and Token Tracking",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://YOUR_API_ID.execute-api.us-east-1.amazonaws.com/dev",
+      "type": "string",
+      "description": "HTTP API base URL - replace YOUR_API_ID with actual API Gateway ID"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string",
+      "description": "JWT token from authentication"
+    },
+    {
+      "key": "google_id_token",
+      "value": "",
+      "type": "string",
+      "description": "Google OAuth ID token for authentication"
+    },
+    {
+      "key": "conversation_id",
+      "value": "",
+      "type": "string",
+      "description": "Current conversation ID"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "string",
+      "description": "Analysis session ID for follow-up questions"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string",
+      "description": "Authenticated user ID"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "description": "Google OAuth authentication flow",
+      "item": [
+        {
+          "name": "Auth Callback - Get JWT Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Parse response",
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "// Store JWT token",
+                  "if (jsonData.token) {",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.token);",
+                  "    console.log('JWT token saved successfully');",
+                  "}",
+                  "",
+                  "// Store user ID",
+                  "if (jsonData.user && jsonData.user.id) {",
+                  "    pm.collectionVariables.set('user_id', jsonData.user.id);",
+                  "    console.log('User ID saved:', jsonData.user.id);",
+                  "}",
+                  "",
+                  "// Tests",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains token', function () {",
+                  "    pm.expect(jsonData).to.have.property('token');",
+                  "});",
+                  "",
+                  "pm.test('Response contains user object', function () {",
+                  "    pm.expect(jsonData).to.have.property('user');",
+                  "    pm.expect(jsonData.user).to.have.property('id');",
+                  "    pm.expect(jsonData.user).to.have.property('email');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"credential\": \"{{google_id_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/callback",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "callback"]
+            },
+            "description": "Exchange Google OAuth ID token for JWT.\n\n**How to get the Google ID token:**\n1. Go to your BuffettGPT frontend app\n2. Sign in with Google\n3. Open browser DevTools > Network tab\n4. Look for the `/auth/callback` request\n5. Copy the `credential` value from the request payload\n6. Set it as the `google_id_token` collection variable"
+          },
+          "response": []
+        },
+        {
+          "name": "Verify Token (Health Check)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Health check returns status', function () {",
+                  "    pm.expect(jsonData).to.have.property('status');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Health check endpoint to verify API is running"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Conversations",
+      "description": "CRUD operations for conversations stored in DynamoDB",
+      "item": [
+        {
+          "name": "Create Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "// Store conversation ID for subsequent requests",
+                  "if (jsonData.conversation_id) {",
+                  "    pm.collectionVariables.set('conversation_id', jsonData.conversation_id);",
+                  "    console.log('Conversation ID saved:', jsonData.conversation_id);",
+                  "}",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response contains conversation_id', function () {",
+                  "    pm.expect(jsonData).to.have.property('conversation_id');",
+                  "});",
+                  "",
+                  "pm.test('Response contains user_id', function () {",
+                  "    pm.expect(jsonData).to.have.property('user_id');",
+                  "});",
+                  "",
+                  "pm.test('Response contains title', function () {",
+                  "    pm.expect(jsonData).to.have.property('title');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"Postman Test Conversation\",\n    \"user_type\": \"authenticated\",\n    \"metadata\": {\n        \"research_state\": {\n            \"visible_sections\": [\"01_executive_summary\"],\n            \"active_section_id\": \"01_executive_summary\"\n        },\n        \"source\": \"postman_test\"\n    }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/conversations",
+              "host": ["{{base_url}}"],
+              "path": ["conversations"]
+            },
+            "description": "Create a new conversation in DynamoDB"
+          },
+          "response": []
+        },
+        {
+          "name": "List All Conversations",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains conversations array', function () {",
+                  "    pm.expect(jsonData).to.have.property('conversations');",
+                  "    pm.expect(jsonData.conversations).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('Response contains count', function () {",
+                  "    pm.expect(jsonData).to.have.property('count');",
+                  "});",
+                  "",
+                  "// If conversations exist, save the first one's ID",
+                  "if (jsonData.conversations && jsonData.conversations.length > 0) {",
+                  "    pm.collectionVariables.set('conversation_id', jsonData.conversations[0].conversation_id);",
+                  "    console.log('Set conversation_id to first result:', jsonData.conversations[0].conversation_id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations?include_archived=false",
+              "host": ["{{base_url}}"],
+              "path": ["conversations"],
+              "query": [
+                {
+                  "key": "include_archived",
+                  "value": "false",
+                  "description": "Include archived conversations (true/false)"
+                }
+              ]
+            },
+            "description": "List all conversations for the authenticated user"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains conversation_id', function () {",
+                  "    pm.expect(jsonData).to.have.property('conversation_id');",
+                  "});",
+                  "",
+                  "pm.test('Response contains title', function () {",
+                  "    pm.expect(jsonData).to.have.property('title');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["conversations", "{{conversation_id}}"]
+            },
+            "description": "Get a specific conversation by ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Response confirms update', function () {",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "    pm.expect(jsonData.message).to.include('updated');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"Updated Postman Test Conversation\",\n    \"metadata\": {\n        \"research_state\": {\n            \"visible_sections\": [\"01_executive_summary\", \"06_growth\", \"11_debt\"],\n            \"active_section_id\": \"11_debt\"\n        },\n        \"source\": \"postman_test\",\n        \"updated_via\": \"postman\"\n    },\n    \"is_archived\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["conversations", "{{conversation_id}}"]
+            },
+            "description": "Update conversation title and metadata"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation Messages",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response contains messages array', function () {",
+                  "    pm.expect(jsonData).to.have.property('messages');",
+                  "    pm.expect(jsonData.messages).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('Response contains conversation_id', function () {",
+                  "    pm.expect(jsonData).to.have.property('conversation_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["conversations", "{{conversation_id}}", "messages"]
+            },
+            "description": "Get all messages in a conversation"
+          },
+          "response": []
+        },
+        {
+          "name": "Save Message to Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response contains message_id', function () {",
+                  "    pm.expect(jsonData).to.have.property('message_id');",
+                  "});",
+                  "",
+                  "pm.test('Response contains timestamp', function () {",
+                  "    pm.expect(jsonData).to.have.property('timestamp');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message_type\": \"user\",\n    \"content\": \"What is the debt-to-equity ratio for AAPL?\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["conversations", "{{conversation_id}}", "messages"]
+            },
+            "description": "Save a new message to the conversation"
+          },
+          "response": []
+        },
+        {
+          "name": "Save Assistant Message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "pm.test('Status code is 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response contains message_id', function () {",
+                  "    pm.expect(jsonData).to.have.property('message_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message_type\": \"assistant\",\n    \"content\": \"Apple's debt-to-equity ratio is approximately 1.87 as of the latest quarterly report. This indicates that Apple has $1.87 of debt for every $1 of shareholder equity.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}/messages",
+              "host": ["{{base_url}}"],
+              "path": ["conversations", "{{conversation_id}}", "messages"]
+            },
+            "description": "Save an assistant response message to the conversation"
+          },
+          "response": []
+        },
+        {
+          "name": "Archive Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test('Response confirms update', function () {",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"is_archived\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["conversations", "{{conversation_id}}"]
+            },
+            "description": "Archive a conversation (soft delete)"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Conversation",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 or 204', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/conversations/{{conversation_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["conversations", "{{conversation_id}}"]
+            },
+            "description": "Delete a conversation"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Follow-up Analysis",
+      "description": "Research follow-up endpoint for asking questions about financial analysis",
+      "item": [
+        {
+          "name": "Ask Follow-up Question (SSE Stream)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Note: This endpoint returns SSE stream",
+                  "// Postman may not display the stream correctly",
+                  "// Use 'Send and Download' or check raw response",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/event-stream', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/event-stream');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"Why is the debt analyst bearish on this company?\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"debt\",\n    \"ticker\": \"AAPL\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/research/followup",
+              "host": ["{{base_url}}"],
+              "path": ["research", "followup"]
+            },
+            "description": "Ask a follow-up question about financial analysis. Returns SSE stream.\n\n**Required fields:**\n- `question`: Your follow-up question\n- `session_id`: From initial analysis response (format: `ensemble-{uuid}`)\n- `agent_type`: One of `debt`, `cashflow`, or `growth`\n- `ticker`: Stock ticker symbol (e.g., AAPL)\n\n**Note:** This endpoint returns Server-Sent Events (SSE). Postman may show raw event data. For proper streaming visualization, use curl or the frontend app."
+          },
+          "response": []
+        },
+        {
+          "name": "Follow-up - Cashflow Analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"What are the main concerns about free cash flow?\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"cashflow\",\n    \"ticker\": \"AAPL\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/research/followup",
+              "host": ["{{base_url}}"],
+              "path": ["research", "followup"]
+            },
+            "description": "Ask follow-up question to the cashflow analyst"
+          },
+          "response": []
+        },
+        {
+          "name": "Follow-up - Growth Analysis",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"What are the growth drivers for the next 5 years?\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"growth\",\n    \"ticker\": \"AAPL\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/research/followup",
+              "host": ["{{base_url}}"],
+              "path": ["research", "followup"]
+            },
+            "description": "Ask follow-up question to the growth analyst"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Token Usage Tracking",
+      "description": "Track and manage monthly token usage for rate limiting",
+      "item": [
+        {
+          "name": "Get Token Usage (via Chat Endpoint)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// The chat endpoint returns token usage in response headers",
+                  "// and in the response body",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Check for rate limit headers",
+                  "var rateLimitHeader = pm.response.headers.get('X-RateLimit-Remaining');",
+                  "if (rateLimitHeader) {",
+                  "    console.log('Rate Limit Remaining:', rateLimitHeader);",
+                  "}",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.token_usage) {",
+                  "    console.log('Token Usage:', JSON.stringify(jsonData.token_usage));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"message\": \"Hello, what is your investment philosophy?\",\n    \"session_id\": \"postman-test-session\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/chat",
+              "host": ["{{base_url}}"],
+              "path": ["chat"]
+            },
+            "description": "Send a chat message and observe token usage in the response.\n\nThe response includes:\n- `token_usage.input_tokens`: Tokens used for input\n- `token_usage.output_tokens`: Tokens used for output\n- `token_usage.total_tokens`: Total tokens consumed\n- `token_usage.token_limit`: Monthly limit\n- `token_usage.percent_used`: Percentage of limit used\n- `token_usage.remaining_tokens`: Tokens remaining this month"
+          },
+          "response": []
+        },
+        {
+          "name": "Check Token Usage in Follow-up Response",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// The follow-up endpoint returns token usage in the 'complete' event",
+                  "// Look for the last SSE event in the response",
+                  "",
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Parse SSE response to find token_usage",
+                  "var body = pm.response.text();",
+                  "var completeMatch = body.match(/event:\\s*complete[\\s\\S]*?data:\\s*({[^\\n]+})/);",
+                  "if (completeMatch) {",
+                  "    try {",
+                  "        var completeData = JSON.parse(completeMatch[1]);",
+                  "        if (completeData.token_usage) {",
+                  "            console.log('Token Usage:', JSON.stringify(completeData.token_usage, null, 2));",
+                  "            console.log('Input tokens:', completeData.token_usage.input_tokens);",
+                  "            console.log('Output tokens:', completeData.token_usage.output_tokens);",
+                  "            console.log('Percent used:', completeData.token_usage.percent_used + '%');",
+                  "        }",
+                  "    } catch (e) {",
+                  "        console.log('Could not parse complete event');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"Summarize the debt analysis\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"debt\",\n    \"ticker\": \"AAPL\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/research/followup",
+              "host": ["{{base_url}}"],
+              "path": ["research", "followup"]
+            },
+            "description": "The follow-up endpoint returns token usage in the final 'complete' SSE event.\n\n**Token usage fields in response:**\n```json\n{\n  \"token_usage\": {\n    \"input_tokens\": 150,\n    \"output_tokens\": 450,\n    \"total_tokens\": 600,\n    \"token_limit\": 500000,\n    \"percent_used\": 0.12,\n    \"remaining_tokens\": 499400,\n    \"threshold_reached\": null\n  }\n}\n```\n\n**Threshold notifications:**\n- `threshold_reached`: null (under 80%), \"80\" (80-89%), \"90\" (90-99%), \"100\" (limit reached)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Research Reports (Optional)",
+      "description": "Investment research report endpoints",
+      "item": [
+        {
+          "name": "Check Report Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "console.log('Report exists:', jsonData.exists);",
+                  "console.log('Report expired:', jsonData.expired);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/research/report/AAPL/status",
+              "host": ["{{base_url}}"],
+              "path": ["research", "report", "AAPL", "status"]
+            },
+            "description": "Check if a research report exists for the given ticker"
+          },
+          "response": []
+        },
+        {
+          "name": "Stream Research Report",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Content-Type is text/event-stream', function () {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/event-stream');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/research/report/AAPL/stream",
+              "host": ["{{base_url}}"],
+              "path": ["research", "report", "AAPL", "stream"]
+            },
+            "description": "Stream a cached investment report via SSE"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Report Section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/research/report/AAPL/section/01_executive_summary",
+              "host": ["{{base_url}}"],
+              "path": ["research", "report", "AAPL", "section", "01_executive_summary"]
+            },
+            "description": "Fetch a specific section of the research report.\n\n**Available sections:**\n- `01_executive_summary`\n- `06_growth`\n- `07_profit`\n- `08_valuation`\n- `09_earnings`\n- `10_cashflow`\n- `11_debt`\n- `12_dilution`\n- `13_bull`\n- `14_bear`\n- `15_warnings`\n- `16_vibe`\n- `17_realtalk`"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Analysis Endpoints",
+      "description": "Ensemble financial analysis endpoints",
+      "item": [
+        {
+          "name": "Debt Analysis (SSE Stream)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Generate a unique session ID",
+                  "var sessionId = 'ensemble-' + pm.variables.replaceIn('{{$guid}}');",
+                  "pm.collectionVariables.set('session_id', sessionId);",
+                  "console.log('Generated session_id:', sessionId);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ticker\": \"AAPL\",\n    \"session_id\": \"{{session_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/analysis/debt",
+              "host": ["{{base_url}}"],
+              "path": ["analysis", "debt"]
+            },
+            "description": "Run debt analysis for a stock. Returns SSE stream.\n\nThis pre-request script generates a new session_id that can be used for follow-up questions."
+          },
+          "response": []
+        },
+        {
+          "name": "Cashflow Analysis (SSE Stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ticker\": \"AAPL\",\n    \"session_id\": \"{{session_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/analysis/cashflow",
+              "host": ["{{base_url}}"],
+              "path": ["analysis", "cashflow"]
+            },
+            "description": "Run cashflow analysis for a stock"
+          },
+          "response": []
+        },
+        {
+          "name": "Growth Analysis (SSE Stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"ticker\": \"AAPL\",\n    \"session_id\": \"{{session_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/analysis/growth",
+              "host": ["{{base_url}}"],
+              "path": ["analysis", "growth"]
+            },
+            "description": "Run growth analysis for a stock"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global pre-request script",
+          "// Add request timestamp for debugging",
+          "pm.variables.set('request_timestamp', new Date().toISOString());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Global test script",
+          "// Log response time for all requests",
+          "console.log('Response time:', pm.response.responseTime + 'ms');"
+        ]
+      }
+    }
+  ]
+}
