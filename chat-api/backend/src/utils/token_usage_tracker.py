@@ -46,10 +46,11 @@ class TokenUsageTracker:
     """
 
     # Default token limits by user tier
+    # Note: Free users cannot use follow-up feature (plus only)
     DEFAULT_LIMITS = {
-        'anonymous': 1000,
-        'free': 50000,   # Free tier (authenticated)
-        'plus': 500000,  # Plus subscription tier
+        'anonymous': 0,      # No access
+        'free': 0,           # No follow-up access (plus feature only)
+        'plus': 1000000,     # 1M tokens/month
     }
 
     def __init__(self, table_name: Optional[str] = None, dynamodb_resource=None):
