@@ -763,6 +763,28 @@ def lambda_handler(event: Dict[str, Any], context: Any):
 
     logger.info(f"Invocation detection: is_function_url={is_function_url}, is_api_gateway={is_api_gateway}")
 
+    # Extract path for routing
+    http_context = request_context.get('http', {})
+    path = http_context.get('path', event.get('path', ''))
+    method = http_context.get('method', event.get('httpMethod', 'POST'))
+
+    # Health check endpoint - no auth required
+    if path == '/health' and method == 'GET':
+        logger.info("Health check request")
+        return {
+            'statusCode': 200,
+            'headers': {
+                'Content-Type': 'application/json'
+            },
+            'body': json.dumps({
+                'status': 'healthy',
+                'service': 'analysis-followup',
+                'environment': os.environ.get('ENVIRONMENT', 'unknown'),
+                'model_id': FOLLOWUP_MODEL_ID,
+                'timestamp': datetime.utcnow().isoformat() + 'Z'
+            })
+        }
+
     # JWT Authentication - verify token before processing
     user_claims = verify_jwt_token(event)
     if not user_claims:
