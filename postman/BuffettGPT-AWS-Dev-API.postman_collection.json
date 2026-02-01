@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "buffettgpt-aws-dev-api",
     "name": "BuffettGPT AWS Dev API",
-    "description": "API collection for testing BuffettGPT AWS dev environment - Authentication, Conversations, Follow-up Analysis, and Token Tracking",
+    "description": "API collection for testing BuffettGPT AWS dev environment - Authentication, Conversations, Research Follow-up, and Token Tracking.\n\nArchitecture: Tool-based LLM orchestration using Claude Haiku with direct Bedrock model invocation.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -44,13 +44,19 @@
       "key": "session_id",
       "value": "",
       "type": "string",
-      "description": "Analysis session ID for follow-up questions"
+      "description": "Research session ID for follow-up questions"
     },
     {
       "key": "user_id",
       "value": "",
       "type": "string",
       "description": "Authenticated user ID"
+    },
+    {
+      "key": "ticker",
+      "value": "AAPL",
+      "type": "string",
+      "description": "Stock ticker symbol for research queries"
     }
   ],
   "item": [
@@ -124,7 +130,7 @@
           "response": []
         },
         {
-          "name": "Verify Token (Health Check)",
+          "name": "Health Check",
           "event": [
             {
               "listen": "test",
@@ -544,12 +550,26 @@
       ]
     },
     {
-      "name": "3. Follow-up Analysis",
-      "description": "Research follow-up endpoint for asking questions about financial analysis",
+      "name": "3. Research Follow-up",
+      "description": "Tool-based follow-up questions using Claude Haiku with direct model invocation.\n\nAvailable tools:\n- getReportSection: Fetch report sections\n- getReportRatings: Get investment ratings\n- getMetricsHistory: Historical financial data\n- getAvailableReports: List covered companies",
       "item": [
         {
           "name": "Ask Follow-up Question (SSE Stream)",
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Generate a unique session ID if not set",
+                  "if (!pm.collectionVariables.get('session_id')) {",
+                  "    var sessionId = 'research-' + pm.variables.replaceIn('{{$guid}}');",
+                  "    pm.collectionVariables.set('session_id', sessionId);",
+                  "    console.log('Generated session_id:', sessionId);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -584,19 +604,32 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"question\": \"Why is the debt analyst bearish on this company?\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"debt\",\n    \"ticker\": \"AAPL\"\n}"
+              "raw": "{\n    \"question\": \"What does the debt analysis show for this company?\",\n    \"session_id\": \"{{session_id}}\",\n    \"ticker\": \"{{ticker}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/research/followup",
               "host": ["{{base_url}}"],
               "path": ["research", "followup"]
             },
-            "description": "Ask a follow-up question about financial analysis. Returns SSE stream.\n\n**Required fields:**\n- `question`: Your follow-up question\n- `session_id`: From initial analysis response (format: `ensemble-{uuid}`)\n- `agent_type`: One of `debt`, `cashflow`, or `growth`\n- `ticker`: Stock ticker symbol (e.g., AAPL)\n\n**Note:** This endpoint returns Server-Sent Events (SSE). Postman may show raw event data. For proper streaming visualization, use curl or the frontend app."
+            "description": "Ask a follow-up question about investment research. Returns SSE stream.\n\nUses Claude Haiku with tool orchestration (up to 10 turns).\n\n**Required fields:**\n- `question`: Your research question\n- `session_id`: Session identifier for conversation context\n- `ticker`: Stock ticker symbol (e.g., AAPL)\n\n**Available tools the model can use:**\n- `getReportSection(ticker, section_id)` - Fetch specific report sections\n- `getReportRatings(ticker)` - Get investment ratings and verdict\n- `getMetricsHistory(ticker, metric_type, quarters)` - Historical trend data\n- `getAvailableReports()` - List all covered companies\n\n**Note:** This endpoint returns Server-Sent Events (SSE). Postman may show raw event data."
           },
           "response": []
         },
         {
-          "name": "Follow-up - Cashflow Analysis",
+          "name": "Ask About Debt Metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -611,19 +644,32 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"question\": \"What are the main concerns about free cash flow?\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"cashflow\",\n    \"ticker\": \"AAPL\"\n}"
+              "raw": "{\n    \"question\": \"What is the debt-to-equity ratio trend over the past 2 years?\",\n    \"session_id\": \"{{session_id}}\",\n    \"ticker\": \"{{ticker}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/research/followup",
               "host": ["{{base_url}}"],
               "path": ["research", "followup"]
             },
-            "description": "Ask follow-up question to the cashflow analyst"
+            "description": "Ask about debt metrics - the model will use getMetricsHistory tool"
           },
           "response": []
         },
         {
-          "name": "Follow-up - Growth Analysis",
+          "name": "Ask About Cashflow",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -638,14 +684,94 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"question\": \"What are the growth drivers for the next 5 years?\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"growth\",\n    \"ticker\": \"AAPL\"\n}"
+              "raw": "{\n    \"question\": \"Is free cash flow growing? What's the FCF margin trend?\",\n    \"session_id\": \"{{session_id}}\",\n    \"ticker\": \"{{ticker}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/research/followup",
               "host": ["{{base_url}}"],
               "path": ["research", "followup"]
             },
-            "description": "Ask follow-up question to the growth analyst"
+            "description": "Ask about cashflow - the model will use getReportSection with section_id=10_cashflow"
+          },
+          "response": []
+        },
+        {
+          "name": "Ask About Growth",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"What are the main growth drivers and is revenue accelerating?\",\n    \"session_id\": \"{{session_id}}\",\n    \"ticker\": \"{{ticker}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/research/followup",
+              "host": ["{{base_url}}"],
+              "path": ["research", "followup"]
+            },
+            "description": "Ask about growth - the model will use getReportSection with section_id=06_growth"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Investment Verdict",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"question\": \"What's the overall investment rating and verdict?\",\n    \"session_id\": \"{{session_id}}\",\n    \"ticker\": \"{{ticker}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/research/followup",
+              "host": ["{{base_url}}"],
+              "path": ["research", "followup"]
+            },
+            "description": "Ask for investment verdict - the model will use getReportRatings tool"
           },
           "response": []
         }
@@ -754,7 +880,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n    \"question\": \"Summarize the debt analysis\",\n    \"session_id\": \"{{session_id}}\",\n    \"agent_type\": \"debt\",\n    \"ticker\": \"AAPL\"\n}"
+              "raw": "{\n    \"question\": \"Give me a quick summary of the executive summary\",\n    \"session_id\": \"{{session_id}}\",\n    \"ticker\": \"{{ticker}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/research/followup",
@@ -768,8 +894,8 @@
       ]
     },
     {
-      "name": "5. Research Reports (Optional)",
-      "description": "Investment research report endpoints",
+      "name": "5. Research Reports",
+      "description": "Investment research report endpoints - fetch cached reports and sections",
       "item": [
         {
           "name": "Check Report Status",
@@ -794,9 +920,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/research/report/AAPL/status",
+              "raw": "{{base_url}}/research/report/{{ticker}}/status",
               "host": ["{{base_url}}"],
-              "path": ["research", "report", "AAPL", "status"]
+              "path": ["research", "report", "{{ticker}}", "status"]
             },
             "description": "Check if a research report exists for the given ticker"
           },
@@ -830,16 +956,16 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/research/report/AAPL/stream",
+              "raw": "{{base_url}}/research/report/{{ticker}}/stream",
               "host": ["{{base_url}}"],
-              "path": ["research", "report", "AAPL", "stream"]
+              "path": ["research", "report", "{{ticker}}", "stream"]
             },
             "description": "Stream a cached investment report via SSE"
           },
           "response": []
         },
         {
-          "name": "Get Report Section",
+          "name": "Get Executive Summary Section",
           "event": [
             {
               "listen": "test",
@@ -857,35 +983,17 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/research/report/AAPL/section/01_executive_summary",
+              "raw": "{{base_url}}/research/report/{{ticker}}/section/01_executive_summary",
               "host": ["{{base_url}}"],
-              "path": ["research", "report", "AAPL", "section", "01_executive_summary"]
+              "path": ["research", "report", "{{ticker}}", "section", "01_executive_summary"]
             },
-            "description": "Fetch a specific section of the research report.\n\n**Available sections:**\n- `01_executive_summary`\n- `06_growth`\n- `07_profit`\n- `08_valuation`\n- `09_earnings`\n- `10_cashflow`\n- `11_debt`\n- `12_dilution`\n- `13_bull`\n- `14_bear`\n- `15_warnings`\n- `16_vibe`\n- `17_realtalk`"
+            "description": "Fetch the executive summary section"
           },
           "response": []
-        }
-      ]
-    },
-    {
-      "name": "6. Analysis Endpoints",
-      "description": "Ensemble financial analysis endpoints",
-      "item": [
+        },
         {
-          "name": "Debt Analysis (SSE Stream)",
+          "name": "Get Debt Section",
           "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "// Generate a unique session ID",
-                  "var sessionId = 'ensemble-' + pm.variables.replaceIn('{{$guid}}');",
-                  "pm.collectionVariables.set('session_id', sessionId);",
-                  "console.log('Generated session_id:', sessionId);"
-                ],
-                "type": "text/javascript"
-              }
-            },
             {
               "listen": "test",
               "script": {
@@ -899,81 +1007,122 @@
             }
           ],
           "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "text/event-stream"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"ticker\": \"AAPL\",\n    \"session_id\": \"{{session_id}}\"\n}"
-            },
+            "method": "GET",
+            "header": [],
             "url": {
-              "raw": "{{base_url}}/analysis/debt",
+              "raw": "{{base_url}}/research/report/{{ticker}}/section/11_debt",
               "host": ["{{base_url}}"],
-              "path": ["analysis", "debt"]
+              "path": ["research", "report", "{{ticker}}", "section", "11_debt"]
             },
-            "description": "Run debt analysis for a stock. Returns SSE stream.\n\nThis pre-request script generates a new session_id that can be used for follow-up questions."
+            "description": "Fetch the debt analysis section"
           },
           "response": []
         },
         {
-          "name": "Cashflow Analysis (SSE Stream)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "text/event-stream"
+          "name": "Get Cashflow Section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
               }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"ticker\": \"AAPL\",\n    \"session_id\": \"{{session_id}}\"\n}"
-            },
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
             "url": {
-              "raw": "{{base_url}}/analysis/cashflow",
+              "raw": "{{base_url}}/research/report/{{ticker}}/section/10_cashflow",
               "host": ["{{base_url}}"],
-              "path": ["analysis", "cashflow"]
+              "path": ["research", "report", "{{ticker}}", "section", "10_cashflow"]
             },
-            "description": "Run cashflow analysis for a stock"
+            "description": "Fetch the cashflow analysis section"
           },
           "response": []
         },
         {
-          "name": "Growth Analysis (SSE Stream)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "text/event-stream"
+          "name": "Get Growth Section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
               }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n    \"ticker\": \"AAPL\",\n    \"session_id\": \"{{session_id}}\"\n}"
-            },
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
             "url": {
-              "raw": "{{base_url}}/analysis/growth",
+              "raw": "{{base_url}}/research/report/{{ticker}}/section/06_growth",
               "host": ["{{base_url}}"],
-              "path": ["analysis", "growth"]
+              "path": ["research", "report", "{{ticker}}", "section", "06_growth"]
             },
-            "description": "Run growth analysis for a stock"
+            "description": "Fetch the growth analysis section"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Bull Case Section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/research/report/{{ticker}}/section/13_bull",
+              "host": ["{{base_url}}"],
+              "path": ["research", "report", "{{ticker}}", "section", "13_bull"]
+            },
+            "description": "Fetch the bull case / positive scenario section"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Bear Case Section",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/research/report/{{ticker}}/section/14_bear",
+              "host": ["{{base_url}}"],
+              "path": ["research", "report", "{{ticker}}", "section", "14_bear"]
+            },
+            "description": "Fetch the bear case / risks section"
           },
           "response": []
         }

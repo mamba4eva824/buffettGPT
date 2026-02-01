@@ -1,6 +1,15 @@
 # BuffettGPT Postman Collection
 
-This folder contains Postman collection and environment files for testing the BuffettGPT AWS dev API.
+Postman collection and environment files for testing the BuffettGPT AWS dev API.
+
+## Architecture
+
+Tool-based LLM orchestration using Claude Haiku with direct Bedrock model invocation. The follow-up endpoint uses 4 tools for answering research questions:
+
+- `getReportSection` - Fetch specific report sections (debt, cashflow, growth, etc.)
+- `getReportRatings` - Get investment ratings and verdict
+- `getMetricsHistory` - Historical financial trend data
+- `getAvailableReports` - List all covered companies
 
 ## Files
 
@@ -61,21 +70,21 @@ If you already have a valid JWT token:
 - **Archive Conversation** - Soft delete
 - **Delete Conversation** - Hard delete
 
-### 3. Follow-up Analysis
-- **Ask Follow-up Question** - Query about debt/cashflow/growth analysis
-- Tests for each analyst type (debt, cashflow, growth)
+### 3. Research Follow-up (Tool-based)
+- **Ask Follow-up Question** - General research question (SSE stream)
+- **Ask About Debt Metrics** - Triggers getMetricsHistory tool
+- **Ask About Cashflow** - Triggers getReportSection(10_cashflow)
+- **Ask About Growth** - Triggers getReportSection(06_growth)
+- **Get Investment Verdict** - Triggers getReportRatings tool
 
 ### 4. Token Usage Tracking
 - **Get Token Usage** - Via chat endpoint response
 - **Check Token Usage in Follow-up** - Monitor in SSE complete event
 
-### 5. Research Reports (Optional)
+### 5. Research Reports
 - **Check Report Status** - See if report exists
 - **Stream Report** - Get full report via SSE
-- **Get Section** - Fetch individual report section
-
-### 6. Analysis Endpoints
-- **Debt/Cashflow/Growth Analysis** - Run financial analysis
+- **Get Section** - Fetch individual report sections (debt, cashflow, growth, bull, bear)
 
 ## Testing Flow
 
@@ -89,10 +98,9 @@ Recommended order for testing:
 5. Save Assistant Message
 6. Get Conversation Messages
 7. List All Conversations
-8. Update Conversation
-9. Run Analysis (debt/cashflow/growth)
-10. Ask Follow-up Questions
-11. Archive/Delete Conversation
+8. Ask Research Follow-up Questions
+9. Check Token Usage
+10. Archive/Delete Conversation
 ```
 
 ## Notes
@@ -102,7 +110,6 @@ Recommended order for testing:
 The following endpoints return Server-Sent Events (SSE):
 - `/research/followup`
 - `/research/report/{ticker}/stream`
-- `/analysis/{agent_type}`
 
 Postman displays raw SSE data. For proper streaming visualization:
 - Use curl: `curl -N -H "Authorization: Bearer $TOKEN" $URL`
@@ -130,7 +137,7 @@ Threshold warnings at 80%, 90%, and 100% usage.
 ### Session IDs
 
 - For conversations: Use `conversation_id` from Create Conversation
-- For analysis follow-up: Use `session_id` from analysis response (format: `ensemble-{uuid}`)
+- For research follow-up: Use any unique `session_id` for conversation context
 
 ## Troubleshooting
 
@@ -145,3 +152,21 @@ Threshold warnings at 80%, 90%, and 100% usage.
 ### 429 Too Many Requests
 - Monthly token limit reached
 - Wait for month reset or upgrade subscription tier
+
+## Available Report Sections
+
+| Section ID | Description |
+|------------|-------------|
+| `01_executive_summary` | Overview and key takeaways |
+| `06_growth` | Revenue and earnings growth analysis |
+| `07_profit` | Profit margins |
+| `08_valuation` | P/E, price targets, valuation metrics |
+| `09_earnings` | Earnings quality |
+| `10_cashflow` | Free cash flow analysis |
+| `11_debt` | Leverage and debt analysis |
+| `12_dilution` | Share dilution analysis |
+| `13_bull` | Bull case / positive scenario |
+| `14_bear` | Bear case / risks |
+| `15_warnings` | Red flags and warnings |
+| `16_vibe` | Sentiment analysis |
+| `17_realtalk` | Bottom line conclusions |
