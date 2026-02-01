@@ -778,15 +778,11 @@ def lambda_handler(event: Dict[str, Any], context: Any):
             'model_id': FOLLOWUP_MODEL_ID,
             'timestamp': datetime.utcnow().isoformat() + 'Z'
         }
-        # For Lambda Function URL with RESPONSE_STREAM, use generator
+        # For Lambda Function URL, return body directly (no statusCode wrapper)
+        # Lambda Function URL with RESPONSE_STREAM passes through non-generator returns as-is
         if is_function_url and not is_api_gateway:
-            def health_stream():
-                yield {
-                    "statusCode": 200,
-                    "headers": {"Content-Type": "application/json"}
-                }
-                yield json.dumps(health_body)
-            return health_stream()
+            logger.info("Health check via Function URL - returning body directly")
+            return health_body
         # For API Gateway, use standard response format
         return {
             'statusCode': 200,
