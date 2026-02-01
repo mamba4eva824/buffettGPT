@@ -36,18 +36,19 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
 
   const statusColor = getStatusColor();
 
-  // Format reset date
+  // Format reset date (supports anniversary-based billing)
   const formatResetDate = (dateStr) => {
-    if (!dateStr) return 'the 1st of next month';
+    if (!dateStr) return 'next billing date';
     try {
       const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return 'next billing date';
       return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
       });
     } catch {
-      return 'the 1st of next month';
+      return 'next billing date';
     }
   };
 
