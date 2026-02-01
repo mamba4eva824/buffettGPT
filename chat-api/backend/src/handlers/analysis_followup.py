@@ -752,13 +752,13 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     #   * OR has x-amzn-apigateway-api-id header (forwarded from API Gateway)
     #   * OR has x-forwarded-for header set by API Gateway
     is_function_url = 'http' in request_context
+    # API Gateway detection - use reliable indicators only
+    # Note: x-forwarded-for/port headers are also set by Lambda Function URLs, so not reliable
     is_api_gateway = (
-        event.get('httpMethod') or
-        request_context.get('httpMethod') or
-        headers.get('x-amzn-apigateway-api-id') or
-        headers.get('X-Amzn-Apigateway-Api-Id') or
-        # Check if forwarded through API Gateway - presence of these headers indicates proxy
-        (headers.get('x-forwarded-for') and headers.get('x-forwarded-port'))
+        event.get('httpMethod') or  # API Gateway v1 puts httpMethod at event root
+        request_context.get('httpMethod') or  # API Gateway v1 also in requestContext
+        headers.get('x-amzn-apigateway-api-id') or  # API Gateway-specific header
+        headers.get('X-Amzn-Apigateway-Api-Id')
     )
 
     logger.info(f"Invocation detection: is_function_url={is_function_url}, is_api_gateway={is_api_gateway}")
