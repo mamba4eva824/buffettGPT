@@ -771,18 +771,27 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     # Health check endpoint - no auth required
     if path == '/health' and method == 'GET':
         logger.info("Health check request")
+        health_body = {
+            'status': 'healthy',
+            'service': 'analysis-followup',
+            'environment': os.environ.get('ENVIRONMENT', 'unknown'),
+            'model_id': FOLLOWUP_MODEL_ID,
+            'timestamp': datetime.utcnow().isoformat() + 'Z'
+        }
+        # For Lambda Function URL with RESPONSE_STREAM, use generator
+        if is_function_url and not is_api_gateway:
+            def health_stream():
+                yield {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "application/json"}
+                }
+                yield json.dumps(health_body)
+            return health_stream()
+        # For API Gateway, use standard response format
         return {
             'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json'
-            },
-            'body': json.dumps({
-                'status': 'healthy',
-                'service': 'analysis-followup',
-                'environment': os.environ.get('ENVIRONMENT', 'unknown'),
-                'model_id': FOLLOWUP_MODEL_ID,
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
-            })
+            'headers': {'Content-Type': 'application/json'},
+            'body': json.dumps(health_body)
         }
 
     # JWT Authentication - verify token before processing
