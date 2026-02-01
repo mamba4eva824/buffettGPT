@@ -5,9 +5,9 @@
 # Purpose: Validate Lambda deployments are healthy before completing CI/CD
 # Usage: ./smoke_test.sh <environment> [--test-failure]
 #
-# Tests both Lambda functions:
+# Tests Lambda functions:
 #   - Investment Research (report streaming)
-#   - Prediction Ensemble (ML inference)
+#   - Analysis Followup (follow-up Q&A)
 #
 # Exit codes:
 #   0 = All tests passed
@@ -137,32 +137,28 @@ else
 fi
 
 # =============================================================================
-# Prediction Ensemble Lambda Tests
+# Analysis Followup Lambda Tests
 # =============================================================================
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}  Prediction Ensemble Lambda${NC}"
+echo -e "${GREEN}  Analysis Followup Lambda${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-PE_FUNCTION="${PROJECT_NAME}-${ENVIRONMENT}-prediction-ensemble"
-log_info "Function: ${PE_FUNCTION}"
+AF_FUNCTION="${PROJECT_NAME}-${ENVIRONMENT}-analysis-followup"
+log_info "Function: ${AF_FUNCTION}"
 
-PE_URL=$(get_function_url "$PE_FUNCTION")
+AF_URL=$(get_function_url "$AF_FUNCTION")
 
-if [[ -z "$PE_URL" || "$PE_URL" == "None" ]]; then
-    log_error "Could not get Function URL for ${PE_FUNCTION}"
+if [[ -z "$AF_URL" || "$AF_URL" == "None" ]]; then
+    log_error "Could not get Function URL for ${AF_FUNCTION}"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 else
-    log_info "URL: ${PE_URL}"
+    log_info "URL: ${AF_URL}"
 
     # Test 3: Health endpoint
-    run_test "Prediction Ensemble - Health Check" \
-        "curl -sf --max-time ${TIMEOUT_SECONDS} '${PE_URL}health' | jq -e '.status == \"healthy\"' > /dev/null" || true
-
-    # Test 4: Analyze endpoint with AAPL (baseline ticker)
-    run_test "Prediction Ensemble - Analyze (AAPL)" \
-        "RESPONSE=\$(curl -sf --max-time ${TIMEOUT_SECONDS} -X POST '${PE_URL}analyze' -H 'Content-Type: application/json' -d '{\"ticker\": \"AAPL\", \"analysis_type\": \"all\"}'); echo \"\$RESPONSE\" | jq -e '.model_inference.debt.prediction' > /dev/null" || true
+    run_test "Analysis Followup - Health Check" \
+        "curl -sf --max-time ${TIMEOUT_SECONDS} '${AF_URL}health' | jq -e '.status == \"healthy\"' > /dev/null" || true
 fi
 
 # =============================================================================
@@ -197,7 +193,7 @@ else
     echo -e "  1. Check CloudWatch logs for errors"
     echo -e "  2. Verify Lambda functions deployed correctly"
     echo -e "  3. Check DynamoDB tables are accessible"
-    echo -e "  4. Verify S3 model files exist (prediction-ensemble)"
+    echo -e "  4. Verify Bedrock model access is configured"
     echo ""
     exit 1
 fi
