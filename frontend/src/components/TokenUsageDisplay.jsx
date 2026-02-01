@@ -62,9 +62,7 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
   const getTierInfo = () => {
     const tiers = {
       free: { name: 'Free', color: 'text-slate-600 dark:text-slate-400', badge: 'bg-slate-100 dark:bg-slate-700' },
-      basic: { name: 'Basic', color: 'text-blue-600 dark:text-blue-400', badge: 'bg-blue-100 dark:bg-blue-900/30' },
-      premium: { name: 'Premium', color: 'text-purple-600 dark:text-purple-400', badge: 'bg-purple-100 dark:bg-purple-900/30' },
-      pro: { name: 'Pro', color: 'text-amber-600 dark:text-amber-400', badge: 'bg-amber-100 dark:bg-amber-900/30' }
+      plus: { name: 'Plus', color: 'text-indigo-600 dark:text-indigo-400', badge: 'bg-indigo-100 dark:bg-indigo-900/30' },
     };
     return tiers[subscription_tier] || tiers.free;
   };

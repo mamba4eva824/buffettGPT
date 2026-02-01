@@ -18,7 +18,7 @@ Schema (DynamoDB token-usage table):
 - last_request_at: ISO timestamp of last request
 - subscribed_at: ISO timestamp when user first started using the service
 - reset_date: Pre-computed ISO timestamp for when usage resets (1st of next month)
-- subscription_tier: User's subscription tier (free/basic/premium/pro)
+- subscription_tier: User's subscription tier (free/plus)
 """
 
 import boto3
@@ -48,9 +48,8 @@ class TokenUsageTracker:
     # Default token limits by user tier
     DEFAULT_LIMITS = {
         'anonymous': 1000,
-        'authenticated': 50000,  # Testing limit
-        'premium': 500000,
-        'enterprise': float('inf')  # Unlimited
+        'free': 50000,   # Free tier (authenticated)
+        'plus': 500000,  # Plus subscription tier
     }
 
     def __init__(self, table_name: Optional[str] = None, dynamodb_resource=None):
