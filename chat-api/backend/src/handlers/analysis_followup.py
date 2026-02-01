@@ -107,10 +107,10 @@ bedrock_runtime_client = boto3.client(
     region_name=os.environ.get('BEDROCK_REGION', 'us-east-1')
 )
 
-# Model ID for direct invocation (Claude 4.5 Haiku via cross-region inference profile)
+# Model ID for direct invocation (Claude 4.5 Haiku via US cross-region inference profile)
 FOLLOWUP_MODEL_ID = os.environ.get(
     'FOLLOWUP_MODEL_ID',
-    'us.anthropic.claude-4-5-haiku-20250514-v1:0'
+    'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 )
 
 # Keep backward compatibility alias
@@ -322,21 +322,6 @@ def save_followup_message(
         return None
 
 
-# Agent configuration
-AGENT_CONFIG = {
-    'debt': {
-        'agent_id': os.environ.get('DEBT_AGENT_ID'),
-        'agent_alias': os.environ.get('DEBT_AGENT_ALIAS'),
-    },
-    'cashflow': {
-        'agent_id': os.environ.get('CASHFLOW_AGENT_ID'),
-        'agent_alias': os.environ.get('CASHFLOW_AGENT_ALIAS'),
-    },
-    'growth': {
-        'agent_id': os.environ.get('GROWTH_AGENT_ID'),
-        'agent_alias': os.environ.get('GROWTH_AGENT_ALIAS'),
-    }
-}
 
 
 def format_sse_event(data: str, event_type: str = "message") -> str:
@@ -447,44 +432,6 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
                 **create_token_limit_error_response(limit_check),
                 "timestamp": datetime.utcnow().isoformat() + 'Z'
             }), "error")
-            return
-
-        # Get agent config
-        config = AGENT_CONFIG.get(agent_type, {})
-        agent_id = config.get('agent_id')
-        agent_alias = config.get('agent_alias')
-
-        if not agent_id or not agent_alias:
-            # Fallback response if agent not configured
-            fallback_response = f"I understand you're asking about {ticker}'s {agent_type} analysis: \"{question}\"\n\n*Full follow-up responses require Bedrock agent configuration.*\n"
-
-            yield format_sse_event(json.dumps({
-                "type": "chunk",
-                "text": f"I understand you're asking about {ticker}'s {agent_type} analysis: \"{question}\"\n\n",
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
-            }), "chunk")
-
-            yield format_sse_event(json.dumps({
-                "type": "chunk",
-                "text": "*Full follow-up responses require Bedrock agent configuration.*\n",
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
-            }), "chunk")
-
-            # Save user question even for fallback
-            save_followup_message(session_id, 'user', question, user_id, agent_type, ticker)
-            # Save fallback response
-            save_followup_message(session_id, 'assistant', fallback_response, user_id, agent_type, ticker)
-
-            # Record minimal token usage for fallback (estimated)
-            input_tokens = estimate_tokens(question)
-            output_tokens = estimate_tokens(fallback_response)
-            token_tracker.record_usage(user_id, input_tokens, output_tokens)
-
-            yield format_sse_event(json.dumps({
-                "type": "complete",
-                "session_id": session_id,
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
-            }), "complete")
             return
 
         logger.info(f"Follow-up question for session {session_id}: {question[:100]}...")
@@ -826,8 +773,8 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 yield {
                     "statusCode": 401,
                     "headers": {
-                        "Content-Type": "application/json",
-                        "Access-Control-Allow-Origin": "*"
+                        "Content-Type": "application/json"
+                        # Note: CORS headers handled by Lambda Function URL CORS config
                     }
                 }
                 yield json.dumps({
@@ -878,7 +825,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 'statusCode': 429,
                 'headers': {
                     'Content-Type': 'application/json',
-                    'Access-Control-Allow-Origin': '*',
+                    # Note: CORS headers handled by Lambda Function URL CORS config
                     'X-RateLimit-Limit': str(limit_check.get('token_limit', 0)),
                     'X-RateLimit-Remaining': '0',
                     'X-RateLimit-Reset': limit_check.get('reset_date', '')
@@ -889,13 +836,6 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                     'timestamp': datetime.utcnow().isoformat() + 'Z'
                 })
             }
-
-        config = AGENT_CONFIG.get(agent_type, {})
-        agent_id = config.get('agent_id')
-        agent_alias = config.get('agent_alias')
-
-        if not agent_id or not agent_alias:
-            return error_response(503, f"Agent {agent_type} not configured")
 
         # Save user question to DynamoDB
         user_message_id = save_followup_message(
@@ -1077,7 +1017,7 @@ Current context: {ticker} | {agent_type} analysis"""
             'statusCode': 200,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*',
+                # Note: CORS headers handled by Lambda Function URL CORS config
                 'X-RateLimit-Limit': str(usage_result.get('token_limit', 0)),
                 'X-RateLimit-Remaining': str(usage_result.get('remaining_tokens', 0)),
                 'X-RateLimit-Reset': token_tracker.get_reset_date()
@@ -1113,8 +1053,8 @@ def error_response(status_code: int, message: str) -> Dict[str, Any]:
     return {
         'statusCode': status_code,
         'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Content-Type': 'application/json'
+            # Note: CORS headers handled by Lambda Function URL CORS config
         },
         'body': json.dumps({
             'success': False,
