@@ -16,6 +16,9 @@ Schema (DynamoDB token-usage table):
 - notified_90: True if 90% notification sent
 - limit_reached_at: ISO timestamp when limit hit
 - last_request_at: ISO timestamp of last request
+- subscribed_at: ISO timestamp when user first started using the service
+- reset_date: Pre-computed ISO timestamp for when usage resets (1st of next month)
+- subscription_tier: User's subscription tier (free/plus)
 """
 
 import boto3
@@ -43,11 +46,11 @@ class TokenUsageTracker:
     """
 
     # Default token limits by user tier
+    # Note: Free users cannot use follow-up feature (plus only)
     DEFAULT_LIMITS = {
-        'anonymous': 1000,
-        'authenticated': 50000,  # Testing limit
-        'premium': 500000,
-        'enterprise': float('inf')  # Unlimited
+        'anonymous': 0,      # No access
+        'free': 0,           # No follow-up access (plus feature only)
+        'plus': 1000000,     # 1M tokens/month
     }
 
     def __init__(self, table_name: Optional[str] = None, dynamodb_resource=None):
@@ -196,6 +199,9 @@ class TokenUsageTracker:
             now = datetime.utcnow().isoformat() + 'Z'
             total_new_tokens = input_tokens + output_tokens
 
+            # Compute reset date for this billing period
+            reset_date = self.get_reset_date()
+
             # Atomic update using ADD
             response = self.table.update_item(
                 Key={
@@ -208,7 +214,10 @@ class TokenUsageTracker:
                         total_tokens :total,
                         request_count :one
                     SET last_request_at = :now,
-                        token_limit = if_not_exists(token_limit, :default_limit)
+                        token_limit = if_not_exists(token_limit, :default_limit),
+                        reset_date = if_not_exists(reset_date, :reset),
+                        subscribed_at = if_not_exists(subscribed_at, :now),
+                        subscription_tier = if_not_exists(subscription_tier, :default_tier)
                 ''',
                 ExpressionAttributeValues={
                     ':input': input_tokens,
@@ -216,7 +225,9 @@ class TokenUsageTracker:
                     ':total': total_new_tokens,
                     ':one': 1,
                     ':now': now,
-                    ':default_limit': self.default_token_limit
+                    ':default_limit': self.default_token_limit,
+                    ':reset': reset_date,
+                    ':default_tier': 'free'
                 },
                 ReturnValues='ALL_NEW'
             )
@@ -376,8 +387,10 @@ class TokenUsageTracker:
                 'percent_used': round(percent_used, 1),
                 'remaining_tokens': max(0, token_limit - total_tokens),
                 'request_count': request_count,
-                'reset_date': self.get_reset_date(),
-                'last_request_at': item.get('last_request_at')
+                'reset_date': item.get('reset_date', self.get_reset_date()),
+                'last_request_at': item.get('last_request_at'),
+                'subscribed_at': item.get('subscribed_at'),
+                'subscription_tier': item.get('subscription_tier', 'free')
             }
 
         except ClientError as e:
@@ -478,7 +491,9 @@ class TokenUsageTracker:
             'remaining_tokens': self.default_token_limit,
             'request_count': 0,
             'reset_date': self.get_reset_date(),
-            'last_request_at': None
+            'last_request_at': None,
+            'subscribed_at': None,
+            'subscription_tier': 'free'
         }
 
 

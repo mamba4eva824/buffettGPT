@@ -20,6 +20,8 @@ const initialState = {
   collapsedFollowUpIds: [], // Track which follow-up messages are collapsed
   // Interaction timeline - tracks chronological order of section views and follow-ups
   interactionLog: [], // [{type: 'section'|'followup', id: string, timestamp: string}]
+  // Token usage tracking - updated from SSE 'complete' events
+  tokenUsage: null, // { total_tokens, token_limit, percent_used, remaining_tokens, reset_date, request_count, subscription_tier }
 };
 
 // Action types
@@ -48,6 +50,8 @@ const ACTIONS = {
   LOG_SECTION_INTERACTION: 'LOG_SECTION_INTERACTION',
   LOG_FOLLOWUP_INTERACTION: 'LOG_FOLLOWUP_INTERACTION',
   SET_INTERACTION_LOG: 'SET_INTERACTION_LOG',
+  // Token usage tracking
+  SET_TOKEN_USAGE: 'SET_TOKEN_USAGE',
 };
 
 // Reducer
@@ -299,6 +303,12 @@ function researchReducer(state, action) {
       return {
         ...state,
         interactionLog: action.interactionLog || [],
+      };
+
+    case ACTIONS.SET_TOKEN_USAGE:
+      return {
+        ...state,
+        tokenUsage: action.tokenUsage,
       };
 
     default:
@@ -719,6 +729,10 @@ function handleSSEEvent(eventType, data, dispatch) {
 
     case 'complete':
       dispatch({ type: ACTIONS.SET_STATUS, status: 'complete' });
+      // Capture token usage if present in the complete event
+      if (data.token_usage) {
+        dispatch({ type: ACTIONS.SET_TOKEN_USAGE, tokenUsage: data.token_usage });
+      }
       break;
 
     case 'error':
