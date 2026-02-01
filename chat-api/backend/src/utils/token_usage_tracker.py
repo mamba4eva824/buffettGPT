@@ -24,7 +24,7 @@ Schema (DynamoDB token-usage table):
 import boto3
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 from decimal import Decimal
 from botocore.exceptions import ClientError
@@ -83,7 +83,7 @@ class TokenUsageTracker:
     @staticmethod
     def get_current_month() -> str:
         """Get current month in YYYY-MM format."""
-        return datetime.utcnow().strftime('%Y-%m')
+        return datetime.now(timezone.utc).strftime('%Y-%m')
 
     @staticmethod
     def get_reset_date() -> str:
@@ -93,14 +93,14 @@ class TokenUsageTracker:
         Returns:
             ISO timestamp string of when the usage resets.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if now.month == 12:
             reset = now.replace(year=now.year + 1, month=1, day=1,
                                hour=0, minute=0, second=0, microsecond=0)
         else:
             reset = now.replace(month=now.month + 1, day=1,
                                hour=0, minute=0, second=0, microsecond=0)
-        return reset.isoformat() + 'Z'
+        return reset.isoformat().replace('+00:00', 'Z')
 
     def check_limit(self, user_id: str) -> Dict[str, Any]:
         """
@@ -196,7 +196,7 @@ class TokenUsageTracker:
 
         try:
             current_month = self.get_current_month()
-            now = datetime.utcnow().isoformat() + 'Z'
+            now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             total_new_tokens = input_tokens + output_tokens
 
             # Compute reset date for this billing period
@@ -307,7 +307,7 @@ class TokenUsageTracker:
         if percent >= 100 and not limit_reached_at:
             threshold_reached = '100%'
             update_expr_parts.append('limit_reached_at = :limit_time')
-            expr_values[':limit_time'] = datetime.utcnow().isoformat() + 'Z'
+            expr_values[':limit_time'] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
 
         # Check 90%
         elif percent >= 90 and not notified_90:

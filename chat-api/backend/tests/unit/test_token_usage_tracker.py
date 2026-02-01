@@ -11,9 +11,10 @@ import os
 import sys
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from botocore.exceptions import ClientError
+from freezegun import freeze_time
 
 # Ensure src is in path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
@@ -104,17 +105,16 @@ class TestGetResetDate:
         assert reset_dt.minute == 0
         assert reset_dt.second == 0
 
+    @freeze_time("2025-12-15 10:30:00", tz_offset=0)
     def test_december_wraps_to_january(self):
         """Test that December correctly wraps to January next year."""
         from utils.token_usage_tracker import TokenUsageTracker
 
-        with patch('utils.token_usage_tracker.datetime') as mock_datetime:
-            mock_datetime.utcnow.return_value = datetime(2025, 12, 15, 10, 30, 0)
+        result = TokenUsageTracker.get_reset_date()
 
-            result = TokenUsageTracker.get_reset_date()
-
-            # Should be January 1st, 2026
-            assert '2026-01-01' in result
+        # Should be January 1st, 2026
+        assert '2026-01-01' in result
+        assert result.endswith('Z')
 
 
 class TestCheckLimit:

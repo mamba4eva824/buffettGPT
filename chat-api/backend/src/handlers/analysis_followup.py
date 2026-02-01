@@ -20,7 +20,7 @@ import logging
 import jwt
 import uuid
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from functools import lru_cache
 
@@ -291,8 +291,8 @@ def save_followup_message(
     try:
         # Use milliseconds for timestamp to prevent key collisions when saving
         # user question and assistant response in quick succession
-        timestamp_unix = int(datetime.utcnow().timestamp() * 1000)
-        timestamp_iso = datetime.utcnow().isoformat() + 'Z'
+        timestamp_unix = int(datetime.now(timezone.utc).timestamp() * 1000)
+        timestamp_iso = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         message_id = str(uuid.uuid4())
 
         message_record = {
@@ -430,7 +430,7 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
             yield format_sse_event(json.dumps({
                 "type": "token_limit_exceeded",
                 **create_token_limit_error_response(limit_check),
-                "timestamp": datetime.utcnow().isoformat() + 'Z'
+                "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             }), "error")
             return
 
@@ -549,7 +549,7 @@ Current context: {ticker} | {agent_type} analysis"""
                         yield format_sse_event(json.dumps({
                             "type": "chunk",
                             "text": chunk_text,
-                            "timestamp": datetime.utcnow().isoformat() + 'Z'
+                            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                         }), "chunk")
 
                     if 'toolUse' in delta:
@@ -703,7 +703,7 @@ Current context: {ticker} | {agent_type} analysis"""
                 "remaining_tokens": usage_result.get('remaining_tokens'),
                 "threshold_reached": threshold
             },
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }), "complete")
 
     except Exception as e:
@@ -711,7 +711,7 @@ Current context: {ticker} | {agent_type} analysis"""
         yield format_sse_event(json.dumps({
             "type": "error",
             "message": str(e),
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }), "error")
 
 
@@ -776,7 +776,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
             'service': 'analysis-followup',
             'environment': os.environ.get('ENVIRONMENT', 'unknown'),
             'model_id': FOLLOWUP_MODEL_ID,
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         }
         # For Lambda Function URL, return body directly (no statusCode wrapper)
         # Lambda Function URL with RESPONSE_STREAM passes through non-generator returns as-is
@@ -807,7 +807,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 yield json.dumps({
                     "success": False,
                     "error": "Unauthorized - valid JWT token required",
-                    "timestamp": datetime.utcnow().isoformat() + 'Z'
+                    "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 })
             # IMPORTANT: return the generator, don't yield from it
             # Using yield from would make lambda_handler itself a generator,
@@ -860,7 +860,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
                 'body': json.dumps({
                     'success': False,
                     **create_token_limit_error_response(limit_check),
-                    'timestamp': datetime.utcnow().isoformat() + 'Z'
+                    'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
                 })
             }
 
@@ -1066,7 +1066,7 @@ Current context: {ticker} | {agent_type} analysis"""
                     'remaining_tokens': usage_result.get('remaining_tokens'),
                     'threshold_reached': threshold
                 },
-                'timestamp': datetime.utcnow().isoformat() + 'Z'
+                'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
             })
         }
 
@@ -1086,6 +1086,6 @@ def error_response(status_code: int, message: str) -> Dict[str, Any]:
         'body': json.dumps({
             'success': False,
             'error': message,
-            'timestamp': datetime.utcnow().isoformat() + 'Z'
+            'timestamp': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         })
     }
