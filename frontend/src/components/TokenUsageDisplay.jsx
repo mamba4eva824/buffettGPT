@@ -22,9 +22,6 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
     subscription_tier = 'free'
   } = tokenUsage || {};
 
-  // Free users don't have follow-up access
-  const hasFollowUpAccess = subscription_tier === 'plus' && token_limit > 0;
-
   // Calculate percentage remaining (inverse of percent_used)
   const percentRemaining = Math.max(0, 100 - percent_used);
 
@@ -74,50 +71,7 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
   const showWarning = percent_used >= 75;
   const limitReached = percent_used >= 100;
 
-  // Free tier - show upgrade prompt instead of usage
-  if (!hasFollowUpAccess) {
-    return (
-      <div className="space-y-4">
-        {/* Header with tier badge */}
-        <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-            <Zap className="h-3.5 w-3.5" />
-            Follow-up Questions
-          </label>
-          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${tierInfo.badge} ${tierInfo.color}`}>
-            {tierInfo.name}
-          </span>
-        </div>
-
-        {/* Upgrade prompt card */}
-        <div className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/20 p-4">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-800 flex items-center justify-center">
-              <Zap className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-            </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium text-indigo-900 dark:text-indigo-100">
-                Plus Feature
-              </p>
-              <p className="text-xs text-indigo-700 dark:text-indigo-300 mt-1">
-                Follow-up questions on investment reports are available with Plus. Get 1M tokens per month to dive deeper into any analysis.
-              </p>
-            </div>
-          </div>
-          {onUpgrade && (
-            <button
-              onClick={onUpgrade}
-              className="mt-3 w-full text-xs font-medium py-2 px-3 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
-            >
-              Upgrade to Plus
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Plus tier - show full usage tracking
+  // Always show usage tracking regardless of tier (for development)
   return (
     <div className="space-y-4">
       {/* Header with tier badge */}
