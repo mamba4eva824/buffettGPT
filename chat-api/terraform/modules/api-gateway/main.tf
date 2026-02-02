@@ -645,3 +645,137 @@ resource "aws_lambda_permission" "websocket_authorizer_permission" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.websocket_api.execution_arn}/authorizers/${aws_apigatewayv2_authorizer.websocket_jwt_authorizer[0].id}"
 }
+
+# ================================================
+# Subscription API Routes and Integrations
+# ================================================
+
+# Subscription Handler Integration
+resource "aws_apigatewayv2_integration" "subscription_handler_integration" {
+  count            = var.enable_subscription_routes ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["subscription_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# POST /subscription/checkout - Create Stripe Checkout session
+resource "aws_apigatewayv2_route" "subscription_checkout" {
+  count     = var.enable_subscription_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "POST /subscription/checkout"
+  target    = "integrations/${aws_apigatewayv2_integration.subscription_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# POST /subscription/portal - Create Stripe Customer Portal session
+resource "aws_apigatewayv2_route" "subscription_portal" {
+  count     = var.enable_subscription_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "POST /subscription/portal"
+  target    = "integrations/${aws_apigatewayv2_integration.subscription_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# GET /subscription/status - Get subscription status
+resource "aws_apigatewayv2_route" "subscription_status" {
+  count     = var.enable_subscription_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /subscription/status"
+  target    = "integrations/${aws_apigatewayv2_integration.subscription_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# OPTIONS /subscription/checkout - CORS preflight
+resource "aws_apigatewayv2_route" "subscription_checkout_options" {
+  count     = var.enable_subscription_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /subscription/checkout"
+  target    = "integrations/${aws_apigatewayv2_integration.subscription_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /subscription/portal - CORS preflight
+resource "aws_apigatewayv2_route" "subscription_portal_options" {
+  count     = var.enable_subscription_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /subscription/portal"
+  target    = "integrations/${aws_apigatewayv2_integration.subscription_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /subscription/status - CORS preflight
+resource "aws_apigatewayv2_route" "subscription_status_options" {
+  count     = var.enable_subscription_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /subscription/status"
+  target    = "integrations/${aws_apigatewayv2_integration.subscription_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# Subscription Handler Lambda Permission
+resource "aws_lambda_permission" "subscription_api_permission" {
+  count         = var.enable_subscription_routes ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPISubscription"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["subscription_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
+
+# ================================================
+# Stripe Webhook Route and Integration
+# ================================================
+
+# Stripe Webhook Handler Integration
+resource "aws_apigatewayv2_integration" "stripe_webhook_integration" {
+  count            = var.enable_stripe_webhook ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["stripe_webhook_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# POST /stripe/webhook - Stripe webhook endpoint (NO AUTH - Stripe signs requests)
+resource "aws_apigatewayv2_route" "stripe_webhook" {
+  count     = var.enable_stripe_webhook ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "POST /stripe/webhook"
+  target    = "integrations/${aws_apigatewayv2_integration.stripe_webhook_integration[0].id}"
+
+  # No authorization - Stripe uses webhook signature verification
+  authorization_type = "NONE"
+}
+
+# Stripe Webhook Handler Lambda Permission
+resource "aws_lambda_permission" "stripe_webhook_api_permission" {
+  count         = var.enable_stripe_webhook ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPIStripeWebhook"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["stripe_webhook_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}

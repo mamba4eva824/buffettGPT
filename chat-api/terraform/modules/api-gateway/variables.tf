@@ -132,3 +132,19 @@ variable "investment_research_function_name" {
   type        = string
   default     = ""
 }
+
+# ============================================================================
+# Stripe/Subscription API Variables
+# ============================================================================
+
+variable "enable_subscription_routes" {
+  description = "Enable subscription management routes (checkout, portal, status)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_stripe_webhook" {
+  description = "Enable Stripe webhook endpoint"
+  type        = bool
+  default     = false
+}

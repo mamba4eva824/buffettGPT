@@ -82,7 +82,8 @@ locals {
     METRICS_HISTORY_CACHE_TABLE = try(module.dynamodb.metrics_history_cache_table_name, "")
 
     # Token Usage Tracking (monthly limits for follow-up agent)
-    TOKEN_USAGE_TABLE = try(module.dynamodb.token_usage_table_name, "")
+    TOKEN_USAGE_TABLE   = try(module.dynamodb.token_usage_table_name, "")
+    DEFAULT_TOKEN_LIMIT = "100000"  # 100K tokens for dev/testing
 
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
@@ -96,6 +97,19 @@ locals {
     }
     chat_processor = {
       # Additional environment variables can be added here if needed
+    }
+    stripe_webhook_handler = {
+      STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
+      STRIPE_WEBHOOK_SECRET_ARN  = module.stripe.stripe_webhook_secret_arn
+      STRIPE_PLUS_PRICE_ID_ARN   = module.stripe.stripe_plus_price_id_arn
+      TOKEN_LIMIT_PLUS           = tostring(module.stripe.token_limit_plus)
+      USERS_TABLE                = var.enable_authentication ? module.auth[0].users_table_name : ""
+    }
+    subscription_handler = {
+      STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
+      STRIPE_PLUS_PRICE_ID_ARN   = module.stripe.stripe_plus_price_id_arn
+      STRIPE_PUBLISHABLE_KEY_ARN = module.stripe.stripe_publishable_key_arn
+      USERS_TABLE                = var.enable_authentication ? module.auth[0].users_table_name : ""
     }
   }
 }
@@ -227,6 +241,10 @@ module "api_gateway" {
   investment_research_function_name   = module.lambda.investment_research_docker_function_name
   analysis_followup_function_url      = module.lambda.analysis_followup_url
 
+  # Subscription/Stripe API (checkout, portal, status, webhook)
+  enable_subscription_routes = true
+  enable_stripe_webhook      = true
+
   common_tags = local.common_tags
 }
 
@@ -327,6 +345,29 @@ module "bedrock" {
   enable_followup_action_group         = true
   followup_action_lambda_arn           = module.lambda.followup_action_arn
   followup_action_lambda_function_name = module.lambda.followup_action_name
+}
+
+# ================================================
+# Stripe Module - Payment Integration
+# ================================================
+
+module "stripe" {
+  source = "../../modules/stripe"
+
+  environment = local.environment
+  common_tags = local.common_tags
+
+  # Token limit for Plus subscribers (2M tokens/month)
+  token_limit_plus = 2000000
+
+  # Secrets are set manually in AWS Console after initial deployment
+  # See: docs/stripe/STRIPE_INTEGRATION_GUIDE.md for manual secret setup
+}
+
+# Attach Stripe secrets policy to Lambda execution role
+resource "aws_iam_role_policy_attachment" "lambda_stripe_secrets" {
+  role       = module.core.lambda_role_name
+  policy_arn = module.stripe.stripe_secrets_policy_arn
 }
 
 # ================================================

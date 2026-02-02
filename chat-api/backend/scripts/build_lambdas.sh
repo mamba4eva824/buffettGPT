@@ -35,6 +35,8 @@ FUNCTIONS=(
     "websocket_disconnect"
     "websocket_message"
     "analysis_followup"
+    "stripe_webhook_handler"
+    "subscription_handler"
 )
 
 # Build each function
