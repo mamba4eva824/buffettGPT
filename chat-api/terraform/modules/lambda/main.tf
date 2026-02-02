@@ -54,6 +54,18 @@ locals {
       memory_size = 256
       description = "Follow-up question handler with session memory"
     }
+    stripe_webhook_handler = {
+      handler     = "stripe_webhook_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Stripe webhook event processor"
+    }
+    subscription_handler = {
+      handler     = "subscription_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Subscription checkout, portal, and status API"
+    }
   }
 }
 

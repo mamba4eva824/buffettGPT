@@ -59,6 +59,16 @@ output "conversations_handler_arn" {
   value       = try(aws_lambda_function.functions["conversations_handler"].arn, null)
 }
 
+output "stripe_webhook_handler_arn" {
+  description = "ARN of the Stripe webhook handler function"
+  value       = try(aws_lambda_function.functions["stripe_webhook_handler"].arn, null)
+}
+
+output "subscription_handler_arn" {
+  description = "ARN of the subscription handler function"
+  value       = try(aws_lambda_function.functions["subscription_handler"].arn, null)
+}
+
 # Log Groups
 output "log_groups" {
   description = "Map of CloudWatch log group names"
