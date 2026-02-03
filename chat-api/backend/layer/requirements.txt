@@ -14,3 +14,6 @@ python-dateutil>=2.8.0
 # Perplexity AI
 perplexityai>=0.13.0
 python-dotenv>=1.1.1
+
+# Stripe payments
+stripe>=8.0.0

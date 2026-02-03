@@ -90,6 +90,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     handlers = {
         'checkout.session.completed': handle_checkout_completed,
+        'customer.subscription.created': handle_subscription_created,
         'invoice.payment_succeeded': handle_invoice_paid,
         'invoice.payment_failed': handle_invoice_failed,
         'customer.subscription.deleted': handle_subscription_deleted,
@@ -170,6 +171,69 @@ def handle_checkout_completed(session: Dict[str, Any]) -> None:
             }
         )
         logger.info(f"Updated user {user_id} to Plus tier")
+    except ClientError as e:
+        logger.error(f"Failed to update user record: {str(e)}")
+        raise
+
+    # Initialize token usage for the new billing period
+    _initialize_plus_token_usage(user_id, billing_day)
+
+
+def handle_subscription_created(subscription: Dict[str, Any]) -> None:
+    """
+    Activate subscription created via API (not checkout flow).
+
+    This handles subscriptions created directly via Stripe API with user_id in metadata.
+    For checkout-created subscriptions, handle_checkout_completed is used instead.
+
+    Args:
+        subscription: Stripe Subscription object
+    """
+    subscription_id = subscription.get('id')
+    customer_id = subscription.get('customer')
+    status = subscription.get('status')
+    metadata = subscription.get('metadata', {})
+    user_id = metadata.get('user_id')
+
+    if not user_id:
+        # Try to find existing user by customer_id
+        user = _find_user_by_customer_id(customer_id)
+        if user:
+            user_id = user.get('user_id')
+
+    if not user_id:
+        logger.warning(f"No user_id found for subscription {subscription_id}, skipping activation")
+        return
+
+    logger.info(f"Activating subscription for user {user_id}, subscription {subscription_id}")
+
+    now = datetime.now(timezone.utc)
+    billing_day = now.day
+
+    # Update user record
+    try:
+        users_table.update_item(
+            Key={'user_id': user_id},
+            UpdateExpression='''
+                SET stripe_customer_id = :customer_id,
+                    stripe_subscription_id = :subscription_id,
+                    subscription_tier = :tier,
+                    subscription_status = :status,
+                    billing_day = :billing_day,
+                    subscription_activated_at = :activated_at,
+                    updated_at = :updated_at
+            ''',
+            ExpressionAttributeValues={
+                ':customer_id': customer_id,
+                ':subscription_id': subscription_id,
+                ':tier': 'plus',
+                ':status': status,
+                ':billing_day': billing_day,
+                ':activated_at': now.isoformat().replace('+00:00', 'Z'),
+                ':updated_at': now.isoformat().replace('+00:00', 'Z'),
+            }
+        )
+        logger.info(f"Updated user {user_id} to Plus tier via subscription.created")
     except ClientError as e:
         logger.error(f"Failed to update user record: {str(e)}")
         raise

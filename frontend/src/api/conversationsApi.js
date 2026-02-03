@@ -108,7 +108,15 @@ export const conversationsApi = {
    * PUT /conversations/:id
    */
   updateResearchState: async (conversationId, researchState, token) => {
-    return apiCall(CONVERSATION_ENDPOINTS.UPDATE(conversationId), {
+    // DEBUG: Log what we're sending to the API
+    console.log('[API DEBUG] updateResearchState - sending to API:', {
+      conversationId,
+      visible_sections: researchState?.visible_sections,
+      active_section_id: researchState?.active_section_id,
+      full_payload: { metadata: { research_state: researchState } },
+    });
+
+    const result = await apiCall(CONVERSATION_ENDPOINTS.UPDATE(conversationId), {
       method: 'PUT',
       body: JSON.stringify({
         metadata: {
@@ -116,6 +124,10 @@ export const conversationsApi = {
         }
       })
     }, token);
+
+    // DEBUG: Log API response
+    console.log('[API DEBUG] updateResearchState - API response:', result);
+    return result;
   },
 
   /**
@@ -157,6 +169,15 @@ export async function loadConversationHistory(conversationId, token) {
   try {
     // First get the conversation details
     const conversation = await conversationsApi.get(conversationId, token);
+
+    // DEBUG: Log raw conversation response to trace visible_sections persistence
+    console.log('[API DEBUG] conversationsApi.get raw response:', {
+      conversationId,
+      full_response: conversation,
+      metadata: conversation?.metadata,
+      research_state: conversation?.metadata?.research_state,
+      visible_sections: conversation?.metadata?.research_state?.visible_sections,
+    });
 
     // Then get the messages
     const messages = await conversationsApi.getMessages(conversationId, token);

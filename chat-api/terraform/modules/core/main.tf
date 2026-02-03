@@ -82,7 +82,10 @@ resource "aws_iam_policy" "lambda_policy" {
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/investment-reports-v2-${var.environment}/index/*",
           # Metrics History table (pre-computed metrics by category)
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/metrics-history-${var.environment}",
-          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/metrics-history-${var.environment}/index/*"
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/metrics-history-${var.environment}/index/*",
+          # Token Usage table (new naming: resource-env-project)
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/token-usage-${var.environment}-${var.project_name}",
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/token-usage-${var.environment}-${var.project_name}/index/*"
         ]
       },
       # SQS Access
