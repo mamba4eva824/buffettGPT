@@ -1,5 +1,4 @@
-import React from 'react';
-import { Zap, Calendar, AlertTriangle, TrendingUp } from 'lucide-react';
+import { Zap, Calendar, AlertTriangle, TrendingUp, Crown } from 'lucide-react';
 
 /**
  * TokenUsageDisplay - Shows monthly token usage in settings
@@ -9,11 +8,11 @@ import { Zap, Calendar, AlertTriangle, TrendingUp } from 'lucide-react';
  * - Percentage remaining
  * - Reset date
  * - Warning when approaching limit
+ * - Upgrade prompt for free users
  */
 export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgrade }) {
   // Default values when no usage data available
   const {
-    total_tokens = 0,
     token_limit = 0,
     percent_used = 0,
     remaining_tokens = 0,
@@ -150,6 +149,33 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
           </div>
         )}
       </div>
+
+      {/* Upgrade prompt for free users */}
+      {subscription_tier === 'free' && isAuthenticated && onUpgrade && (
+        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg">
+                <Crown className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                  Need more tokens?
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Get 2M tokens/month with Buffett Plus
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onUpgrade}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
+            >
+              Upgrade
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Helper text */}
       <p className="text-[11px] text-slate-400 dark:text-slate-500">

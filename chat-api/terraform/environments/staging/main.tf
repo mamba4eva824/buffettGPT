@@ -57,6 +57,10 @@ locals {
     # WebSocket endpoint for API Gateway Management API (needed by multiple functions)
     # Format: {api-id}.execute-api.{region}.amazonaws.com/{stage}
     WEBSOCKET_API_ENDPOINT = try("${module.api_gateway.websocket_api_id}.execute-api.us-east-1.amazonaws.com/${local.environment}", "")
+
+    # Token Usage Tracking (monthly limits for follow-up agent)
+    TOKEN_USAGE_TABLE   = try(module.dynamodb.token_usage_table_name, "")
+    DEFAULT_TOKEN_LIMIT = "500000"  # 500K tokens for staging/testing
   }
 
   # Function-specific environment variables

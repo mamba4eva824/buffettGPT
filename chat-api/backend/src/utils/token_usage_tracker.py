@@ -712,6 +712,148 @@ class TokenUsageTracker:
             logger.error(f"Failed to reset notifications: {str(e)}")
             return False
 
+    def update_subscription(
+        self,
+        user_id: str,
+        subscription_tier: str,
+        token_limit: Optional[int] = None,
+        billing_day: Optional[int] = None
+    ) -> bool:
+        """
+        Update user's subscription tier and token limit.
+
+        Called when subscription is activated, renewed, or canceled.
+        Creates/updates the token usage record for the current billing period.
+
+        Args:
+            user_id: User identifier.
+            subscription_tier: New tier ('free' or 'plus').
+            token_limit: Optional custom token limit (defaults based on tier).
+            billing_day: Optional billing day (defaults to current day for new subs).
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if not self.table:
+            logger.warning("Token usage table not available")
+            return False
+
+        try:
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat().replace('+00:00', 'Z')
+
+            # Determine billing day
+            if billing_day is None:
+                # For new subscriptions, use today
+                # For existing users, try to preserve their billing day
+                existing_billing_day = self.get_billing_day(user_id)
+                billing_day = existing_billing_day if existing_billing_day else now.day
+
+            # Determine token limit based on tier
+            if token_limit is None:
+                token_limit = self.DEFAULT_LIMITS.get(subscription_tier, 0)
+
+            # Get current billing period
+            billing_period, period_start, period_end = self.get_current_billing_period(billing_day)
+
+            # Update or create token usage record
+            self.table.update_item(
+                Key={
+                    'user_id': user_id,
+                    'billing_period': billing_period
+                },
+                UpdateExpression='''
+                    SET subscription_tier = :tier,
+                        token_limit = :limit,
+                        billing_day = :billing_day,
+                        billing_period_start = if_not_exists(billing_period_start, :period_start),
+                        billing_period_end = if_not_exists(billing_period_end, :period_end),
+                        reset_date = :reset_date,
+                        updated_at = :now
+                ''',
+                ExpressionAttributeValues={
+                    ':tier': subscription_tier,
+                    ':limit': token_limit,
+                    ':billing_day': billing_day,
+                    ':period_start': period_start,
+                    ':period_end': period_end,
+                    ':reset_date': period_end,
+                    ':now': now_iso,
+                }
+            )
+
+            logger.info(
+                f"Updated subscription for {user_id}: tier={subscription_tier}, "
+                f"limit={token_limit}, billing_day={billing_day}"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to update subscription: {str(e)}")
+            return False
+
+    def reset_usage_for_new_period(
+        self,
+        user_id: str,
+        billing_day: Optional[int] = None
+    ) -> bool:
+        """
+        Reset token usage for a new billing period (subscription renewal).
+
+        Creates a new billing period record with zero usage.
+
+        Args:
+            user_id: User identifier.
+            billing_day: User's billing day (1-31).
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if not self.table:
+            return False
+
+        try:
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat().replace('+00:00', 'Z')
+
+            # Get billing day if not provided
+            if billing_day is None:
+                billing_day = self.get_billing_day(user_id)
+
+            # Get current billing period
+            billing_period, period_start, period_end = self.get_current_billing_period(billing_day)
+
+            # Get user's current tier and limit
+            existing = self.get_usage(user_id)
+            tier = existing.get('subscription_tier', 'free')
+            limit = existing.get('token_limit', self.default_token_limit)
+
+            # Create new period record (or reset existing)
+            self.table.put_item(
+                Item={
+                    'user_id': user_id,
+                    'billing_period': billing_period,
+                    'billing_day': billing_day,
+                    'billing_period_start': period_start,
+                    'billing_period_end': period_end,
+                    'input_tokens': 0,
+                    'output_tokens': 0,
+                    'total_tokens': 0,
+                    'request_count': 0,
+                    'token_limit': limit,
+                    'reset_date': period_end,
+                    'subscription_tier': tier,
+                    'subscribed_at': now_iso,
+                }
+            )
+
+            logger.info(f"Reset usage for {user_id} for period {billing_period}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to reset usage: {str(e)}")
+            return False
+
     def _create_allowed_response(
         self,
         total_tokens: int,
