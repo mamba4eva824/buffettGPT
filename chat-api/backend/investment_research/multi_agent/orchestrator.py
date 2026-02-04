@@ -805,10 +805,7 @@ def main():
     elif args.djia:
         tickers = get_index_tickers('DJIA')
     elif args.sp100:
-        # Use S&P 500 list, take top 100 by market cap (simplified)
-        # TODO: Implement actual S&P 100 list
-        tickers = get_index_tickers('SP500')[:10]  # Placeholder
-        print("Note: Using first 10 of S&P 500 as S&P 100 placeholder")
+        tickers = get_index_tickers('SP100')
     elif args.sp500:
         tickers = get_index_tickers('SP500')
     elif args.test:
