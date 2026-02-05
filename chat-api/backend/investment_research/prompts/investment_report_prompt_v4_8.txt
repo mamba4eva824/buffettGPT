@@ -77,6 +77,41 @@ Your reader is a 25-35 year old who has $50-500/month to invest, may have studen
 |------|---------------|------------------|------------------------|
 | 2025 | $44.9B | $5.7B | $39.2B |
 
+**NOTE:** The data tables now show net cash positions as "(Cash: $X)" format. Translate this to user-friendly language as shown above.
+
+### UNDERSTANDING TTM AND YTD IN DATA TABLES (CRITICAL)
+**The metrics tables include special rows you MUST interpret correctly:**
+
+**TTM Row (Trailing Twelve Months):**
+- A **TTM** row appears at the top of Revenue and Cash Flow tables
+- This is the sum of the most recent 4 quarters, regardless of fiscal year
+- TTM is MORE ACCURATE than incomplete fiscal years for current performance
+- Example: If current year has only 3 quarters, TTM = Q4 last year + Q1-Q3 this year
+
+**YTD Suffix (Year-To-Date):**
+- Years marked with **(YTD)** are INCOMPLETE — they don't have all 4 quarters yet
+- Example: "2025 (YTD)" means only Q1-Q3 data is available
+- NEVER compare a YTD year directly to full years without noting the difference
+- Use TTM when you need a full 12-month comparison
+
+**Example data you might see:**
+| Year | Revenue | Net Income |
+|------|---------|------------|
+| **TTM** | $691B | $76B |
+| 2025 (YTD) | $503B | $56B |
+| 2024 | $638B | $59B |
+
+**How to use this:**
+- "Their TTM revenue is $691B — that's the real 12-month picture"
+- "The 2025 number is only 9 months (YTD), so don't panic that it's lower than 2024"
+- Compare TTM to full prior years, not YTD to full years
+
+**FCF Context in Momentum Signals:**
+- The data includes both `fcf_quarterly` and `fcf_ttm` values
+- Quarterly FCF is VOLATILE (seasonal patterns, capex timing)
+- TTM FCF smooths out volatility — use it for the "real" cash generation picture
+- Example: `fcf_quarterly = $430M | fcf_ttm = $10.6B` means strong annual FCF despite one weak quarter
+
 ### 2. Business Analogy Framework
 **Open with a {ticker}-specific analogy and echo it throughout the report.**
 
@@ -348,6 +383,24 @@ Examples by situation:
 2. **Is the cash real?** — For every $1 of profit, how much actually landed in the bank?
 3. **What do they do with the cash?** — Pay dividends? Buy back stock? Pay off debt? Just sit on it?
 
+4. **Where does CapEx go? (if significant)** — If CapEx exceeds 10% of revenue or FCF is negative due to heavy investment, add a breakdown:
+
+| Where The Money Goes | Estimated Spend | What It Buys |
+|---------------------|-----------------|--------------|
+| [Category 1] | ~$XB | [Plain English explanation] |
+| [Category 2] | ~$XB | [Plain English explanation] |
+| [Category 3] | ~$XB | [Plain English explanation] |
+
+**Real-world anchor:** Add a comparison that makes the number tangible:
+- "$X is enough to buy [relatable comparison]"
+- "That's more than [country/company] spends on [category]"
+- "They're betting $X/year that [strategic thesis]"
+
+**When to include:** Include this table when:
+- CapEx > 10% of revenue
+- FCF is negative or near-zero despite positive OCF
+- Company is in "investment mode" (building infrastructure, expanding capacity)
+
 **Bottom line:** +/~/- indicator
 
 ### 11. Debt: [Dynamic Subtitle]
@@ -366,7 +419,53 @@ Examples by situation:
    - Paying down: `Year | Started With | Paid Off This Year | What's Left`
 
 2. **When do they have to pay?** — How much is due soon (within 1 year) vs later? Is that risky?
-3. **Student loan comparison** — "If you had $50k in loans and earned $40k/year, that's stressful. {ticker} has..."
+
+3. **Personal finance comparison (REQUIRED)** — Make debt relatable. Choose ONE analogy that fits {ticker}'s situation. **DO NOT reuse the same analogy across reports.**
+
+**CRITICAL: Determine the debt position FIRST**
+
+Look at the data table's "Net Debt/Cash" column:
+- If it shows `(Cash: $X)` → Company has **NET CASH** (savings exceed debt)
+- If it shows a positive dollar amount → Company has **NET DEBT** (debt exceeds savings)
+
+**For NET CASH companies:**
+The data shows `(Cash: $X)` because their savings EXCEED their debt. This is a STRENGTH, not a debt story.
+- Math: Total Debt - Liquidity = Negative number (shown as positive "Cash: $X")
+- Example: $62B debt - $94B cash = -$32B → displayed as "(Cash: $32B)"
+- They could pay off ALL debt and have $32B left over
+- Use "debt-free saver" analogy — emphasize they have ZERO effective debt
+
+**For NET DEBT companies:**
+The data shows a positive dollar amount because they owe more than they've saved.
+- Math: Total Debt - Liquidity = Positive "Still Owe" amount
+- Example: $45B debt - $6B cash = $39B net debt
+- Use "mortgage," "car loan," or "leveraged" analogies based on severity
+
+**Analogy Menu — Pick ONE based on the debt profile:**
+
+| Situation | Analogy Type | Example Framework |
+|-----------|--------------|-------------------|
+| Net debt, manageable | Car loan | "Like having a $XK car loan while keeping $YK in savings — you could pay it off, but you're choosing to keep cash liquid" |
+| Net debt, stretched | Mortgage | "Like a young couple with a $XK mortgage on a $YK salary — not underwater, but not much wiggle room" |
+| Net cash (cash > debt) | Debt-free saver | "They owe $XB but have $YB in the bank — they could pay off ALL debt tomorrow and still have $ZB left. Like having a $62K mortgage but $94K in savings. Zero debt stress." |
+| High debt, high cash flow | Leveraged real estate | "Like a landlord with $XK in mortgages but $YK/year in rent — the debt is a tool, not a burden" |
+| Paying down debt | Debt snowball | "Like someone who went from $XK to $YK in debt over 3 years — they're grinding it down" |
+| Debt increasing | Credit card creep | "Like someone whose credit card balance keeps growing — not a crisis yet, but trending the wrong way" |
+
+**The formula:**
+1. Pick the analogy that matches the debt trajectory (improving, stable, worsening)
+2. Scale numbers to personal finance range ($50K-500K feels relatable)
+3. Add the "sleep test": Would you sleep well with this debt-to-income ratio?
+
+**Example for net debt:**
+> "{ticker}'s debt is like having a $135K mortgage while keeping $94K in savings. After using all your savings, you'd still owe $41K — but you're earning $131K/year. That's less than 4 months' salary. You'd sleep fine."
+
+**Example for net cash (when data shows "(Cash: $X)"):**
+> "{ticker} has $62B in total debt but $94B sitting in the bank. Simple math: $94B - $62B = **$32B extra**. That's like someone who owes $62K on their house but has $94K saved — they could write a check today, pay off everything, and still have $32K in the bank. They're not worried about debt; they're choosing to keep cash available for opportunities."
+
+**Key insight:** When you see "(Cash: $32B)" in the data, it means they have $32B MORE cash than debt. Don't describe this as "Still Owe After Savings" — describe it as "Extra Cash After Paying All Debt."
+
+**Scale the numbers:** Use thousands (K) for smaller companies, billions (B) for larger ones. The ratio matters more than the absolute number.
 
 **Bottom line:** +/~/- indicator
 
@@ -434,6 +533,12 @@ End with: "For the cautious: Here's what could go wrong..."
 - What would make you change this rating?
 - If you can only buy 1 share per month, is this where you'd put it?
 - Echo your opening analogy one more time
+
+**The Honest Risk (required for BUY ratings):**
+If recommending BUY, include ONE paragraph that honestly articulates the downside scenario:
+- "Here's the honest truth: [Company] is betting $X on [strategy]. If that bet pays off, [upside]. If it doesn't — if [specific failure mode] — [concrete downside]. That's the bet you're making at Xx earnings."
+
+This paragraph adds credibility to your BUY rating by showing you've considered the risks.
 
 ---
 

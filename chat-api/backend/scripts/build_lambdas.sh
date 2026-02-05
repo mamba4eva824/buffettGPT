@@ -24,16 +24,13 @@ echo "Building Lambda layer..."
 
 # List of Lambda functions to package (zip-based)
 # NOTE: prediction_ensemble is Docker-based, see lambda/prediction_ensemble/
+# NOTE: WebSocket handlers (websocket_connect, websocket_disconnect, websocket_message,
+#       chat_processor, chat_http_handler) removed in Phase 2 of WebSocket deprecation
 FUNCTIONS=(
     "auth_callback"
     "auth_verify"
-    "chat_http_handler"
-    "chat_processor"
     "conversations_handler"
     "search_handler"
-    "websocket_connect"
-    "websocket_disconnect"
-    "websocket_message"
     "analysis_followup"
     "stripe_webhook_handler"
     "subscription_handler"

@@ -13,7 +13,7 @@ buffettGPT/
 ├── chat-api/                          # Backend API and infrastructure
 │   ├── backend/                       # Lambda functions and utilities
 │   │   ├── src/
-│   │   │   ├── handlers/              # 9 Lambda handler functions
+│   │   │   ├── handlers/              # Lambda handler functions
 │   │   │   └── utils/                 # Utilities (rate limiting, logging)
 │   │   ├── layer/                     # Lambda layer dependencies
 │   │   ├── scripts/                   # Build scripts
@@ -44,7 +44,7 @@ buffettGPT/
 
 ### Backend
 - **Runtime**: Python 3.11
-- **Cloud**: AWS Lambda, API Gateway (HTTP + WebSocket), DynamoDB, SQS
+- **Cloud**: AWS Lambda, API Gateway (HTTP), DynamoDB
 - **AI**: Amazon Bedrock (Claude Haiku), Knowledge Bases, Guardrails
 - **Auth**: Google OAuth, JWT tokens
 - **IaC**: Terraform 1.9.1+
@@ -68,14 +68,12 @@ Located in `chat-api/backend/src/handlers/`:
 
 | Handler | Purpose |
 |---------|---------|
-| `chat_http_handler.py` | HTTP endpoint for chat requests (POST /chat, GET /health) |
-| `chat_processor.py` | Async SQS consumer, processes with Bedrock agent |
-| `websocket_connect.py` | WebSocket connection handler |
-| `websocket_message.py` | WebSocket message handler, enqueues to SQS |
-| `websocket_disconnect.py` | WebSocket disconnection cleanup |
 | `auth_callback.py` | Google OAuth callback, issues JWT tokens |
 | `auth_verify.py` | JWT verification authorizer |
 | `conversations_handler.py` | Chat history management (GET /conversations) |
+| `subscription_handler.py` | Stripe subscription management |
+| `stripe_webhook_handler.py` | Stripe webhook processing |
+| `analysis_followup.py` | Follow-up Agent for research report Q&A |
 | `search_handler.py` | Experimental search functionality |
 
 ---
@@ -87,9 +85,9 @@ Located in `chat-api/terraform/modules/`:
 | Module | Purpose |
 |--------|---------|
 | `core` | KMS encryption, IAM roles, SQS queues |
-| `dynamodb` | 8 DynamoDB tables (sessions, messages, connections, etc.) |
+| `dynamodb` | DynamoDB tables (messages, conversations, users, etc.) |
 | `lambda` | Lambda function deployment with layers |
-| `api-gateway` | HTTP and WebSocket API configuration |
+| `api-gateway` | HTTP API configuration |
 | `auth` | OAuth authentication infrastructure |
 | `bedrock` | AI agent, knowledge base, guardrails |
 | `cloudfront-static-site` | CDN and S3 static hosting |
@@ -102,10 +100,8 @@ Located in `chat-api/terraform/modules/`:
 
 | Table | Purpose |
 |-------|---------|
-| `chat-sessions` | Session metadata with TTL |
 | `chat-messages` | Message history |
 | `conversations` | Conversation details |
-| `websocket-connections` | Active WebSocket connections |
 | `enhanced-rate-limits` | Device fingerprint rate limiting |
 | `usage-tracking` | Monthly usage tracking |
 | `anonymous-sessions` | Anonymous user sessions |
@@ -169,13 +165,12 @@ terraform apply tfplan
 ### Backend Environment Variables
 Key variables set by Terraform and CI/CD:
 - `ENVIRONMENT` - dev/staging/prod
-- `BEDROCK_AGENT_ID` - Bedrock agent identifier
-- `BEDROCK_AGENT_ALIAS` - Agent alias name
+- `FOLLOWUP_AGENT_ID` - Follow-up Agent Bedrock identifier
+- `FOLLOWUP_AGENT_ALIAS` - Follow-up Agent alias name
 - `ANONYMOUS_MONTHLY_LIMIT` - Rate limit for anonymous users (default: 5)
 - `AUTHENTICATED_MONTHLY_LIMIT` - Rate limit for authenticated users (default: 500)
 
 ### Frontend Environment Variables
-- `VITE_WEBSOCKET_URL` - WebSocket API endpoint
 - `VITE_REST_API_URL` - HTTP API endpoint
 - `VITE_GOOGLE_CLIENT_ID` - OAuth client ID
 - `VITE_ENVIRONMENT` - Current environment
@@ -213,7 +208,6 @@ Same structure with production secrets and GitHub environment approval.
 - **Error Handling**: Catch boto3 ClientError, use custom exceptions
 - **Logging**: Environment-controlled log levels
 - **Rate Limiting**: Device fingerprint (IP + User-Agent + CloudFront headers)
-- **WebSocket**: FIFO message ordering via SQS
 
 ---
 
@@ -241,8 +235,79 @@ Secrets are stored in AWS Secrets Manager:
 - `buffett-{env}-google-oauth` - OAuth credentials
 - `buffett-{env}-jwt-secret` - JWT signing secret
 - `buffett-{env}-pinecone-api-key` - Vector DB API key
+- `stripe-secret-key-{env}` - Stripe API secret key (sk_test_xxx or sk_live_xxx)
+- `stripe-publishable-key-{env}` - Stripe publishable key (pk_test_xxx or pk_live_xxx)
+- `stripe-plus-price-id-{env}` - Stripe Plus plan price ID (price_xxx)
+- `stripe-webhook-secret-{env}` - Stripe webhook signing secret (whsec_xxx)
 
 Never commit secrets to the repository. Use `.env.example` files as templates.
+
+### Fetching Secrets in Bash
+
+**CRITICAL**: Never hardcode API keys in bash commands. Always fetch from Secrets Manager:
+
+```bash
+# Fetch Stripe secret key
+STRIPE_SECRET_KEY=$(aws secretsmanager get-secret-value \
+  --secret-id stripe-secret-key-dev \
+  --query SecretString --output text)
+
+# Fetch Stripe webhook secret
+STRIPE_WEBHOOK_SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id stripe-webhook-secret-dev \
+  --query SecretString --output text)
+
+# Fetch Stripe Plus price ID
+STRIPE_PRICE_ID=$(aws secretsmanager get-secret-value \
+  --secret-id stripe-plus-price-id-dev \
+  --query SecretString --output text)
+```
+
+### Using Secrets in Stripe CLI
+
+```bash
+# Start webhook listener (fetches secret automatically)
+STRIPE_WEBHOOK_SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id stripe-webhook-secret-dev \
+  --query SecretString --output text)
+
+stripe listen --forward-to https://your-api.com/dev/stripe/webhook
+```
+
+### Using Secrets in cURL Commands
+
+```bash
+# Fetch the secret key first
+STRIPE_SECRET_KEY=$(aws secretsmanager get-secret-value \
+  --secret-id stripe-secret-key-dev \
+  --query SecretString --output text)
+
+# Use in API calls (key not visible in command history)
+curl -s https://api.stripe.com/v1/customers \
+  -u "${STRIPE_SECRET_KEY}:" \
+  -d "email=test@example.com"
+
+# Create subscription with metadata
+curl -s https://api.stripe.com/v1/subscriptions \
+  -u "${STRIPE_SECRET_KEY}:" \
+  -d "customer=cus_xxx" \
+  -d "items[0][price]=${STRIPE_PRICE_ID}" \
+  -d "metadata[user_id]=user-123"
+```
+
+### Helper Function (add to ~/.bashrc or ~/.zshrc)
+
+```bash
+# Get any AWS secret by name
+get_secret() {
+  aws secretsmanager get-secret-value \
+    --secret-id "$1" \
+    --query SecretString --output text 2>/dev/null
+}
+
+# Usage:
+# STRIPE_KEY=$(get_secret stripe-secret-key-dev)
+```
 
 ---
 
@@ -299,14 +364,12 @@ cd chat-api/backend
 ```
 chat-api/backend/build/
 ├── dependencies-layer.zip
-├── chat_http_handler.zip
-├── chat_processor.zip
-├── websocket_connect.zip
-├── websocket_message.zip
-├── websocket_disconnect.zip
 ├── auth_callback.zip
 ├── auth_verify.zip
 ├── conversations_handler.zip
+├── subscription_handler.zip
+├── stripe_webhook_handler.zip
+├── analysis_followup.zip
 └── search_handler.zip
 ```
 
@@ -340,12 +403,313 @@ chat-api/backend/build/
 3. Update Lambda IAM policies if needed
 4. Run `terraform plan` then `terraform apply`
 
-### Update Bedrock Agent
+### Update Bedrock Follow-up Agent
 1. Modify `chat-api/terraform/modules/bedrock/`
-2. Update agent instructions or guardrails as needed
+2. Update agent instructions in `followup_agent_v1.txt`
 3. Deploy via Terraform
 
-### Debug WebSocket Issues
-1. Check CloudWatch logs for `websocket_connect`, `websocket_message`, `chat_processor`
-2. Verify DynamoDB `websocket-connections` table
-3. Check SQS queue metrics for message backlog
+---
+
+# INVESTMENT REPORT GENERATION
+
+## CRITICAL: Use Claude Code Mode (NOT API Mode)
+
+**ABSOLUTE RULE**: Investment reports MUST be generated using Claude Code mode, NOT the Anthropic API.
+
+### Why Claude Code Mode?
+- Cost efficiency: Uses Claude Code's context window instead of API calls
+- Better quality: Claude Code can iteratively refine reports
+- Interactive: Allows review and revision before saving
+- No API key management required
+
+### Report Generation Workflow
+
+1. **Prepare Data** - Fetch financial data from FMP API:
+```python
+from investment_research.report_generator import ReportGenerator
+
+generator = ReportGenerator(use_api=False, prompt_version=4.8)
+data = generator.prepare_data('AMZN')
+```
+
+2. **Read the System Prompt** - Load the appropriate prompt template:
+```
+chat-api/backend/investment_research/prompts/investment_report_prompt_v4_8.txt
+```
+
+3. **Generate Report** - Use Claude Code to generate the report content following the prompt
+
+4. **Save Report** - Save to DynamoDB:
+```python
+generator.save_report(
+    ticker='AMZN',
+    fiscal_year=2026,
+    report_content=report_markdown,
+    ratings={'growth': 'Strong', 'profitability': 'Exceptional', ...}
+)
+```
+
+### Prohibited Actions
+- DO NOT use `generate_report()` with `use_api=True`
+- DO NOT set or use `ANTHROPIC_API_KEY` for report generation
+- DO NOT bypass the Claude Code workflow
+
+### Prompt Versions
+Current recommended version: **v4.8** (executive summary first, dynamic headers, simplified language)
+
+Available versions are defined in `ReportGenerator.PROMPT_VERSIONS` in:
+`chat-api/backend/investment_research/report_generator.py`
+
+---
+
+# AGENTIC WORKFLOW: GSD + RALF
+
+This section defines a structured agentic development workflow for Claude Code, adapted from the GSD (Get Stuff Done) and RALF (Review-Audit-Loop-Fix) methodologies.
+
+## Workflow Overview
+
+```
+USER REQUEST → GSD (Spec) → GSD (Plan) → RALF (Execute) → VERIFY → SHIP
+```
+
+**Two Phases:**
+1. **GSD Phase**: Convert vague goals into testable specs and task graphs
+2. **RALF Phase**: Execute tasks with verification loops until gates pass
+
+---
+
+## GSD PHASE: Specification & Planning
+
+### When to Trigger GSD
+Use GSD workflow when user requests involve:
+- New features requiring multiple files
+- Architectural changes
+- Non-trivial refactors
+- Any task where "done" is ambiguous
+
+### GSD Step 1: Audit Snapshot
+Before planning, produce a short audit:
+- **Knowns / Evidence**: What's certain from the prompt or codebase
+- **Unknowns / Gaps**: Missing info that could change decisions
+- **Constraints**: Time, infra, dependencies, policies
+- **Risks**: Top 3 things that could sink the plan
+
+### GSD Step 2: PRD (Product Requirements Document)
+Create acceptance criteria that are:
+- **Observable**: Can be seen/measured
+- **Testable**: Has a pass/fail condition
+- **Phrased as Given/When/Then** or equivalent
+
+Example:
+```
+AC-1: Given a logged-in user, when they click "Export", then a CSV downloads within 3 seconds.
+AC-2: Given invalid input, when submitted, then an error message appears (no console errors).
+```
+
+### GSD Step 3: Implementation Plan
+Draft a plan with:
+- **Objective**: One sentence
+- **Approach Summary**: One paragraph
+- **Steps**: Numbered, minimal but complete
+- **Files to Modify**: List expected file changes
+- **Verification Commands**: How to test each step
+
+### GSD Step 4: Task Graph (via TodoWrite)
+Break the plan into atomic tasks using `TodoWrite`. Each task must have:
+- Clear acceptance criteria
+- Dependencies (what must complete first)
+- Expected files to touch
+- Verification command
+
+### GSD Step 5: Self-Critique (Red Team)
+Before executing, challenge the plan:
+- Which assumptions are fragile?
+- What failure modes exist?
+- What's the simplest version that delivers 80% of value?
+
+### GSD Step 6: User Approval
+**STOP and ask user** before proceeding to execution:
+- Present the PRD and task list
+- Ask for approval or adjustments
+- Do NOT proceed until user confirms
+
+---
+
+## RALF PHASE: Execution Loop
+
+### RALF Ground Rule
+> "Done" is not a feeling. Done = acceptance criteria met + gates pass + review passes.
+
+### RALF Execution Loop
+
+For each task in the TodoWrite list:
+
+```
+1. IMPLEMENT
+   - Mark task as in_progress
+   - Make minimal, focused changes
+   - If plan is impossible, STOP and report "ARCHITECTURE_MISMATCH"
+
+2. VERIFY (Gates)
+   - Run relevant commands: tests, lint, typecheck, build
+   - If gates fail → fix and retry (do not proceed)
+
+3. REVIEW (Semantic Check)
+   - Does the code actually satisfy the acceptance criteria?
+   - Are there security issues (injection, auth flaws)?
+   - Are there side effects the implementation missed?
+
+4. LEARN
+   - If failure occurred, note the lesson for future tasks
+   - Update approach if patterns emerge
+
+5. COMPLETE
+   - Mark task as completed in TodoWrite
+   - Move to next task
+```
+
+### RALF Parallelism Rules
+Run tasks in parallel ONLY if:
+- No dependency edges between them
+- They touch disjoint file sets
+
+Otherwise, execute serially.
+
+### Architecture Mismatch Protocol
+If during implementation the plan proves impossible:
+1. Output: `STATUS: ARCHITECTURE_MISMATCH`
+2. Explain why the current approach won't work
+3. STOP execution
+4. Return to GSD phase for replanning
+
+---
+
+## Verification Gates
+
+### Standard Gates for This Project
+```bash
+# Python backend
+cd chat-api/backend && make test
+
+# Frontend
+cd frontend && npm run lint
+
+# Terraform
+cd chat-api/terraform/environments/dev && terraform validate
+
+# Full build
+cd chat-api/backend && ./scripts/build_lambdas.sh
+```
+
+### Gate Requirements
+- All gates must pass before marking a task complete
+- If a gate fails, fix the issue before proceeding
+- Never skip gates or mark tasks done with failing tests
+
+---
+
+## Agent Roles (for Task Tool)
+
+When spawning subagents via the Task tool, use these roles:
+
+### Explorer Agent (`subagent_type=Explore`)
+- Codebase exploration and research
+- Finding patterns and existing implementations
+- Understanding architecture before changes
+
+### Plan Agent (`subagent_type=Plan`)
+- Designing implementation strategies
+- Identifying critical files and trade-offs
+- Creating step-by-step plans
+
+### Debugger Agent (`subagent_type=debugger`)
+- Investigating test failures
+- Fixing runtime errors
+- Performance issue diagnosis
+
+### Test Writer Agent (`subagent_type=test-writer`)
+- Creating tests after implementation
+- Ensuring coverage for new code
+- Regression test creation
+
+### Performance Reviewer (`subagent_type=perf-reviewer`)
+- Identifying bottlenecks
+- Reviewing data processing code
+- Optimizing loops and queries
+
+---
+
+## Workflow Triggers
+
+### User says "GSD" or "plan this"
+→ Execute full GSD workflow (Audit → PRD → Plan → Tasks → Approval)
+
+### User says "RALF" or "execute"
+→ Execute RALF loop on existing TodoWrite tasks
+
+### User says "verify" or "run gates"
+→ Run all verification commands and report status
+
+### User says "ship" or "create PR"
+→ Summarize changes, run final gates, prepare PR description
+
+---
+
+## Quality Bars
+
+### Code Changes
+- Minimal diffs: change only what's necessary
+- No drive-by refactors unless requested
+- Security: no injection vulnerabilities, validate inputs at boundaries
+
+### Documentation
+- Update only if behavior changes
+- Don't add comments for self-evident code
+- Don't create new docs unless explicitly requested
+
+### Testing
+- Tests must pass before completion
+- Add tests for new functionality
+- Don't delete tests without explicit approval
+
+---
+
+## Example GSD+RALF Session
+
+```
+User: "Add a rate limit bypass for admin users"
+
+Claude: [GSD AUDIT]
+- Knowns: Rate limiting exists in enhanced-rate-limits table, auth via JWT
+- Unknowns: How are admins identified? JWT claim? DynamoDB flag?
+- Risks: Bypass could be exploited if admin check is weak
+
+Claude: [ASKS USER]
+"How should admin users be identified? Options:
+1. JWT claim 'role: admin'
+2. DynamoDB users table 'is_admin' flag
+3. Allowlist of user IDs"
+
+User: "Use JWT claim"
+
+Claude: [GSD PRD]
+AC-1: Given a request with JWT containing role=admin, when rate limit check runs, then request is allowed regardless of usage count.
+AC-2: Given a request without admin role, when rate limit exceeded, then request is rejected as before.
+
+Claude: [GSD TASKS via TodoWrite]
+1. Add admin check to rate_limiter.py
+2. Update JWT verification to extract role claim
+3. Add unit tests for admin bypass
+4. Test manually with admin JWT
+
+Claude: "Plan ready. Proceed with implementation?"
+
+User: "Yes"
+
+Claude: [RALF EXECUTE]
+- Task 1: in_progress → implement → verify → complete
+- Task 2: in_progress → implement → verify → complete
+...
+- All gates pass
+- "Implementation complete. Ready for PR?"
+```

@@ -30,8 +30,9 @@ STRIPE_SECRET_KEY_NAME = f"stripe-secret-key-{ENVIRONMENT}"
 STRIPE_WEBHOOK_SECRET_NAME = f"stripe-webhook-secret-{ENVIRONMENT}"
 STRIPE_PLUS_PRICE_ID_NAME = f"stripe-plus-price-id-{ENVIRONMENT}"
 
-# Token limit for Plus subscribers (from environment or default)
+# Token limits for subscription tiers (from environment or defaults)
 TOKEN_LIMIT_PLUS = int(os.environ.get('TOKEN_LIMIT_PLUS', '2000000'))
+TOKEN_LIMIT_FREE = int(os.environ.get('TOKEN_LIMIT_FREE', '100000'))
 
 # Initialize AWS clients
 secrets_client = boto3.client('secretsmanager')
@@ -206,11 +207,48 @@ def get_subscription(subscription_id: str) -> Optional[Dict[str, Any]]:
 
     try:
         subscription = stripe.Subscription.retrieve(subscription_id)
+
+        # In newer Stripe API versions, period dates may be on subscription items
+        # Use try/except since Stripe SDK raises AttributeError for missing fields
+        current_period_start = None
+        current_period_end = None
+
+        # Try top-level first (older API versions)
+        try:
+            current_period_start = subscription.current_period_start
+        except AttributeError:
+            pass
+
+        try:
+            current_period_end = subscription.current_period_end
+        except AttributeError:
+            pass
+
+        # Fall back to subscription items (newer API versions)
+        if current_period_start is None or current_period_end is None:
+            try:
+                # Access items as a StripeObject property, not dict.items()
+                sub_items = subscription['items']
+                if sub_items and sub_items.data:
+                    first_item = sub_items.data[0]
+                    if current_period_start is None:
+                        try:
+                            current_period_start = first_item.current_period_start
+                        except AttributeError:
+                            pass
+                    if current_period_end is None:
+                        try:
+                            current_period_end = first_item.current_period_end
+                        except AttributeError:
+                            pass
+            except (KeyError, TypeError):
+                pass
+
         return {
             'id': subscription.id,
             'status': subscription.status,
-            'current_period_start': subscription.current_period_start,
-            'current_period_end': subscription.current_period_end,
+            'current_period_start': current_period_start,
+            'current_period_end': current_period_end,
             'cancel_at_period_end': subscription.cancel_at_period_end,
             'customer': subscription.customer,
         }

@@ -7,19 +7,39 @@ NOTE: Starting with 10 companies per index for initial testing.
 Can be expanded to full lists after validation.
 """
 
-# Dow Jones Industrial Average - 10 representative companies for testing
-# Selected for sector diversity and varied financial characteristics
+# Dow Jones Industrial Average - All 30 components
+# Full DJIA constituent list for batch report generation
 DJIA_TICKERS = [
     'AAPL',   # Apple - Tech, strong cash
-    'MSFT',   # Microsoft - Tech, cloud growth
-    'JPM',    # JPMorgan - Financials
-    'JNJ',    # Johnson & Johnson - Healthcare
-    'V',      # Visa - Payments
-    'UNH',    # UnitedHealth - Healthcare
-    'HD',     # Home Depot - Retail
-    'KO',     # Coca-Cola - Consumer staples
-    'CVX',    # Chevron - Energy
+    'AMGN',   # Amgen - Biotech
+    'AXP',    # American Express - Financial services
     'BA',     # Boeing - Industrials, cyclical
+    'CAT',    # Caterpillar - Heavy equipment
+    'CRM',    # Salesforce - Cloud software
+    'CSCO',   # Cisco - Networking
+    'CVX',    # Chevron - Energy
+    'DIS',    # Disney - Media/Entertainment
+    'DOW',    # Dow Inc - Chemicals
+    'GS',     # Goldman Sachs - Investment banking
+    'HD',     # Home Depot - Retail
+    'HON',    # Honeywell - Industrials
+    'IBM',    # IBM - Tech services
+    'INTC',   # Intel - Semiconductors
+    'JNJ',    # Johnson & Johnson - Healthcare
+    'JPM',    # JPMorgan - Financials
+    'KO',     # Coca-Cola - Consumer staples
+    'MCD',    # McDonald's - Restaurants
+    'MMM',    # 3M - Industrials
+    'MRK',    # Merck - Pharma
+    'MSFT',   # Microsoft - Tech, cloud growth
+    'NKE',    # Nike - Consumer discretionary
+    'PG',     # Procter & Gamble - Consumer staples
+    'TRV',    # Travelers - Insurance
+    'UNH',    # UnitedHealth - Healthcare
+    'V',      # Visa - Payments
+    'VZ',     # Verizon - Telecom
+    'WBA',    # Walgreens - Retail pharmacy
+    'WMT',    # Walmart - Retail
 ]
 
 # S&P 500 - 10 representative companies for testing

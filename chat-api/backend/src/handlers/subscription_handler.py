@@ -16,6 +16,7 @@ from typing import Dict, Any, Optional
 
 import boto3
 from botocore.exceptions import ClientError
+from decimal import Decimal
 
 # Import stripe service utilities
 from utils.stripe_service import (
@@ -25,6 +26,7 @@ from utils.stripe_service import (
     get_customer_by_email,
     TOKEN_LIMIT_PLUS,
 )
+from utils.token_usage_tracker import TokenUsageTracker
 
 # Configure logging
 logger = logging.getLogger()
@@ -32,12 +34,20 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 
 # Environment variables
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
-USERS_TABLE = os.environ.get('USERS_TABLE', f'buffett-{ENVIRONMENT}-users')
+USERS_TABLE = os.environ.get('USERS_TABLE') or f'buffett-{ENVIRONMENT}-users'
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://buffettgpt.com')
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb')
 users_table = dynamodb.Table(USERS_TABLE)
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """Handle Decimal types from DynamoDB for JSON serialization."""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj) if obj % 1 else int(obj)
+        return super().default(obj)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -60,6 +70,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     path = event.get('path') or event.get('rawPath', '')
 
     logger.info(f"Subscription request: {http_method} {path}")
+
+    # Handle OPTIONS preflight requests (no auth required)
+    if http_method == 'OPTIONS':
+        return _response(200, {'message': 'CORS preflight OK'})
 
     # Extract user from JWT authorizer context
     user_info = _get_user_from_event(event)
@@ -208,10 +222,19 @@ def handle_get_status(user_id: str) -> Dict[str, Any]:
     # Get live subscription details from Stripe if available
     stripe_subscription = None
     if stripe_subscription_id:
-        stripe_subscription = get_subscription(stripe_subscription_id)
+        try:
+            stripe_subscription = get_subscription(stripe_subscription_id)
+        except Exception as e:
+            # Log error but continue gracefully - user still sees cached info from DynamoDB
+            logger.warning(f"Failed to fetch Stripe subscription {stripe_subscription_id}: {str(e)}")
+            stripe_subscription = None
 
     # Determine token limit based on tier
     token_limit = TOKEN_LIMIT_PLUS if subscription_tier == 'plus' else 0
+
+    # Get token usage data
+    token_tracker = TokenUsageTracker()
+    usage_data = token_tracker.get_usage(user_id)
 
     response_data = {
         'subscription_tier': subscription_tier,
@@ -220,6 +243,16 @@ def handle_get_status(user_id: str) -> Dict[str, Any]:
         'has_subscription': subscription_tier == 'plus',
         'cancel_at_period_end': user.get('cancel_at_period_end', False),
         'billing_day': user.get('billing_day'),
+        # Token usage data for settings display
+        'token_usage': {
+            'total_tokens': usage_data.get('total_tokens', 0),
+            'token_limit': usage_data.get('token_limit', token_limit),
+            'percent_used': usage_data.get('percent_used', 0.0),
+            'remaining_tokens': usage_data.get('remaining_tokens', token_limit),
+            'request_count': usage_data.get('request_count', 0),
+            'reset_date': usage_data.get('reset_date'),
+            'subscription_tier': subscription_tier,
+        }
     }
 
     # Add Stripe subscription details if available
@@ -235,12 +268,20 @@ def handle_get_status(user_id: str) -> Dict[str, Any]:
 def _get_user_from_event(event: Dict[str, Any]) -> Optional[Dict[str, str]]:
     """Extract user info from JWT authorizer context."""
     # Try different locations for authorizer context
-    authorizer = (
-        event.get('requestContext', {}).get('authorizer', {}) or
-        event.get('requestContext', {}).get('authorizer', {}).get('jwt', {}).get('claims', {})
-    )
+    authorizer = event.get('requestContext', {}).get('authorizer', {})
 
-    # Lambda authorizer format
+    # Check lambda context FIRST (HTTP API v2 with Lambda authorizer)
+    # This is where the authorizer actually puts the user context
+    if 'lambda' in authorizer and isinstance(authorizer['lambda'], dict):
+        lambda_ctx = authorizer['lambda']
+        user_id = lambda_ctx.get('user_id')
+        if user_id:
+            return {
+                'user_id': str(user_id),
+                'email': lambda_ctx.get('email'),
+            }
+
+    # Lambda authorizer format with claims
     if 'claims' in authorizer:
         claims = authorizer['claims']
         return {
@@ -256,7 +297,7 @@ def _get_user_from_event(event: Dict[str, Any]) -> Optional[Dict[str, str]]:
         }
 
     # HTTP API JWT authorizer format
-    jwt_claims = event.get('requestContext', {}).get('authorizer', {}).get('jwt', {}).get('claims', {})
+    jwt_claims = authorizer.get('jwt', {}).get('claims', {})
     if jwt_claims:
         return {
             'user_id': jwt_claims.get('sub') or jwt_claims.get('user_id'),
@@ -298,5 +339,5 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
             'Access-Control-Allow-Headers': 'Content-Type,Authorization',
             'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
         },
-        'body': json.dumps(body)
+        'body': json.dumps(body, cls=DecimalEncoder)
     }

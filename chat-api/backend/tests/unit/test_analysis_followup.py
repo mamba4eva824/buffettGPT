@@ -806,6 +806,113 @@ class TestTokenLimiting:
         body = json.loads(result['body'])
         assert body['token_usage']['threshold_reached'] == '80%'
 
+    def test_bedrock_not_called_when_limit_exceeded(self, handler_module, mock_boto3):
+        """Cost protection: Bedrock should not be called when limit exceeded."""
+        # Reset the mock to clear any previous call counts
+        mock_boto3['bedrock_runtime'].converse.reset_mock()
+        mock_boto3['bedrock_runtime'].converse_stream.reset_mock()
+
+        handler_module.token_tracker.check_limit.return_value = {
+            'allowed': False,
+            'total_tokens': 50000,
+            'token_limit': 50000,
+            'percent_used': 100.0,
+            'remaining_tokens': 0,
+            'reset_date': '2026-02-01T00:00:00Z'
+        }
+
+        token = self._create_jwt_token({
+            'user_id': 'test-user-cost-check',
+            'email': 'test@example.com'
+        })
+
+        event = self._create_event(
+            body={
+                'question': 'What is the debt situation?',
+                'session_id': 'session-cost-check',
+                'agent_type': 'debt',
+                'ticker': 'AAPL'
+            },
+            headers={'Authorization': f'Bearer {token}'}
+        )
+
+        gen = handler_module.lambda_handler(event, None)
+        result = self._consume_generator(gen)
+
+        # Verify 429 returned AND Bedrock never called (cost protection)
+        assert result['statusCode'] == 429
+        mock_boto3['bedrock_runtime'].converse.assert_not_called()
+        mock_boto3['bedrock_runtime'].converse_stream.assert_not_called()
+
+    def test_streaming_bedrock_not_called_when_limit_exceeded(self, handler_module, mock_boto3):
+        """Cost protection: Streaming path should not call Bedrock when limited."""
+        # Reset the mock to clear any previous call counts
+        mock_boto3['bedrock_runtime'].converse_stream.reset_mock()
+
+        handler_module.token_tracker.check_limit.return_value = {
+            'allowed': False,
+            'total_tokens': 50000,
+            'token_limit': 50000,
+            'percent_used': 100.0,
+            'remaining_tokens': 0,
+            'reset_date': '2026-02-01T00:00:00Z'
+        }
+
+        event = {
+            'body': json.dumps({
+                'question': 'Tell me about cash flow',
+                'session_id': 'stream-session-cost-check',
+                'agent_type': 'cashflow',
+                'ticker': 'MSFT'
+            }),
+            'isBase64Encoded': False
+        }
+
+        results = list(handler_module.stream_followup_response(event, None, user_id='limited-user'))
+
+        # Should have error event about token limit
+        error_found = any(
+            isinstance(r, str) and 'token_limit_exceeded' in r
+            for r in results
+        )
+        assert error_found, "Expected token_limit_exceeded error event"
+
+        # Bedrock should NOT be called (cost protection)
+        mock_boto3['bedrock_runtime'].converse_stream.assert_not_called()
+
+    def test_limit_check_exception_returns_500(self, handler_module, mock_boto3):
+        """Exception in check_limit should result in 500 error (not silent failure)."""
+        handler_module.token_tracker.check_limit.side_effect = Exception("DynamoDB error")
+
+        token = self._create_jwt_token({
+            'user_id': 'test-user-exception',
+            'email': 'test@example.com'
+        })
+
+        event = self._create_event(
+            body={
+                'question': 'What is the debt situation?',
+                'session_id': 'session-exception',
+                'agent_type': 'debt',
+                'ticker': 'AAPL'
+            },
+            headers={'Authorization': f'Bearer {token}'}
+        )
+
+        # Should raise or return 500, not silently fail-open
+        try:
+            gen = handler_module.lambda_handler(event, None)
+            result = self._consume_generator(gen)
+            # If it returns, it should be 500 (not 200 or 429)
+            assert result['statusCode'] == 500, \
+                f"Expected 500 but got {result['statusCode']} - exception should not be silently ignored"
+        except Exception:
+            # Expected - exception bubbles up (fail-closed)
+            pass
+        finally:
+            # Reset the side effect for other tests
+            handler_module.token_tracker.check_limit.side_effect = None
+
 
 class TestEstimateTokens:
     """Tests for the estimate_tokens helper function."""

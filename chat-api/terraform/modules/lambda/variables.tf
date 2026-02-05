@@ -39,16 +39,8 @@ variable "function_env_vars" {
   default     = {}
 }
 
-variable "dlq_arn" {
-  description = "ARN of the dead letter queue"
-  type        = string
-}
-
-
-variable "chat_processing_queue_arn" {
-  description = "ARN of the chat processing SQS queue"
-  type        = string
-}
+# dlq_arn - REMOVED (2026-02) - SQS infrastructure deprecated
+# chat_processing_queue_arn - REMOVED (2026-02) - SQS infrastructure deprecated
 
 variable "log_retention_days" {
   description = "CloudWatch log retention in days"
@@ -62,17 +54,8 @@ variable "reserved_concurrency" {
   default     = {}
 }
 
-variable "sqs_batch_window" {
-  description = "Maximum batching window for SQS in seconds"
-  type        = number
-  default     = 10
-}
-
-variable "sqs_max_concurrency" {
-  description = "Maximum concurrent executions for SQS processor"
-  type        = number
-  default     = 2
-}
+# sqs_batch_window - REMOVED (2026-02) - SQS infrastructure deprecated
+# sqs_max_concurrency - REMOVED (2026-02) - SQS infrastructure deprecated
 
 variable "common_tags" {
   description = "Common tags to apply to all resources"

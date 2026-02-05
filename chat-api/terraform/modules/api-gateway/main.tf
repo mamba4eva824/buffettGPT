@@ -1,5 +1,5 @@
 # API Gateway Module
-# Manages HTTP and WebSocket API Gateway resources
+# Manages HTTP API Gateway resources (WebSocket removed 2026-02)
 
 locals {
   resource_prefix = "${var.project_name}-${var.environment}"
@@ -104,47 +104,10 @@ resource "aws_apigatewayv2_stage" "http_api_stage" {
 }
 
 # ================================================
-# WebSocket API Gateway
+# WebSocket API Gateway - REMOVED (2026-02)
 # ================================================
-
-resource "aws_apigatewayv2_api" "websocket_api" {
-  name                       = "${local.resource_prefix}-websocket-api"
-  protocol_type              = "WEBSOCKET"
-  description                = "WebSocket API for ${var.project_name} real-time chat"
-  route_selection_expression = "$request.body.action"
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-api"
-      Purpose = "Chat WebSocket API Gateway"
-      Service = "API Gateway"
-    }
-  )
-}
-
-# WebSocket API Stage
-resource "aws_apigatewayv2_stage" "websocket_stage" {
-  api_id      = aws_apigatewayv2_api.websocket_api.id
-  name        = var.environment
-  auto_deploy = true
-
-  default_route_settings {
-    detailed_metrics_enabled = true
-    data_trace_enabled       = var.environment != "prod"
-    throttling_burst_limit   = var.environment == "prod" ? 2000 : 500
-    throttling_rate_limit    = var.environment == "prod" ? 1000 : 100
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-stage"
-      Purpose = "Chat WebSocket API Stage"
-      Service = "API Gateway"
-    }
-  )
-}
+# WebSocket infrastructure deprecated per WEBSOCKET_DEPRECATION_PLAN.md
+# All chat functionality now uses REST+SSE via Research and Follow-up APIs
 
 # ================================================
 # CloudWatch Log Groups
@@ -164,19 +127,7 @@ resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   )
 }
 
-resource "aws_cloudwatch_log_group" "websocket_api_logs" {
-  name              = "/aws/apigateway/${local.resource_prefix}-websocket-api"
-  retention_in_days = var.environment == "prod" ? 90 : 30
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-api-logs"
-      Purpose = "WebSocket API Gateway access logs"
-      Service = "CloudWatch Logs"
-    }
-  )
-}
+# WebSocket API logs - REMOVED (2026-02)
 
 # ================================================
 # Authorizers (if authentication is enabled)
@@ -194,18 +145,9 @@ resource "aws_apigatewayv2_authorizer" "http_jwt_authorizer" {
   enable_simple_responses           = true
 }
 
-resource "aws_apigatewayv2_authorizer" "websocket_jwt_authorizer" {
-  count                      = var.enable_authorization ? 1 : 0
-  api_id                     = aws_apigatewayv2_api.websocket_api.id
-  authorizer_type            = "REQUEST"
-  authorizer_uri             = var.authorizer_function_arn
-  name                       = "${local.resource_prefix}-websocket-jwt-authorizer"
-  # Remove identity_sources to ensure authorizer is called for all connections (including anonymous)
-  # identity_sources           = ["route.request.header.Authorization", "route.request.querystring.token"]
-  authorizer_credentials_arn = aws_iam_role.authorizer_invocation_role[0].arn
-}
+# WebSocket JWT authorizer - REMOVED (2026-02)
 
-# IAM Role for Authorizer Invocation (WebSocket)
+# IAM Role for Authorizer Invocation (HTTP API)
 resource "aws_iam_role" "authorizer_invocation_role" {
   count = var.enable_authorization ? 1 : 0
   name  = "${local.resource_prefix}-authorizer-invocation-role"
@@ -227,7 +169,7 @@ resource "aws_iam_role" "authorizer_invocation_role" {
     var.common_tags,
     {
       Name    = "${local.resource_prefix}-authorizer-invocation-role"
-      Purpose = "WebSocket authorizer invocation"
+      Purpose = "HTTP API authorizer invocation"
       Service = "IAM"
     }
   )
@@ -254,20 +196,8 @@ resource "aws_iam_role_policy" "authorizer_invocation_policy" {
 # HTTP API Routes and Integrations
 # ================================================
 
-# Lambda Integrations
-resource "aws_apigatewayv2_integration" "chat_lambda_integration" {
-  api_id           = aws_apigatewayv2_api.http_api.id
-  integration_type = "AWS_PROXY"
-
-  integration_method     = "POST"
-  integration_uri        = var.lambda_arns["chat_http_handler"]
-  payload_format_version = "2.0"
-  timeout_milliseconds   = 30000
-
-  request_parameters = {
-    "overwrite:header.x-request-id" = "$request.header.x-request-id"
-  }
-}
+# Chat HTTP handler integration - REMOVED (2026-02)
+# chat_http_handler deprecated - chat functionality uses Research + Follow-up APIs
 
 # Conversations Handler Integration
 resource "aws_apigatewayv2_integration" "conversations_handler_integration" {
@@ -301,40 +231,9 @@ resource "aws_apigatewayv2_integration" "search_integration" {
   }
 }
 
-# Routes
-resource "aws_apigatewayv2_route" "chat_post_route" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "POST /chat"
-  target    = "integrations/${aws_apigatewayv2_integration.chat_lambda_integration.id}"
-
-  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
-}
-
-resource "aws_apigatewayv2_route" "health_get_route" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "GET /health"
-  target    = "integrations/${aws_apigatewayv2_integration.chat_lambda_integration.id}"
-
-  authorization_type = "NONE"
-}
-
-resource "aws_apigatewayv2_route" "history_get_route" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "GET /api/v1/chat/history/{session_id}"
-  target    = "integrations/${aws_apigatewayv2_integration.chat_lambda_integration.id}"
-
-  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
-}
-
-resource "aws_apigatewayv2_route" "chat_options_route" {
-  api_id    = aws_apigatewayv2_api.http_api.id
-  route_key = "OPTIONS /chat"
-  target    = "integrations/${aws_apigatewayv2_integration.chat_lambda_integration.id}"
-
-  authorization_type = "NONE"
-}
+# Chat routes - REMOVED (2026-02)
+# POST /chat, GET /health, GET /api/v1/chat/history routes deprecated
+# Chat functionality now uses /research and /analysis/followup endpoints
 
 # ================================================
 # Conversations API Routes
@@ -506,82 +405,15 @@ resource "aws_apigatewayv2_route" "auth_callback_options_route" {
 }
 
 # ================================================
-# WebSocket Routes and Integrations
+# WebSocket Routes and Integrations - REMOVED (2026-02)
 # ================================================
-
-# WebSocket Integrations
-resource "aws_apigatewayv2_integration" "websocket_connect_integration" {
-  api_id           = aws_apigatewayv2_api.websocket_api.id
-  integration_type = "AWS_PROXY"
-  
-  integration_method     = "POST"
-  integration_uri        = var.lambda_arns["websocket_connect"]
-  payload_format_version = "1.0"
-}
-
-resource "aws_apigatewayv2_integration" "websocket_disconnect_integration" {
-  api_id           = aws_apigatewayv2_api.websocket_api.id
-  integration_type = "AWS_PROXY"
-  
-  integration_method     = "POST"
-  integration_uri        = var.lambda_arns["websocket_disconnect"]
-  payload_format_version = "1.0"
-}
-
-resource "aws_apigatewayv2_integration" "websocket_message_integration" {
-  api_id           = aws_apigatewayv2_api.websocket_api.id
-  integration_type = "AWS_PROXY"
-  
-  integration_method     = "POST"
-  integration_uri        = var.lambda_arns["websocket_message"]
-  payload_format_version = "1.0"
-}
-
-# WebSocket Routes
-resource "aws_apigatewayv2_route" "websocket_connect_route" {
-  api_id    = aws_apigatewayv2_api.websocket_api.id
-  route_key = "$connect"
-  target    = "integrations/${aws_apigatewayv2_integration.websocket_connect_integration.id}"
-
-  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
-  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.websocket_jwt_authorizer[0].id : null
-}
-
-resource "aws_apigatewayv2_route" "websocket_disconnect_route" {
-  api_id    = aws_apigatewayv2_api.websocket_api.id
-  route_key = "$disconnect"
-  target    = "integrations/${aws_apigatewayv2_integration.websocket_disconnect_integration.id}"
-
-  authorization_type = "NONE"
-}
-
-resource "aws_apigatewayv2_route" "websocket_message_route" {
-  api_id    = aws_apigatewayv2_api.websocket_api.id
-  route_key = "$default"
-  target    = "integrations/${aws_apigatewayv2_integration.websocket_message_integration.id}"
-
-  authorization_type = "NONE"
-}
-
-resource "aws_apigatewayv2_route" "websocket_ping_route" {
-  api_id    = aws_apigatewayv2_api.websocket_api.id
-  route_key = "ping"
-  target    = "integrations/${aws_apigatewayv2_integration.websocket_message_integration.id}"
-
-  authorization_type = "NONE"
-}
+# All WebSocket infrastructure deprecated per WEBSOCKET_DEPRECATION_PLAN.md
 
 # ================================================
 # Lambda Permissions
 # ================================================
 
-resource "aws_lambda_permission" "http_api_lambda_permission" {
-  statement_id  = "AllowExecutionFromHTTPAPI"
-  action        = "lambda:InvokeFunction"
-  function_name = var.lambda_arns["chat_http_handler"]
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
-}
+# HTTP API chat_http_handler permission - REMOVED (2026-02)
 
 # Conversations Handler Lambda Permission
 resource "aws_lambda_permission" "conversations_api_permission" {
@@ -603,29 +435,7 @@ resource "aws_lambda_permission" "search_api_permission" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
 
-resource "aws_lambda_permission" "websocket_connect_permission" {
-  statement_id  = "AllowExecutionFromWebSocketConnect"
-  action        = "lambda:InvokeFunction"
-  function_name = var.lambda_arns["websocket_connect"]
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.websocket_api.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "websocket_disconnect_permission" {
-  statement_id  = "AllowExecutionFromWebSocketDisconnect"
-  action        = "lambda:InvokeFunction"
-  function_name = var.lambda_arns["websocket_disconnect"]
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.websocket_api.execution_arn}/*/*"
-}
-
-resource "aws_lambda_permission" "websocket_message_permission" {
-  statement_id  = "AllowExecutionFromWebSocketMessage"
-  action        = "lambda:InvokeFunction"
-  function_name = var.lambda_arns["websocket_message"]
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.websocket_api.execution_arn}/*/*"
-}
+# WebSocket Lambda permissions - REMOVED (2026-02)
 
 # Authorizer permissions
 resource "aws_lambda_permission" "http_authorizer_permission" {
@@ -637,14 +447,7 @@ resource "aws_lambda_permission" "http_authorizer_permission" {
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/authorizers/${aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id}"
 }
 
-resource "aws_lambda_permission" "websocket_authorizer_permission" {
-  count         = var.enable_authorization ? 1 : 0
-  statement_id  = "AllowWebSocketAuthorizerInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = var.authorizer_function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.websocket_api.execution_arn}/authorizers/${aws_apigatewayv2_authorizer.websocket_jwt_authorizer[0].id}"
-}
+# WebSocket authorizer permission - REMOVED (2026-02)
 
 # ================================================
 # Subscription API Routes and Integrations

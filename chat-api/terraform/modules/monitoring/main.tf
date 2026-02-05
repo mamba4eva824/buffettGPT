@@ -79,174 +79,8 @@ resource "aws_cloudwatch_log_group" "provisioned_concurrency_logs" {
 # ================================================
 # Lambda Function Monitoring
 # ================================================
-
-# WebSocket Connect Function Monitoring
-resource "aws_cloudwatch_metric_alarm" "websocket_connect_errors" {
-  alarm_name          = "${local.resource_prefix}-websocket-connect-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "5"
-  alarm_description   = "WebSocket connect function error rate is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = var.lambda_function_names["websocket_connect"]
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-connect-errors"
-      Purpose = "Monitor WebSocket connect errors"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-resource "aws_cloudwatch_metric_alarm" "websocket_connect_duration" {
-  alarm_name          = "${local.resource_prefix}-websocket-connect-duration"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "Duration"
-  namespace           = "AWS/Lambda"
-  period              = "60"
-  statistic           = "Average"
-  threshold           = "10000"  # 10 seconds
-  alarm_description   = "WebSocket connect function duration is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = var.lambda_function_names["websocket_connect"]
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-connect-duration"
-      Purpose = "Monitor WebSocket connect duration"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-# WebSocket Message Function Monitoring
-resource "aws_cloudwatch_metric_alarm" "websocket_message_errors" {
-  alarm_name          = "${local.resource_prefix}-websocket-message-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "10"
-  alarm_description   = "WebSocket message function error rate is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = var.lambda_function_names["websocket_message"]
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-message-errors"
-      Purpose = "Monitor WebSocket message errors"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-# Chat Processor Function Monitoring
-resource "aws_cloudwatch_metric_alarm" "chat_processor_errors" {
-  alarm_name          = "${local.resource_prefix}-chat-processor-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "5"
-  alarm_description   = "Chat processor function error rate is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = var.lambda_function_names["chat_processor"]
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-chat-processor-errors"
-      Purpose = "Monitor chat processor errors"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-resource "aws_cloudwatch_metric_alarm" "chat_processor_duration" {
-  alarm_name          = "${local.resource_prefix}-chat-processor-duration"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "Duration"
-  namespace           = "AWS/Lambda"
-  period              = "60"
-  statistic           = "Average"
-  threshold           = "20000"  # 20 seconds
-  alarm_description   = "Chat processor function duration is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = var.lambda_function_names["chat_processor"]
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-chat-processor-duration"
-      Purpose = "Monitor chat processor duration"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-resource "aws_cloudwatch_metric_alarm" "chat_processor_throttles" {
-  alarm_name          = "${local.resource_prefix}-chat-processor-throttles"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "Throttles"
-  namespace           = "AWS/Lambda"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "5"
-  alarm_description   = "Chat processor function is being throttled"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = var.lambda_function_names["chat_processor"]
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-chat-processor-throttles"
-      Purpose = "Monitor chat processor throttles"
-      Service = "CloudWatch"
-    }
-  )
-}
+# WebSocket and chat_processor alarms REMOVED (2026-02)
+# per WEBSOCKET_DEPRECATION_PLAN.md
 
 # Lambda Init Duration Monitoring
 resource "aws_cloudwatch_metric_alarm" "lambda_init_duration_high" {
@@ -263,7 +97,7 @@ resource "aws_cloudwatch_metric_alarm" "lambda_init_duration_high" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = lookup(var.lambda_function_names, "chat_processor", values(var.lambda_function_names)[0])
+    FunctionName = lookup(var.lambda_function_names, "analysis_followup", values(var.lambda_function_names)[0])
   }
 
   tags = merge(
@@ -279,211 +113,17 @@ resource "aws_cloudwatch_metric_alarm" "lambda_init_duration_high" {
 # ================================================
 # API Gateway Monitoring
 # ================================================
-
-# WebSocket API 4xx Errors
-resource "aws_cloudwatch_metric_alarm" "websocket_api_4xx_errors" {
-  alarm_name          = "${local.resource_prefix}-websocket-api-4xx-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "4XXError"
-  namespace           = "AWS/ApiGateway"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "10"
-  alarm_description   = "WebSocket API 4xx error rate is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    ApiName = var.websocket_api_id
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-api-4xx-errors"
-      Purpose = "Monitor WebSocket API 4xx errors"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-# WebSocket API 5xx Errors
-resource "aws_cloudwatch_metric_alarm" "websocket_api_5xx_errors" {
-  alarm_name          = "${local.resource_prefix}-websocket-api-5xx-errors"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "5XXError"
-  namespace           = "AWS/ApiGateway"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "5"
-  alarm_description   = "WebSocket API 5xx error rate is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  ok_actions          = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    ApiName = var.websocket_api_id
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-api-5xx-errors"
-      Purpose = "Monitor WebSocket API 5xx errors"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-# WebSocket API Integration Latency
-resource "aws_cloudwatch_metric_alarm" "websocket_api_integration_latency" {
-  alarm_name          = "${local.resource_prefix}-websocket-api-integration-latency"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "IntegrationLatency"
-  namespace           = "AWS/ApiGateway"
-  period              = "60"
-  statistic           = "Average"
-  threshold           = "5000"  # 5 seconds
-  alarm_description   = "WebSocket API integration latency is too high"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    ApiName = var.websocket_api_id
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-websocket-api-integration-latency"
-      Purpose = "Monitor WebSocket API latency"
-      Service = "CloudWatch"
-    }
-  )
-}
+# WebSocket API alarms REMOVED (2026-02) per WEBSOCKET_DEPRECATION_PLAN.md
 
 # ================================================
-# SQS Queue Monitoring
+# SQS Queue Monitoring - REMOVED (2026-02)
 # ================================================
-
-# Processing Queue Depth
-resource "aws_cloudwatch_metric_alarm" "processing_queue_depth" {
-  alarm_name          = "${local.resource_prefix}-processing-queue-depth"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "ApproximateNumberOfMessagesVisible"
-  namespace           = "AWS/SQS"
-  period              = "300"
-  statistic           = "Average"
-  threshold           = "100"
-  alarm_description   = "Processing queue has too many messages"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    QueueName = "${local.resource_prefix}-chat-processing-queue"
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-processing-queue-depth"
-      Purpose = "Monitor SQS queue depth"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-# Processing Queue Age
-resource "aws_cloudwatch_metric_alarm" "processing_queue_age" {
-  alarm_name          = "${local.resource_prefix}-processing-queue-age"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "ApproximateAgeOfOldestMessage"
-  namespace           = "AWS/SQS"
-  period              = "300"
-  statistic           = "Maximum"
-  threshold           = "300"  # 5 minutes
-  alarm_description   = "Processing queue messages are too old"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    QueueName = "${local.resource_prefix}-chat-processing-queue"
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-processing-queue-age"
-      Purpose = "Monitor SQS message age"
-      Service = "CloudWatch"
-    }
-  )
-}
-
-# DLQ Messages
-resource "aws_cloudwatch_metric_alarm" "dlq_messages" {
-  alarm_name          = "${local.resource_prefix}-dlq-messages"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "1"
-  metric_name         = "ApproximateNumberOfMessagesVisible"
-  namespace           = "AWS/SQS"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "0"
-  alarm_description   = "Messages in dead letter queue"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    QueueName = "${local.resource_prefix}-chat-dlq"
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-dlq-messages"
-      Purpose = "Monitor DLQ messages"
-      Service = "CloudWatch"
-    }
-  )
-}
+# SQS alarms deprecated per WEBSOCKET_DEPRECATION_PLAN.md
 
 # ================================================
 # DynamoDB Monitoring
 # ================================================
-
-# Connections Table Throttles
-resource "aws_cloudwatch_metric_alarm" "connections_table_throttles" {
-  alarm_name          = "${local.resource_prefix}-connections-table-throttles"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = "2"
-  metric_name         = "UserErrors"
-  namespace           = "AWS/DynamoDB"
-  period              = "60"
-  statistic           = "Sum"
-  threshold           = "10"
-  alarm_description   = "DynamoDB connections table is being throttled"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    TableName = "${local.resource_prefix}-websocket-connections"
-  }
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${local.resource_prefix}-connections-table-throttles"
-      Purpose = "Monitor DynamoDB throttles"
-      Service = "CloudWatch"
-    }
-  )
-}
+# websocket-connections table alarm REMOVED (2026-02) per WEBSOCKET_DEPRECATION_PLAN.md
 
 # ================================================
 # Rate Limiting Monitoring
@@ -555,7 +195,7 @@ resource "aws_cloudwatch_metric_alarm" "provisioned_concurrency_utilization_high
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = lookup(var.lambda_function_names, "chat_processor", values(var.lambda_function_names)[0])
+    FunctionName = lookup(var.lambda_function_names, "analysis_followup", values(var.lambda_function_names)[0])
   }
 
   tags = merge(
@@ -582,7 +222,7 @@ resource "aws_cloudwatch_metric_alarm" "provisioned_concurrency_spillover_high" 
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = lookup(var.lambda_function_names, "chat_processor", values(var.lambda_function_names)[0])
+    FunctionName = lookup(var.lambda_function_names, "analysis_followup", values(var.lambda_function_names)[0])
   }
 
   tags = merge(

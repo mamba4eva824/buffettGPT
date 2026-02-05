@@ -25,9 +25,11 @@ variable "api_gateway_id" {
   type        = string
 }
 
+# websocket_api_id - REMOVED (2026-02) - WebSocket deprecated
 variable "websocket_api_id" {
-  description = "ID of the WebSocket API Gateway to monitor"
+  description = "DEPRECATED: ID of the WebSocket API Gateway to monitor"
   type        = string
+  default     = ""
 }
 
 variable "common_tags" {
