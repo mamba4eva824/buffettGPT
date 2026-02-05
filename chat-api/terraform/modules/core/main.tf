@@ -88,21 +88,7 @@ resource "aws_iam_policy" "lambda_policy" {
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/token-usage-${var.environment}-${var.project_name}/index/*"
         ]
       },
-      # SQS Access
-      {
-        Effect = "Allow"
-        Action = [
-          "sqs:SendMessage",
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes",
-          "sqs:GetQueueUrl"
-        ]
-        Resource = [
-          aws_sqs_queue.chat_processing_queue.arn,
-          aws_sqs_queue.chat_dlq.arn
-        ]
-      },
+      # SQS Access - REMOVED (2026-02) - chat processing queue deprecated
       # KMS Access
       {
         Effect = "Allow"
@@ -123,14 +109,7 @@ resource "aws_iam_policy" "lambda_policy" {
         ]
         Resource = "*"
       },
-      # API Gateway WebSocket Management
-      {
-        Effect = "Allow"
-        Action = [
-          "execute-api:ManageConnections"
-        ]
-        Resource = "arn:aws:execute-api:${var.aws_region}:${data.aws_caller_identity.current.account_id}:*/*/*/*"
-      },
+      # API Gateway WebSocket Management - REMOVED (2026-02) - WebSocket deprecated
       # CloudWatch Metrics
       {
         Effect = "Allow"
@@ -185,47 +164,10 @@ resource "aws_iam_role_policy_attachment" "lambda_custom_policy" {
 }
 
 # ================================================
-# SQS Queues
+# SQS Queues - REMOVED (2026-02)
 # ================================================
-resource "aws_sqs_queue" "chat_processing_queue" {
-  name                       = "${var.project_name}-${var.environment}-chat-processing"
-  visibility_timeout_seconds = 720  # 12 minutes (6x Lambda timeout)
-  message_retention_seconds  = 86400  # 1 day
-  max_message_size          = 262144  # 256 KB
-  receive_wait_time_seconds = 20  # Long polling
-  
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.chat_dlq.arn
-    maxReceiveCount     = 3
-  })
-
-  kms_master_key_id                 = aws_kms_key.chat_api_key.id
-  kms_data_key_reuse_period_seconds = 300
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${var.project_name}-${var.environment}-chat-processing"
-      Purpose = "Chat message processing queue"
-    }
-  )
-}
-
-resource "aws_sqs_queue" "chat_dlq" {
-  name                      = "${var.project_name}-${var.environment}-chat-processing-dlq"
-  message_retention_seconds = 1209600  # 14 days
-
-  kms_master_key_id                 = aws_kms_key.chat_api_key.id
-  kms_data_key_reuse_period_seconds = 300
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${var.project_name}-${var.environment}-chat-processing-dlq"
-      Purpose = "Dead letter queue for failed messages"
-    }
-  )
-}
+# Chat processing queue and DLQ deprecated per WEBSOCKET_DEPRECATION_PLAN.md
+# WebSocket chat infrastructure no longer used - all chat via REST+SSE
 
 # ================================================
 # Data Sources

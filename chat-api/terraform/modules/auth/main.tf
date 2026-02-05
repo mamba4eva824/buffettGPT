@@ -21,9 +21,20 @@ resource "aws_dynamodb_table" "users" {
     type = "S"
   }
 
+  attribute {
+    name = "stripe_customer_id"
+    type = "S"
+  }
+
   global_secondary_index {
     name            = "email-index"
     hash_key        = "email"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "stripe-customer-index"
+    hash_key        = "stripe_customer_id"
     projection_type = "ALL"
   }
 

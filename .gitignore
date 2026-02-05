@@ -196,11 +196,7 @@ chat-api/lambda-auth/auth-verify/
 chat-api/backend/deploy/
 chat-api/build/lambda-packages/
 
-# Development and test files
-test_*.py
-*_test.py
-test-*.js
-*.test.js
+# Development error logs
 dev.err
 
 # Temporary files
@@ -291,10 +287,12 @@ terraform.tfstate.backup
 # Terraform outputs (may contain sensitive data)
 **/terraform-output*.json
 
-# Documentation that might contain sensitive info
-docs/
+# Documentation - allow docs/ for MkDocs, ignore sensitive patterns
+# docs/  # REMOVED - now tracked for MkDocs documentation
+docs/**/*.secret.md
+docs/**/credentials/
+# Keep these ignored if they exist elsewhere
 documentation/
-guides/
 implementation_guides/
 deployment_guides/
 architecture_docs/

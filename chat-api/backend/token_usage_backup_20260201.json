@@ -1,0 +1,59 @@
+{
+    "Items": [
+        {
+            "last_request_at": {
+                "S": "2026-02-01T01:04:18.221788Z"
+            },
+            "request_count": {
+                "N": "1"
+            },
+            "user_id": {
+                "S": "test-user-123"
+            },
+            "input_tokens": {
+                "N": "4319"
+            },
+            "total_tokens": {
+                "N": "4824"
+            },
+            "output_tokens": {
+                "N": "505"
+            },
+            "month": {
+                "S": "2026-02"
+            },
+            "token_limit": {
+                "N": "50000"
+            }
+        },
+        {
+            "last_request_at": {
+                "S": "2026-01-31T18:25:51.521603Z"
+            },
+            "request_count": {
+                "N": "8"
+            },
+            "user_id": {
+                "S": "116437894912495148094"
+            },
+            "input_tokens": {
+                "N": "26846"
+            },
+            "total_tokens": {
+                "N": "30002"
+            },
+            "output_tokens": {
+                "N": "3156"
+            },
+            "month": {
+                "S": "2026-01"
+            },
+            "token_limit": {
+                "N": "50000"
+            }
+        }
+    ],
+    "Count": 2,
+    "ScannedCount": 2,
+    "ConsumedCapacity": null
+}

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose, Zap } from "lucide-react";
 import TokenUsageDisplay from "./components/TokenUsageDisplay.jsx";
+import SubscriptionManagement from "./components/SubscriptionManagement.jsx";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import AnalysisView from "./components/analysis/AnalysisView.jsx";
@@ -238,7 +239,6 @@ function hasAnalysisMessages(messages) {
  * Environment Configuration *
  *************************/
 const ENV_CONFIG = {
-  WEBSOCKET_URL: import.meta.env.VITE_WEBSOCKET_URL || "",
   REST_API_URL: import.meta.env.VITE_REST_API_URL || "",
   APP_NAME: import.meta.env.VITE_APP_NAME || "Buffett",
   ENVIRONMENT: import.meta.env.VITE_ENVIRONMENT || "development",
@@ -251,7 +251,6 @@ const ENV_CONFIG = {
  * Local Storage Settings *
  *************************/
 const LS_KEYS = {
-  wsUrl: "chat.ai.wsUrl",
   restUrl: "chat.ai.restUrl",
   sessions: "chat.ai.sessions",
   userName: "chat.ai.userName",
@@ -306,320 +305,6 @@ const getRemainingQueries = () => {
 function classNames(...xs) { return xs.filter(Boolean).join(" "); }
 function uid8() { return Math.random().toString(36).slice(2, 10); }
 function nowIso() { return new Date().toISOString(); }
-
-/************************
- * useWebSocket hook     *
- ************************/
-function useAwsWebSocket({ wsUrl, userId, token, conversationId, fetchConversations, setIsEvaluating }) {
-  const socketRef = useRef(null);
-  const heartbeatIntervalRef = useRef(null);
-  const idleTimeoutRef = useRef(null);
-  const lastPongRef = useRef(null);
-  const lastActivityRef = useRef(Date.now());
-  const reconnectingRef = useRef(false); // Track reconnection state to prevent race conditions
-  const [status, setStatus] = useState("disconnected");
-  const [sessionId, setSessionId] = useState("");
-  const [messages, setMessages] = useState([]); // {id,type:'user'|'assistant'|'system',content,timestamp,meta}
-  const [pendingAssistantId, setPendingAssistantId] = useState(null);
-
-  // Connect
-  const connect = useCallback(() => {
-    if (!wsUrl) {
-      logger.log('❌ No WebSocket URL provided');
-      return;
-    }
-
-    // Prevent concurrent connection attempts
-    if (reconnectingRef.current) {
-      logger.log('⏳ Reconnection already in progress, skipping');
-      return;
-    }
-
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) return;
-
-    // Build URL with user_id (only for authenticated users) and token (for authentication)
-    let url = wsUrl;
-    const params = new URLSearchParams();
-
-    // Only add user_id for authenticated users - anonymous users let backend generate ID
-    if (userId) {
-      params.append('user_id', userId);
-    }
-
-    // Add token if available (for WebSocket authorization)
-    if (token) {
-      params.append('token', token);
-    }
-
-    // Add conversation_id if available (to continue existing conversation)
-    if (conversationId) {
-      params.append('conversation_id', conversationId);
-    }
-
-    // Append parameters if any exist
-    if (params.toString()) {
-      url += `${wsUrl.includes("?") ? "&" : "?"}${params.toString()}`;
-    }
-
-    logger.log('🔌 Connecting to WebSocket:', url, token ? '(with auth token)' : '(no token)');
-
-    reconnectingRef.current = true; // Set flag to prevent concurrent reconnections
-    const ws = new WebSocket(url);
-    socketRef.current = ws;
-    setStatus("connecting");
-
-    ws.onopen = () => {
-      logger.log('✅ WebSocket connected');
-      reconnectingRef.current = false; // Clear flag on successful connection
-      setStatus("connected");
-      lastActivityRef.current = Date.now();
-
-      // Start idle timeout (5 minutes)
-      const resetIdleTimeout = () => {
-        lastActivityRef.current = Date.now();
-        if (idleTimeoutRef.current) {
-          clearTimeout(idleTimeoutRef.current);
-        }
-        idleTimeoutRef.current = setTimeout(() => {
-          logger.log('🚫 Disconnecting due to 5 minutes of inactivity');
-          // Close the WebSocket directly instead of calling disconnect
-          if (socketRef.current) {
-            socketRef.current.close();
-          }
-        }, 5 * 60 * 1000); // 5 minutes
-      };
-      resetIdleTimeout();
-
-      // Store reset function for use in message handlers
-      ws.resetIdleTimeout = resetIdleTimeout;
-
-      // Start heartbeat mechanism
-      lastPongRef.current = Date.now();
-      heartbeatIntervalRef.current = setInterval(() => {
-        if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-          // Check if we've received a pong recently (within 45 seconds)
-          const timeSinceLastPong = Date.now() - lastPongRef.current;
-          if (timeSinceLastPong > 45000) {
-            logger.warn('⚠️ No pong received in 45s, reconnecting...');
-            // Connection seems dead, close the socket
-            // The useEffect hooks will handle reconnection
-            if (socketRef.current) {
-              socketRef.current.close();
-            }
-            return;
-          }
-
-          // Send ping
-          logger.log('🏓 Sending ping');
-          socketRef.current.send(JSON.stringify({ action: "ping" }));
-        }
-      }, 30000); // Send ping every 30 seconds
-    };
-    ws.onclose = () => {
-      logger.log('🔌 WebSocket disconnected');
-      reconnectingRef.current = false; // Clear reconnection flag
-      setStatus("disconnected");
-      socketRef.current = null;
-
-      // Clear heartbeat and idle timeout
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-        heartbeatIntervalRef.current = null;
-      }
-      if (idleTimeoutRef.current) {
-        clearTimeout(idleTimeoutRef.current);
-        idleTimeoutRef.current = null;
-      }
-    };
-    ws.onerror = (error) => {
-      logger.error('❌ WebSocket error:', error);
-      reconnectingRef.current = false; // Clear reconnection flag on error
-      setStatus("error");
-    };
-
-    ws.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data || "{}");
-
-        // Reset idle timeout on any message
-        if (ws.resetIdleTimeout) {
-          ws.resetIdleTimeout();
-        }
-        logger.log('📨 Received WebSocket message:', data);
-        if (data.type === "pong" || data.action === "pong") {
-          // Update last pong timestamp
-          lastPongRef.current = Date.now();
-          logger.log('🏓 Received pong');
-        } else if (data.type === "welcome") {
-          // Use conversation_id as session_id if available, otherwise fall back to session_id
-          const effectiveSessionId = data.conversation_id || data.session_id || "";
-          setSessionId(effectiveSessionId);
-          setMessages((m) => [
-            ...m,
-            { id: `sys-${uid8()}`, type: "system", content: data.message || "Welcome!", timestamp: data.timestamp || nowIso() },
-          ]);
-        } else if (data.type === "messageReceived" || data.action === "message_received") {
-          // Message acknowledgment - could show a checkmark or "sent" indicator
-          logger.log('✅ Message acknowledged by server');
-        } else if (data.action === "typing") {
-          // Typing indicator
-          logger.log(`⌨️ ${data.is_typing ? 'Started' : 'Stopped'} typing`);
-          // You could show a typing indicator in the UI here
-        } else if (data.type === "chunk") {
-          // live streaming chunk from backend (optional)
-          // Clear evaluating state when streaming starts
-          setIsEvaluating(false);
-          setMessages((prevMessages) => {
-            // Find existing streaming message instead of relying on stale pendingAssistantId closure
-            const existingStreamingMsg = prevMessages.find(msg => msg.meta?.streaming === true);
-
-            if (existingStreamingMsg) {
-              // Append to existing streaming message
-              return prevMessages.map((msg) =>
-                msg.id === existingStreamingMsg.id
-                  ? { ...msg, content: (msg.content || "") + (data.text || "") }
-                  : msg
-              );
-            }
-
-            // No existing streaming message, create one
-            const id = `asst-${uid8()}`;
-            setPendingAssistantId(id);
-            return [
-              ...prevMessages,
-              { id, type: "assistant", content: data.text || "", timestamp: data.timestamp || nowIso(), meta: { streaming: true } },
-            ];
-          });
-        } else if (data.type === "chatResponse" || data.action === "message_response") {
-          // finalize assistant message - support both message formats
-          const messageContent = data.message || data.content || "";
-          const messageId = data.message_id || `asst-${uid8()}`;
-          const processingTime = data.processing_time_ms || data.processing_time;
-          
-          setMessages((m) => {
-            if (pendingAssistantId) {
-              const finalized = m.map((msg) => (msg.id === pendingAssistantId ? { ...msg, meta: { ...msg.meta, streaming: false }, content: messageContent } : msg));
-              setPendingAssistantId(null);
-              return finalized;
-            }
-            return [
-              ...m,
-              {
-                id: messageId,
-                type: "assistant",
-                content: messageContent,
-                timestamp: data.timestamp || nowIso(),
-                meta: { processingTime: processingTime }
-              },
-            ];
-          });
-
-          // Clear evaluating state when response is received
-          setIsEvaluating(false);
-
-          // Refresh conversations to update inbox ordering
-          if (fetchConversations) {
-            fetchConversations();
-          }
-        } else if (data.type === "error") {
-          setMessages((m) => [ ...m, { id: `err-${uid8()}`, type: "system", content: data.message || "Error.", timestamp: data.timestamp || nowIso() } ]);
-        }
-      } catch (e) { /* ignore */ }
-    };
-  }, [wsUrl, userId, token, conversationId, pendingAssistantId, fetchConversations, setIsEvaluating]);
-
-  const disconnect = useCallback(() => {
-    setPendingAssistantId(null);
-    reconnectingRef.current = false; // Clear reconnection flag
-
-    // Clear heartbeat and idle timeout
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-      heartbeatIntervalRef.current = null;
-    }
-    if (idleTimeoutRef.current) {
-      clearTimeout(idleTimeoutRef.current);
-      idleTimeoutRef.current = null;
-    }
-
-    if (socketRef.current) {
-      try {
-        // Remove all event listeners before closing to prevent spurious error events
-        const socket = socketRef.current;
-        socket.onopen = null;
-        socket.onclose = null;
-        socket.onerror = null;
-        socket.onmessage = null;
-
-        // Close the socket
-        if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
-          socket.close();
-        }
-      } catch {}
-
-      // Clear the reference immediately
-      socketRef.current = null;
-    }
-
-    setStatus("disconnected");
-  }, []);
-
-  const sendMessage = useCallback((text, currentConversationId) => {
-    if (!text?.trim()) return;
-
-    // Reset idle timeout on user activity
-    lastActivityRef.current = Date.now();
-
-    logger.log('🚀 Sending message:', text.trim());
-    logger.log('📡 WebSocket status:', socketRef.current?.readyState);
-    logger.log('🔗 Connection URL:', wsUrl);
-    logger.log('💬 Conversation ID:', currentConversationId || 'none');
-
-    // Add user message immediately
-    const userMsg = { id: `usr-${uid8()}`, type: "user", content: text.trim(), timestamp: nowIso() };
-    setMessages((m) => [ ...m, userMsg ]);
-
-    // If WebSocket is connected, send the message with conversation_id
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      const msg = {
-        action: "message",
-        message: text.trim(),
-        conversation_id: currentConversationId // Include conversation ID in payload
-      };
-      logger.log('📤 Sending WebSocket message:', msg);
-      socketRef.current.send(JSON.stringify(msg));
-    } else {
-      logger.log('⚠️ WebSocket not connected, using demo mode');
-      // Demo mode: simulate AI response after a delay
-      setTimeout(() => {
-        const aiMsg = {
-          id: `ai-${uid8()}`,
-          type: "assistant",
-          content: `This is a demo response to: "${text.trim()}". Connect to your AWS WebSocket in Settings to get real Warren Buffett AI responses!`,
-          timestamp: nowIso(),
-          meta: { processingTime: 1500 }
-        };
-        setMessages((m) => [ ...m, aiMsg ]);
-        // Clear evaluating state
-        setIsEvaluating(false);
-      }, 1500);
-    }
-  }, [wsUrl, setIsEvaluating]);
-
-  // Add switchConversation function for changing conversations without reconnecting
-  const switchConversation = useCallback((newConversationId) => {
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      logger.log('📝 Switching to conversation:', newConversationId);
-      socketRef.current.send(JSON.stringify({
-        action: "switch_conversation",
-        conversation_id: newConversationId
-      }));
-    }
-  }, []);
-
-  return { status, sessionId, messages, connect, disconnect, sendMessage, setMessages, switchConversation };
-}
-
 
 /************************
  * Message bubble        *
@@ -707,24 +392,11 @@ function ChatApp() {
   useEffect(() => {
     logger.log('🌍 Environment Config:', ENV_CONFIG);
   }, []);
-  
-  // Use environment variables directly - no user override needed
-  const wsUrl = ENV_CONFIG.WEBSOCKET_URL;
+
   const [userName, setUserName] = useState(() => {
     const saved = getLS(LS_KEYS.userName);
     return saved || `${ENV_CONFIG.DEFAULT_USER_NAME}_${uid8()}`;
   });
-  
-  // Use authenticated user's Google sub ID if available, otherwise let backend generate anonymous ID
-  const userId = useMemo(() => {
-    if (isAuthenticated && user?.id) {
-      logger.log('🔑 Using authenticated user ID:', user.id);
-      return user.id; // This is the Google sub ID
-    }
-    // For anonymous users, return null to let backend generate device fingerprint-based ID
-    logger.log('👤 Anonymous user - letting backend generate user ID');
-    return null;
-  }, [isAuthenticated, user?.id]);
 
   // Local sidebar state (simple client-side sessions list for now)
   const [sessions, setSessions] = useState(() => {
@@ -754,6 +426,8 @@ function ChatApp() {
   const [remainingQueries, setRemainingQueries] = useState(() => getRemainingQueries());
   const [hasStartedQuerying, setHasStartedQuerying] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [settingsTokenUsage, setSettingsTokenUsage] = useState(null);
 
   // Research mode state - for unified research view
   const [collapsedSections, setCollapsedSections] = useState([]);
@@ -794,6 +468,10 @@ function ChatApp() {
     // Token usage tracking
     tokenUsage,
   } = useResearch();
+
+  // Merge token usage from settings fetch (proactive) with SSE updates (reactive)
+  // Settings data takes priority when available for freshness on settings open
+  const effectiveTokenUsage = settingsTokenUsage || tokenUsage;
 
   // Company search autocomplete
   const {
@@ -1133,14 +811,8 @@ function ChatApp() {
   // source of truth. The frontend only fetches messages via GET request on conversation load.
   // This prevents duplicate saves and timestamp collision issues in DynamoDB.
 
-  const { status, sessionId, messages, connect, disconnect, setMessages, switchConversation } = useAwsWebSocket({
-    wsUrl,
-    userId,
-    token,
-    conversationId: selectedConversation?.conversation_id,
-    fetchConversations,
-    setIsEvaluating
-  });
+  // Messages state (WebSocket chat deprecated - now using REST+SSE for research/follow-up)
+  const [messages, setMessages] = useState([]);
 
   // Persist settings
   useEffect(() => { setLS(LS_KEYS.userName, userName); }, [userName]);
@@ -1194,57 +866,8 @@ function ChatApp() {
     }
   }, [isAuthenticated]);
 
-  // Auto connect when WS URL is present
+  // Update conversation title in backend when messages change
   useEffect(() => {
-    if (wsUrl) {
-      logger.log('🔄 Auto-connecting to WebSocket...');
-      connect();
-    }
-  }, [wsUrl, connect]);
-
-  // Reconnect WebSocket when authentication state changes
-  useEffect(() => {
-    let reconnectTimeoutId = null;
-
-    if (wsUrl && isAuthenticated && token) {
-      logger.log('🔐 Reconnecting WebSocket after authentication...');
-      disconnect();
-      // Longer delay to ensure clean disconnection before reconnecting
-      // This prevents race conditions where the old connection triggers errors
-      reconnectTimeoutId = setTimeout(() => connect(), 500);
-    }
-
-    // Cleanup: cancel pending reconnection on unmount or dependency change
-    return () => {
-      if (reconnectTimeoutId) {
-        clearTimeout(reconnectTimeoutId);
-      }
-    };
-  }, [isAuthenticated, token, wsUrl, connect, disconnect]);
-
-  // Switch conversation context when conversation changes (without reconnecting)
-  useEffect(() => {
-    if (wsUrl && selectedConversation && status === "connected") {
-      switchConversation(selectedConversation.conversation_id);
-    }
-  }, [selectedConversation?.conversation_id, wsUrl, status, switchConversation]);
-
-  // Track sessions list and update conversation if authenticated
-  useEffect(() => {
-    if (!sessionId) return;
-
-    // Update local sessions for fallback
-    setSessions((prev) => {
-      const existing = prev.find((s) => s.id === sessionId);
-      const title = deriveTitle(messages);
-      const next = existing
-        ? prev.map((s) => (s.id === sessionId ? { ...s, title: title || s.title, updatedAt: nowIso() } : s))
-        : [{ id: sessionId, title: title || "New chat", createdAt: nowIso(), updatedAt: nowIso() }, ...prev];
-      setLS(LS_KEYS.sessions, JSON.stringify(next));
-      return next;
-    });
-
-    // Update conversation in backend if authenticated and has selected conversation
     if (isAuthenticated && selectedConversation && messages.length > 0) {
       const title = deriveTitle(messages);
       if (title !== selectedConversation.title) {
@@ -1255,7 +878,7 @@ function ChatApp() {
         });
       }
     }
-  }, [sessionId, messages, isAuthenticated, selectedConversation, updateConversation]);
+  }, [messages, isAuthenticated, selectedConversation, updateConversation]);
 
   const doSend = useCallback(async (overrideText = null) => {
     const textToSend = overrideText || input;
@@ -1422,9 +1045,7 @@ function ChatApp() {
 
     // Clear selection - conversation will be created in doSend when user submits a company
     setSelectedConversation(null);
-    disconnect();
-    setTimeout(() => connect(), 50);
-  }, [disconnect, connect, setMessages, setSelectedConversation, resetResearch]);
+  }, [setMessages, setSelectedConversation, resetResearch]);
 
   const removeSession = useCallback((id) => {
     setSessions((prev) => {
@@ -1953,22 +1574,11 @@ function ChatApp() {
                     className="rounded-full hover:ring-2 hover:ring-indigo-500 transition-all"
                     title={user?.name || "Account"}
                   >
-                    <div className="relative">
-                      <Avatar
-                        src={user?.picture || ''}
-                        alt={user?.name || user?.email || 'User'}
-                        size="w-8 h-8"
-                      />
-                      {/* Connection status dot */}
-                      {status && (
-                        <span className={classNames(
-                          "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800",
-                          status === "connected" ? "bg-emerald-500" :
-                          status === "connecting" ? "bg-amber-500 animate-pulse" :
-                          "bg-slate-400"
-                        )} />
-                      )}
-                    </div>
+                    <Avatar
+                      src={user?.picture || ''}
+                      alt={user?.name || user?.email || 'User'}
+                      size="w-8 h-8"
+                    />
                   </button>
                 </div>
               </>
@@ -2021,7 +1631,6 @@ function ChatApp() {
                     // Load messages for this conversation
                     if (conv.conversation_id) {
                       await loadConversationMessages(conv.conversation_id, conv.title);
-                      // useEffect will handle WebSocket reconnection with conversation_id
                     }
                   }}
                   onUpdateConversation={updateConversation}
@@ -2065,7 +1674,6 @@ function ChatApp() {
                 darkMode={darkMode}
                 onDarkModeToggle={toggleDarkMode}
                 dropdownPosition="top"
-                connectionStatus={status}
               />
             </div>
               </div>
@@ -2090,9 +1698,6 @@ function ChatApp() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {!wsUrl && (
-                  <div className="rounded-lg bg-amber-50 px-3 py-1 text-xs text-amber-700">Add your WebSocket URL in Settings →</div>
-                )}
                 {/* Account dropdown moved to sidebar - show login button for non-authenticated users */}
                 {!isAuthenticated && (
                   <AccountDropdown
@@ -2460,12 +2065,18 @@ function ChatApp() {
 
               {/* Token Usage Section */}
               <TokenUsageDisplay
-                tokenUsage={tokenUsage}
+                tokenUsage={effectiveTokenUsage}
                 isAuthenticated={isAuthenticated}
-                onUpgrade={() => {
-                  // TODO: Open upgrade modal when Stripe integration is complete
-                  console.log('Upgrade clicked - Stripe integration coming soon');
-                }}
+                onUpgrade={() => setShowUpgradeModal(true)}
+              />
+
+              {/* Subscription Management Section */}
+              <SubscriptionManagement
+                token={token}
+                isAuthenticated={isAuthenticated}
+                showUpgradeModal={showUpgradeModal}
+                onShowUpgradeModalChange={setShowUpgradeModal}
+                onTokenUsageUpdate={setSettingsTokenUsage}
               />
 
               <div className="rounded-lg bg-slate-50 dark:bg-slate-700 p-3 text-sm text-slate-600 dark:text-slate-300">
@@ -2838,7 +2449,7 @@ function DarkModeToggle({ darkMode, onToggle }) {
 }
 
 // Account Dropdown Component
-function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle, dropdownPosition = "bottom", connectionStatus }) {
+function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle, dropdownPosition = "bottom" }) {
   const { user, isAuthenticated, logout } = useAuth();
   const dropdownRef = useRef(null);
 
@@ -2865,22 +2476,11 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
       >
         {isAuthenticated && user ? (
           <>
-            <div className="relative">
-              <Avatar
-                src={user?.picture || ''}
-                alt={user?.name || user?.email || 'User'}
-                size="w-6 h-6"
-              />
-              {/* Connection status dot */}
-              {connectionStatus && (
-                <span className={classNames(
-                  "absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-800",
-                  connectionStatus === "connected" ? "bg-emerald-500" :
-                  connectionStatus === "connecting" ? "bg-amber-500 animate-pulse" :
-                  "bg-slate-400"
-                )} />
-              )}
-            </div>
+            <Avatar
+              src={user?.picture || ''}
+              alt={user?.name || user?.email || 'User'}
+              size="w-6 h-6"
+            />
             <span className="text-sm font-medium text-slate-700 dark:text-white truncate">{user?.name || user?.email || 'User'}</span>
           </>
         ) : (

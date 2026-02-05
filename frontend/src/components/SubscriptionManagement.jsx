@@ -12,14 +12,22 @@ import UpgradeModal from './UpgradeModal';
  * - UpgradeModal for upgrading to Plus
  * - Stripe Customer Portal for managing subscription
  */
-export default function SubscriptionManagement({ token, isAuthenticated }) {
+export default function SubscriptionManagement({
+  token,
+  isAuthenticated,
+  showUpgradeModal: externalShowUpgradeModal,
+  onShowUpgradeModalChange,
+  onTokenUsageUpdate
+}) {
   // Subscription state
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Modal state
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  // Modal state - use external control if provided for TokenUsageDisplay integration
+  const [internalShowUpgradeModal, setInternalShowUpgradeModal] = useState(false);
+  const showUpgradeModal = externalShowUpgradeModal !== undefined ? externalShowUpgradeModal : internalShowUpgradeModal;
+  const setShowUpgradeModal = onShowUpgradeModalChange || setInternalShowUpgradeModal;
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
 
@@ -40,13 +48,18 @@ export default function SubscriptionManagement({ token, isAuthenticated }) {
     try {
       const data = await stripeApi.getSubscriptionStatus(token);
       setSubscriptionData(data);
+
+      // Propagate token usage to parent for settings display
+      if (data.token_usage && onTokenUsageUpdate) {
+        onTokenUsageUpdate(data.token_usage);
+      }
     } catch (err) {
       console.error('Failed to fetch subscription status:', err);
       setError('Failed to load subscription status');
     } finally {
       setIsLoading(false);
     }
-  }, [token, isAuthenticated]);
+  }, [token, isAuthenticated, onTokenUsageUpdate]);
 
   // Fetch on mount and when token changes
   useEffect(() => {

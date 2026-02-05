@@ -10,10 +10,21 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
+def pytest_configure(config):
+    """Register custom pytest markers."""
+    config.addinivalue_line(
+        "markers", "integration: marks tests as integration tests (require AWS credentials)"
+    )
+    config.addinivalue_line(
+        "markers", "slow: marks tests as slow (may incur API costs, can be skipped with -m 'not slow')"
+    )
+
+
 @pytest.fixture(autouse=True)
 def setup_test_environment():
     """Setup test environment variables before each test."""
     test_env_vars = {
+        # AWS / Bedrock
         'BEDROCK_REGION': 'us-east-1',
         'CHAT_MESSAGES_TABLE': 'test-chat-messages',
         'ENVIRONMENT': 'test',
@@ -25,6 +36,12 @@ def setup_test_environment():
         'CASHFLOW_AGENT_ALIAS': 'test-cashflow-alias',
         'GROWTH_AGENT_ID': 'test-growth-agent-id',
         'GROWTH_AGENT_ALIAS': 'test-growth-alias',
+        # Stripe integration
+        'USERS_TABLE': 'buffett-test-users',
+        'TOKEN_USAGE_TABLE': 'buffett-test-token-usage',
+        'PROCESSED_EVENTS_TABLE': 'buffett-test-stripe-events',
+        'TOKEN_LIMIT_PLUS': '2000000',
+        'FRONTEND_URL': 'https://buffettgpt.test',
     }
 
     # Store original values

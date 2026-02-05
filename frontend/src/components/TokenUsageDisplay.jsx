@@ -5,7 +5,7 @@ import { Zap, Calendar, AlertTriangle, TrendingUp, Crown } from 'lucide-react';
  *
  * Displays:
  * - Progress bar showing tokens used vs limit
- * - Percentage remaining
+ * - Percentage used
  * - Reset date
  * - Warning when approaching limit
  * - Upgrade prompt for free users
@@ -20,9 +20,6 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
     request_count = 0,
     subscription_tier = 'free'
   } = tokenUsage || {};
-
-  // Calculate percentage remaining (inverse of percent_used)
-  const percentRemaining = Math.max(0, 100 - percent_used);
 
   // Determine status color based on usage
   const getStatusColor = () => {
@@ -93,9 +90,9 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
           <div className="flex items-baseline justify-between mb-2">
             <div className="flex items-baseline gap-1">
               <span className={`text-2xl font-bold ${statusColor.text}`}>
-                {percentRemaining.toFixed(0)}%
+                {percent_used.toFixed(0)}%
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">remaining</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">used</span>
             </div>
             <div className="text-right">
               <span className="text-sm font-medium text-slate-700 dark:text-slate-300">

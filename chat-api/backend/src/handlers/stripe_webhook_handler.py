@@ -11,6 +11,7 @@ Webhook signature verification ensures events are from Stripe.
 Idempotency is handled via event ID tracking to prevent duplicate processing.
 """
 
+import calendar
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 # Import stripe service utilities
-from utils.stripe_service import verify_webhook_signature, TOKEN_LIMIT_PLUS
+from utils.stripe_service import verify_webhook_signature, TOKEN_LIMIT_PLUS, TOKEN_LIMIT_FREE
 
 # Configure logging
 logger = logging.getLogger()
@@ -144,10 +145,17 @@ def handle_checkout_completed(session: Dict[str, Any]) -> None:
 
     logger.info(f"Activating subscription for user {user_id}, customer {customer_id}")
 
+    # Verify user exists before updating to prevent creating incomplete records
+    existing_user = _get_user(user_id)
+    if not existing_user:
+        logger.error(f"User {user_id} not found in database - cannot activate subscription without existing user record")
+        raise ValueError(f"User {user_id} does not exist")
+
     now = datetime.now(timezone.utc)
     billing_day = now.day
 
-    # Update user record
+    # Update user record - uses conditional expression to ensure user exists
+    # This preserves existing attributes (email, name, picture, last_login)
     try:
         users_table.update_item(
             Key={'user_id': user_id},
@@ -168,10 +176,14 @@ def handle_checkout_completed(session: Dict[str, Any]) -> None:
                 ':billing_day': billing_day,
                 ':activated_at': now.isoformat().replace('+00:00', 'Z'),
                 ':updated_at': now.isoformat().replace('+00:00', 'Z'),
-            }
+            },
+            ConditionExpression='attribute_exists(user_id)'
         )
         logger.info(f"Updated user {user_id} to Plus tier")
     except ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            logger.error(f"User {user_id} not found - cannot create incomplete user record via webhook")
+            raise ValueError(f"User {user_id} does not exist")
         logger.error(f"Failed to update user record: {str(e)}")
         raise
 
@@ -205,12 +217,19 @@ def handle_subscription_created(subscription: Dict[str, Any]) -> None:
         logger.warning(f"No user_id found for subscription {subscription_id}, skipping activation")
         return
 
+    # Verify user exists before updating to prevent creating incomplete records
+    existing_user = _get_user(user_id)
+    if not existing_user:
+        logger.error(f"User {user_id} not found in database - cannot activate subscription without existing user record")
+        raise ValueError(f"User {user_id} does not exist")
+
     logger.info(f"Activating subscription for user {user_id}, subscription {subscription_id}")
 
     now = datetime.now(timezone.utc)
     billing_day = now.day
 
-    # Update user record
+    # Update user record - uses conditional expression to ensure user exists
+    # This preserves existing attributes (email, name, picture, last_login)
     try:
         users_table.update_item(
             Key={'user_id': user_id},
@@ -231,10 +250,14 @@ def handle_subscription_created(subscription: Dict[str, Any]) -> None:
                 ':billing_day': billing_day,
                 ':activated_at': now.isoformat().replace('+00:00', 'Z'),
                 ':updated_at': now.isoformat().replace('+00:00', 'Z'),
-            }
+            },
+            ConditionExpression='attribute_exists(user_id)'
         )
         logger.info(f"Updated user {user_id} to Plus tier via subscription.created")
     except ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            logger.error(f"User {user_id} not found - cannot create incomplete user record via webhook")
+            raise ValueError(f"User {user_id} does not exist")
         logger.error(f"Failed to update user record: {str(e)}")
         raise
 
@@ -273,7 +296,8 @@ def handle_invoice_paid(invoice: Dict[str, Any]) -> None:
         return
 
     user_id = user['user_id']
-    billing_day = user.get('billing_day', datetime.now(timezone.utc).day)
+    # DynamoDB returns numbers as Decimal, convert to int for datetime operations
+    billing_day = int(user.get('billing_day', datetime.now(timezone.utc).day))
 
     # Reset token usage for new billing period
     _initialize_plus_token_usage(user_id, billing_day)
@@ -352,6 +376,8 @@ def handle_subscription_deleted(subscription: Dict[str, Any]) -> None:
     """
     Downgrade user to free tier on subscription cancellation.
 
+    Syncs subscription_tier='free' to both users and token-usage tables.
+
     Args:
         subscription: Stripe Subscription object
     """
@@ -367,21 +393,26 @@ def handle_subscription_deleted(subscription: Dict[str, Any]) -> None:
         return
 
     user_id = user['user_id']
+    # DynamoDB returns numbers as Decimal, convert to int
+    billing_day = int(user.get('billing_day')) if user.get('billing_day') else None
     now = datetime.now(timezone.utc)
 
-    # Downgrade to free tier
+    # Sync tier to both tables (users table is authoritative)
+    sync_success = _sync_subscription_tier(user_id, 'free', billing_day)
+    if not sync_success:
+        logger.warning(f"Token-usage tier sync failed for {user_id}, continuing with deletion cleanup...")
+
+    # Update other subscription fields and remove subscription ID
     try:
         users_table.update_item(
             Key={'user_id': user_id},
             UpdateExpression='''
-                SET subscription_tier = :tier,
-                    subscription_status = :status,
+                SET subscription_status = :status,
                     subscription_canceled_at = :canceled_at,
                     updated_at = :updated_at
                 REMOVE stripe_subscription_id
             ''',
             ExpressionAttributeValues={
-                ':tier': 'free',
                 ':status': 'canceled',
                 ':canceled_at': now.isoformat().replace('+00:00', 'Z'),
                 ':updated_at': now.isoformat().replace('+00:00', 'Z'),
@@ -395,7 +426,12 @@ def handle_subscription_deleted(subscription: Dict[str, Any]) -> None:
 
 def handle_subscription_updated(subscription: Dict[str, Any]) -> None:
     """
-    Handle subscription updates (status changes, etc.)
+    Handle subscription updates (status changes, tier sync, etc.)
+
+    Syncs subscription_tier to both users and token-usage tables based on status:
+    - active/trialing: tier = 'plus'
+    - canceled: tier = 'free'
+    - past_due/incomplete: no tier change (grace period)
 
     Args:
         subscription: Stripe Subscription object
@@ -405,7 +441,7 @@ def handle_subscription_updated(subscription: Dict[str, Any]) -> None:
     status = subscription.get('status')
     cancel_at_period_end = subscription.get('cancel_at_period_end', False)
 
-    logger.info(f"Processing subscription update: {subscription_id}, status: {status}")
+    logger.info(f"Processing subscription update: {subscription_id}, status: {status}, cancel_at_period_end: {cancel_at_period_end}")
 
     # Find user by stripe_customer_id
     user = _find_user_by_customer_id(customer_id)
@@ -414,33 +450,57 @@ def handle_subscription_updated(subscription: Dict[str, Any]) -> None:
         return
 
     user_id = user['user_id']
+    # DynamoDB returns numbers as Decimal, convert to int
+    billing_day = int(user.get('billing_day')) if user.get('billing_day') else None
     now = datetime.now(timezone.utc)
 
-    # Update subscription status
-    try:
-        update_expr = '''
-            SET subscription_status = :status,
-                cancel_at_period_end = :cancel_at_end,
-                updated_at = :updated_at
-        '''
-        expr_values = {
-            ':status': status,
-            ':cancel_at_end': cancel_at_period_end,
-            ':updated_at': now.isoformat().replace('+00:00', 'Z'),
-        }
+    # Determine if tier should change based on status
+    # Note: cancel_at_period_end=true with status=active means user is still active until period ends
+    new_tier = None
+    if status in ('active', 'trialing'):
+        new_tier = 'plus'
+    elif status == 'canceled':
+        new_tier = 'free'
+    # past_due, incomplete, incomplete_expired, unpaid → no tier change (grace period)
 
+    # Sync tier if it should change
+    if new_tier:
+        sync_success = _sync_subscription_tier(user_id, new_tier, billing_day)
+        if not sync_success:
+            logger.warning(f"Token-usage tier sync failed for {user_id}, continuing with status update...")
+
+    # Update other subscription fields in users table
+    try:
         users_table.update_item(
             Key={'user_id': user_id},
-            UpdateExpression=update_expr,
-            ExpressionAttributeValues=expr_values
+            UpdateExpression='''
+                SET subscription_status = :status,
+                    cancel_at_period_end = :cancel_at_end,
+                    updated_at = :updated_at
+            ''',
+            ExpressionAttributeValues={
+                ':status': status,
+                ':cancel_at_end': cancel_at_period_end,
+                ':updated_at': now.isoformat().replace('+00:00', 'Z'),
+            }
         )
-        logger.info(f"Updated subscription status for user {user_id} to {status}")
+        logger.info(f"Updated subscription for user {user_id}: status={status}, tier={new_tier or 'unchanged'}")
     except ClientError as e:
         logger.error(f"Failed to update user record: {str(e)}")
         raise
 
 
 # Helper functions
+
+def _get_user(user_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch user record from DynamoDB by user_id."""
+    try:
+        response = users_table.get_item(Key={'user_id': user_id})
+        return response.get('Item')
+    except ClientError as e:
+        logger.error(f"Failed to get user {user_id}: {str(e)}")
+        return None
+
 
 def _find_user_by_customer_id(customer_id: str) -> Optional[Dict[str, Any]]:
     """Find user record by Stripe customer ID using GSI."""
@@ -472,6 +532,110 @@ def _find_user_by_customer_id(customer_id: str) -> Optional[Dict[str, Any]]:
     except ClientError as e:
         logger.error(f"Failed to find user by customer ID: {str(e)}")
         return None
+
+
+def _get_current_billing_period(billing_day: int) -> str:
+    """
+    Calculate current billing period start date in YYYY-MM-DD format.
+
+    Args:
+        billing_day: Day of month when billing period starts (1-31)
+
+    Returns:
+        Billing period start date string (YYYY-MM-DD)
+    """
+    now = datetime.now(timezone.utc)
+    billing_day = max(1, min(31, billing_day))
+
+    # Get last day of current month
+    last_day = calendar.monthrange(now.year, now.month)[1]
+    effective_day = min(billing_day, last_day)
+
+    # Determine if we're before or after this month's billing day
+    if now.day >= effective_day:
+        # Current period started this month
+        period_start = now.replace(day=effective_day, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        # Current period started last month
+        if now.month == 1:
+            prev_month = now.replace(year=now.year - 1, month=12, day=1)
+        else:
+            prev_month = now.replace(month=now.month - 1, day=1)
+        prev_last_day = calendar.monthrange(prev_month.year, prev_month.month)[1]
+        period_start = prev_month.replace(
+            day=min(billing_day, prev_last_day),
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+    return period_start.strftime('%Y-%m-%d')
+
+
+def _sync_subscription_tier(
+    user_id: str,
+    subscription_tier: str,
+    billing_day: Optional[int] = None
+) -> bool:
+    """
+    Sync subscription_tier to both users and token-usage tables.
+
+    Users table is authoritative - failure raises exception.
+    Token-usage table sync is best-effort - failure is logged but doesn't fail webhook.
+
+    Args:
+        user_id: User identifier
+        subscription_tier: 'plus' or 'free'
+        billing_day: Day of month for billing (needed for token-usage lookup)
+
+    Returns:
+        True if both updates succeeded, False if token-usage sync failed
+        (users table failure raises exception)
+    """
+    now = datetime.now(timezone.utc)
+
+    # 1. Update users table (authoritative - must succeed)
+    try:
+        users_table.update_item(
+            Key={'user_id': user_id},
+            UpdateExpression='SET subscription_tier = :tier, updated_at = :ts',
+            ExpressionAttributeValues={
+                ':tier': subscription_tier,
+                ':ts': now.isoformat().replace('+00:00', 'Z')
+            }
+        )
+        logger.info(f"Updated users table: user={user_id}, tier={subscription_tier}")
+    except ClientError as e:
+        logger.error(f"Failed to update users table for {user_id}: {e}")
+        raise
+
+    # 2. Sync token-usage table (best-effort)
+    try:
+        if billing_day:
+            billing_period = _get_current_billing_period(billing_day)
+
+            # Determine token limit based on tier
+            token_limit = TOKEN_LIMIT_PLUS if subscription_tier == 'plus' else TOKEN_LIMIT_FREE
+
+            token_usage_table.update_item(
+                Key={'user_id': user_id, 'billing_period': billing_period},
+                UpdateExpression='SET subscription_tier = :tier, token_limit = :limit',
+                ExpressionAttributeValues={
+                    ':tier': subscription_tier,
+                    ':limit': token_limit
+                },
+                ConditionExpression='attribute_exists(user_id)'  # Only if record exists
+            )
+            logger.info(f"Synced token-usage table: user={user_id}, period={billing_period}, tier={subscription_tier}, limit={token_limit}")
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            # No token usage record yet - that's OK
+            logger.info(f"No token usage record to sync for user {user_id} (period may not exist yet)")
+            return True
+        logger.error(f"Failed to sync token-usage tier for {user_id}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error syncing token-usage tier for {user_id}: {e}")
+        return False
 
 
 def _initialize_plus_token_usage(user_id: str, billing_day: int) -> None:

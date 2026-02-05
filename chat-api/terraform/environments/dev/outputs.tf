@@ -6,10 +6,7 @@ output "http_api_endpoint" {
   value       = module.api_gateway.http_api_endpoint
 }
 
-output "websocket_api_endpoint" {
-  description = "WebSocket API endpoint URL"
-  value       = module.api_gateway.websocket_api_endpoint
-}
+# websocket_api_endpoint - REMOVED (2026-02) per WEBSOCKET_DEPRECATION_PLAN.md
 
 output "analysis_api_endpoint" {
   description = "Analysis REST API endpoint URL (for streaming analysis)"
@@ -59,9 +56,8 @@ output "environment_summary" {
     }
     
     urls = {
-      http_api    = module.api_gateway.http_api_endpoint
-      websocket   = module.api_gateway.websocket_api_endpoint
-      frontend    = var.frontend_url
+      http_api = module.api_gateway.http_api_endpoint
+      frontend = var.frontend_url
     }
   }
 }

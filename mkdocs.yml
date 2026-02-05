@@ -1,0 +1,104 @@
+site_name: BuffettGPT Documentation
+site_description: AI-powered Warren Buffett-themed financial advisor documentation
+site_url: https://your-domain.com/docs
+repo_url: https://github.com/your-org/buffett_chat_api
+repo_name: buffett_chat_api
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.code.annotate
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/index.md
+    - Installation: getting-started/installation.md
+    - Claude Code Workflow: getting-started/claude-code-workflow.md
+  - Architecture:
+    - architecture/index.md
+    - System Overview: architecture/system-overview.md
+    - Follow-up Agent: architecture/followup-agent.md
+    - Multi-Agent Orchestrator: architecture/multi-agent-orchestrator.md
+    - Context Management: architecture/context-management.md
+  - API Reference:
+    - api/index.md
+    - Routes: api/routes.md
+    - WebSocket: api/websocket.md
+    - Authentication: api/authentication.md
+  - Investment Research:
+    - investment-research/index.md
+    - Report Generation: investment-research/report-generation.md
+    - Batch Generation: investment-research/batch-generation.md
+    - Follow-up Agent: investment-research/followup-agent.md
+    - Earnings Tracker: investment-research/earnings-tracker.md
+    - Token Limiter: investment-research/token-limiter.md
+    - Metrics Cache: investment-research/metrics-cache.md
+  - Infrastructure:
+    - infrastructure/index.md
+    - Terraform: infrastructure/terraform.md
+    - Lambda Functions: infrastructure/lambda-functions.md
+    - DynamoDB Schema: infrastructure/dynamodb-schema.md
+    - Deployment: infrastructure/deployment.md
+  - Development:
+    - development/index.md
+    - Testing: development/testing.md
+    - Streaming: development/streaming.md
+    - UI Guidelines: development/ui-guidelines.md
+  - Prompts:
+    - prompts/index.md
+    - v4.8: prompts/versions/v4_8.md
+    - v5.0: prompts/versions/v5_0.md
+  - Changelog: changelog/index.md
+  - Reference:
+    - reference/index.md
+    - Company Tickers: reference/company-tickers.md
+    - Troubleshooting: reference/troubleshooting.md
+  - Archive: archive/index.md
+
+plugins:
+  - search
+  - tags
+
+markdown_extensions:
+  - admonition
+  - codehilite:
+      guess_lang: false
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - attr_list
+  - md_in_html
+  - tables
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/your-org/buffett_chat_api

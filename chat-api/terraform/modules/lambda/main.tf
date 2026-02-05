@@ -3,37 +3,9 @@
 
 locals {
   # Core Lambda function configurations
+  # Updated 2026-02: Removed WebSocket handlers and chat_http_handler (deprecated)
+  # WebSocket infrastructure deprecated per WEBSOCKET_DEPRECATION_PLAN.md
   lambda_configs = {
-    chat_http_handler = {
-      handler     = "chat_http_handler.lambda_handler"
-      timeout     = 30
-      memory_size = 256
-      description = "HTTP API chat endpoint handler"
-    }
-    websocket_connect = {
-      handler     = "websocket_connect.lambda_handler"
-      timeout     = 30
-      memory_size = 256
-      description = "WebSocket connection handler with auth support"
-    }
-    websocket_disconnect = {
-      handler     = "websocket_disconnect.lambda_handler"
-      timeout     = 30
-      memory_size = 256
-      description = "WebSocket disconnection handler"
-    }
-    websocket_message = {
-      handler     = "websocket_message.lambda_handler"
-      timeout     = 30
-      memory_size = 256
-      description = "WebSocket message handler"
-    }
-    chat_processor = {
-      handler     = "chat_processor.lambda_handler"
-      timeout     = 120
-      memory_size = 512
-      description = "Chat message processor with Bedrock integration"
-    }
     conversations_handler = {
       handler     = "conversations_handler.lambda_handler"
       timeout     = 30
@@ -46,8 +18,6 @@ locals {
       memory_size = 256
       description = "AI search handler with streaming support"
     }
-    # NOTE: debt_analysis_agent_handler was removed - functionality merged into prediction_ensemble
-    # NOTE: prediction_ensemble is now Docker-based (see prediction_ensemble_docker.tf)
     analysis_followup = {
       handler     = "analysis_followup.lambda_handler"
       timeout     = 60
@@ -123,9 +93,7 @@ resource "aws_lambda_function" "functions" {
     )
   }
 
-  dead_letter_config {
-    target_arn = var.dlq_arn
-  }
+  # dead_letter_config - REMOVED (2026-02) - SQS infrastructure deprecated
 
   # Reserved concurrent executions (optional)
   reserved_concurrent_executions = lookup(var.reserved_concurrency, each.key, -1)
@@ -135,7 +103,7 @@ resource "aws_lambda_function" "functions" {
     {
       Name     = "${var.project_name}-${var.environment}-${replace(each.key, "_", "-")}"
       Function = each.key
-      Type     = contains(["websocket_connect", "websocket_disconnect", "websocket_message"], each.key) ? "WebSocket" : "HTTP"
+      Type     = "HTTP"
     }
   )
 
@@ -168,21 +136,6 @@ resource "aws_cloudwatch_log_group" "lambda_logs" {
 # to avoid circular dependencies and duplicate permissions
 
 # ================================================
-# SQS Event Source Mapping for Chat Processor
+# SQS Event Source Mapping - REMOVED (2026-02)
 # ================================================
-
-resource "aws_lambda_event_source_mapping" "chat_processor_sqs" {
-  count = contains(keys(local.lambda_configs), "chat_processor") ? 1 : 0
-
-  event_source_arn = var.chat_processing_queue_arn
-  function_name    = aws_lambda_function.functions["chat_processor"].arn
-  
-  batch_size                         = 1
-  maximum_batching_window_in_seconds = var.sqs_batch_window
-  
-  scaling_config {
-    maximum_concurrency = var.sqs_max_concurrency
-  }
-  
-  function_response_types = ["ReportBatchItemFailures"]
-}
+# chat_processor and SQS queue deprecated per WEBSOCKET_DEPRECATION_PLAN.md

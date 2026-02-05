@@ -45,6 +45,7 @@ locals {
   # Lambda environment variables
   # Updated 2025-01: Removed deprecated RAG chatbot table references
   # Updated 2025-01: Re-added CHAT_MESSAGES_TABLE for Research report history
+  # Updated 2026-02: Removed WebSocket and chat processing vars (deprecated)
   lambda_common_env_vars = {
     ENVIRONMENT         = local.environment
     PROJECT_NAME        = local.project_name
@@ -52,21 +53,9 @@ locals {
     CONVERSATIONS_TABLE = module.dynamodb.conversations_table_name
     CHAT_MESSAGES_TABLE = module.dynamodb.chat_messages_table_name
     KMS_KEY_ID          = module.core.kms_key_id
-    CHAT_PROCESSING_QUEUE_URL = module.core.chat_processing_queue_url
 
     # Bedrock Configuration
-    # NOTE: Primary agent (supervisor) was archived (2025-01) with prediction ensemble
-    # Using variable defaults for backward compatibility
-    BEDROCK_AGENT_ID    = var.bedrock_agent_id
-    BEDROCK_AGENT_ALIAS = var.bedrock_agent_alias
-    BEDROCK_REGION      = var.bedrock_region
-
-    # WebSocket endpoint for API Gateway Management API (needed by multiple functions)
-    # Format: {api-id}.execute-api.{region}.amazonaws.com/{stage}
-    WEBSOCKET_API_ENDPOINT = try("${module.api_gateway.websocket_api_id}.execute-api.us-east-1.amazonaws.com/${local.environment}", "")
-
-    # NOTE: S3 Model Configuration removed (2025-01) - prediction ensemble archived
-    # See: archived/prediction_ensemble/
+    BEDROCK_REGION = var.bedrock_region
 
     # Follow-up Agent Configuration (for investment research follow-up questions)
     FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
@@ -91,13 +80,8 @@ locals {
 
   # Function-specific environment variables
   # Updated 2025-01: Removed deprecated RAG chatbot table references
+  # Updated 2026-02: Removed websocket_connect and chat_processor (deprecated)
   lambda_function_env_vars = {
-    websocket_connect = {
-      USERS_TABLE = ""  # Auth disabled for dev
-    }
-    chat_processor = {
-      # Additional environment variables can be added here if needed
-    }
     stripe_webhook_handler = {
       STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
       STRIPE_WEBHOOK_SECRET_ARN  = module.stripe.stripe_webhook_secret_arn
@@ -158,26 +142,21 @@ module "dynamodb" {
 
 module "lambda" {
   source = "../../modules/lambda"
-  
-  project_name              = local.project_name
-  environment               = local.environment
-  lambda_role_arn           = module.core.lambda_role_arn
-  lambda_package_path       = "${path.root}/../../../backend/build"
-  runtime                   = "python3.11"
-  common_env_vars           = local.lambda_common_env_vars
-  function_env_vars         = local.lambda_function_env_vars
-  dlq_arn                   = module.core.chat_dlq_arn
-  chat_processing_queue_arn = module.core.chat_processing_queue_arn
-  log_retention_days        = 7  # Short retention for dev
-  
+
+  project_name        = local.project_name
+  environment         = local.environment
+  lambda_role_arn     = module.core.lambda_role_arn
+  lambda_package_path = "${path.root}/../../../backend/build"
+  runtime             = "python3.11"
+  common_env_vars     = local.lambda_common_env_vars
+  function_env_vars   = local.lambda_function_env_vars
+  log_retention_days  = 7  # Short retention for dev
+
   reserved_concurrency = {
-    chat_processor    = 2   # Low concurrency - being deprecated
     analysis_followup = 10  # Increased for production traffic
   }
-  
-  sqs_batch_window    = 10
-  sqs_max_concurrency = 2
-  common_tags         = local.common_tags
+
+  common_tags = local.common_tags
 
   # KMS key for DynamoDB encryption
   kms_key_arn         = module.core.kms_key_arn
@@ -296,18 +275,18 @@ module "rate_limiting" {
 module "monitoring" {
   source = "../../modules/monitoring"
   count  = var.enable_monitoring ? 1 : 0
-  
+
   project_name = local.project_name
   environment  = local.environment
-  
+
   # Resources to monitor
   lambda_function_names = module.lambda.function_names
-  api_gateway_id       = module.api_gateway.http_api_id
-  websocket_api_id     = module.api_gateway.websocket_api_id
-  
+  api_gateway_id        = module.api_gateway.http_api_id
+  # websocket_api_id - REMOVED (2026-02) - WebSocket deprecated
+
   # Alert configuration
-  alert_email      = var.alert_email
-  
+  alert_email = var.alert_email
+
   common_tags = local.common_tags
 }
 
@@ -373,7 +352,5 @@ resource "aws_iam_role_policy_attachment" "lambda_stripe_secrets" {
 # ================================================
 # Post-Deployment Configuration
 # ================================================
-# Note: The WebSocket endpoint for the chat_processor Lambda is set
-# through the common environment variables to avoid circular dependency.
-# The chat_processor function will receive WEBSOCKET_API_ENDPOINT
-# as an environment variable once both modules are deployed.
+# Note: WebSocket infrastructure deprecated (2026-02) per WEBSOCKET_DEPRECATION_PLAN.md
+# All chat functionality now uses REST+SSE via Research and Follow-up APIs

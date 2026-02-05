@@ -32,26 +32,7 @@ output "lambda_policy_arn" {
   value       = aws_iam_policy.lambda_policy.arn
 }
 
-# SQS Outputs
-output "chat_processing_queue_url" {
-  description = "URL of the chat processing queue"
-  value       = aws_sqs_queue.chat_processing_queue.url
-}
-
-output "chat_processing_queue_arn" {
-  description = "ARN of the chat processing queue"
-  value       = aws_sqs_queue.chat_processing_queue.arn
-}
-
-output "chat_dlq_url" {
-  description = "URL of the dead letter queue"
-  value       = aws_sqs_queue.chat_dlq.url
-}
-
-output "chat_dlq_arn" {
-  description = "ARN of the dead letter queue"
-  value       = aws_sqs_queue.chat_dlq.arn
-}
+# SQS Outputs - REMOVED (2026-02) per WEBSOCKET_DEPRECATION_PLAN.md
 
 # Account Information
 output "account_id" {

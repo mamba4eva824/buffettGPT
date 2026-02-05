@@ -247,12 +247,13 @@ def list_conversations(event: Dict[str, Any]) -> Dict[str, Any]:
         # Migrate any existing Unix timestamps to ISO format for backward compatibility
         for conv in conversations:
             # Check if updated_at is a Unix timestamp (number) and convert it
-            if 'updated_at' in conv and isinstance(conv['updated_at'], (int, float)):
-                conv['updated_at'] = datetime.utcfromtimestamp(conv['updated_at']).isoformat() + 'Z'
+            # Include Decimal in check since DynamoDB returns numbers as Decimal
+            if 'updated_at' in conv and isinstance(conv['updated_at'], (int, float, Decimal)):
+                conv['updated_at'] = datetime.utcfromtimestamp(float(conv['updated_at'])).isoformat() + 'Z'
 
             # Same for created_at
-            if 'created_at' in conv and isinstance(conv['created_at'], (int, float)):
-                conv['created_at'] = datetime.utcfromtimestamp(conv['created_at']).isoformat() + 'Z'
+            if 'created_at' in conv and isinstance(conv['created_at'], (int, float, Decimal)):
+                conv['created_at'] = datetime.utcfromtimestamp(float(conv['created_at'])).isoformat() + 'Z'
 
         # Filter out archived unless requested
         query_params = event.get('queryStringParameters', {}) or {}
@@ -269,10 +270,7 @@ def list_conversations(event: Dict[str, Any]) -> Dict[str, Any]:
         })
 
     except Exception as e:
-        logger.error(f"Error listing conversations", extra={
-            'user_id': user_id,
-            'error': str(e)
-        })
+        logger.error(f"Error listing conversations for user {user_id}: {str(e)}", exc_info=True)
 
         return create_response(500, {'error': 'Failed to list conversations'})
 
@@ -323,18 +321,16 @@ def get_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
             return create_response(403, {'error': 'Access denied'})
 
         # Migrate any existing Unix timestamps to ISO format
-        if 'updated_at' in conversation and isinstance(conversation['updated_at'], (int, float)):
-            conversation['updated_at'] = datetime.utcfromtimestamp(conversation['updated_at']).isoformat() + 'Z'
-        if 'created_at' in conversation and isinstance(conversation['created_at'], (int, float)):
-            conversation['created_at'] = datetime.utcfromtimestamp(conversation['created_at']).isoformat() + 'Z'
+        # Include Decimal in check since DynamoDB returns numbers as Decimal
+        if 'updated_at' in conversation and isinstance(conversation['updated_at'], (int, float, Decimal)):
+            conversation['updated_at'] = datetime.utcfromtimestamp(float(conversation['updated_at'])).isoformat() + 'Z'
+        if 'created_at' in conversation and isinstance(conversation['created_at'], (int, float, Decimal)):
+            conversation['created_at'] = datetime.utcfromtimestamp(float(conversation['created_at'])).isoformat() + 'Z'
 
         return create_response(200, conversation)
 
     except Exception as e:
-        logger.error(f"Error getting conversation", extra={
-            'conversation_id': conversation_id,
-            'error': str(e)
-        })
+        logger.error(f"Error getting conversation {conversation_id}: {str(e)}", exc_info=True)
 
         return create_response(500, {'error': 'Failed to get conversation'})
 
@@ -364,7 +360,8 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         conversation = conv_response.get('Item')
-        if not conversation or conversation['user_id'] != user_id:
+        # Cast to string to handle potential type mismatches (DynamoDB Decimal vs string)
+        if not conversation or str(conversation.get('user_id', '')) != str(user_id):
             return create_response(403, {'error': 'Access denied'})
 
         # Get messages for this conversation
@@ -381,7 +378,8 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
             if 'timestamp' in msg and isinstance(msg['timestamp'], (int, float, Decimal)):
                 # Keep original Unix timestamp, add ISO version for frontend
                 # Handle both milliseconds (new) and seconds (legacy) timestamps
-                ts = msg['timestamp']
+                # Convert to float for datetime.utcfromtimestamp() compatibility (Decimal not supported)
+                ts = float(msg['timestamp'])
                 if ts > 10000000000:  # Milliseconds (13+ digits)
                     ts = ts / 1000
                 msg['timestamp_iso'] = datetime.utcfromtimestamp(ts).isoformat() + 'Z'
@@ -393,10 +391,7 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
         })
 
     except Exception as e:
-        logger.error(f"Error getting conversation messages", extra={
-            'conversation_id': conversation_id,
-            'error': str(e)
-        })
+        logger.error(f"Error getting conversation messages for {conversation_id}: {str(e)}", exc_info=True)
 
         return create_response(500, {'error': 'Failed to get messages'})
 
@@ -435,7 +430,8 @@ def save_conversation_message(event: Dict[str, Any]) -> Dict[str, Any]:
         )
 
         conversation = conv_response.get('Item')
-        if not conversation or conversation['user_id'] != user_id:
+        # Cast to string to handle potential type mismatches
+        if not conversation or str(conversation.get('user_id', '')) != str(user_id):
             return create_response(403, {'error': 'Access denied'})
 
         # Create message record
@@ -572,7 +568,8 @@ def update_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
         if not conversation:
             return create_response(404, {'error': 'Conversation not found'})
 
-        if conversation['user_id'] != user_id:
+        # Cast to string to handle potential type mismatches
+        if str(conversation.get('user_id', '')) != str(user_id):
             return create_response(403, {'error': 'Access denied'})
 
         # Build update expression
