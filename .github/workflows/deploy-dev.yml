@@ -146,7 +146,6 @@ jobs:
 
     outputs:
       http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
-      websocket_api_endpoint: ${{ steps.terraform-output.outputs.websocket_api_endpoint }}
 
     steps:
       - name: Checkout code
@@ -240,14 +239,11 @@ jobs:
         working-directory: chat-api/terraform/environments/dev
         run: |
           HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
-          WS_ENDPOINT=$(terraform output -raw websocket_api_endpoint)
 
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
-          echo "websocket_api_endpoint=$WS_ENDPOINT" >> $GITHUB_OUTPUT
 
           echo "API Endpoints:"
           echo "  HTTP API: $HTTP_ENDPOINT"
-          echo "  WebSocket: $WS_ENDPOINT"
 
   build-docker-lambdas:
     name: Build Docker Lambda - ${{ matrix.lambda.name }}
@@ -462,7 +458,6 @@ jobs:
           echo ""
           echo "Environment: dev"
           echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
-          echo "WebSocket: ${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}"
           echo ""
           echo "Docker Lambda Builds:"
           echo "  Investment Research changed: ${{ needs.detect-changes.outputs.investment_research_changed }}"
