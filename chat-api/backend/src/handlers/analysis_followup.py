@@ -794,27 +794,7 @@ def lambda_handler(event: Dict[str, Any], context: Any):
     user_claims = verify_jwt_token(event)
     if not user_claims:
         logger.warning("Unauthorized request - invalid or missing JWT token")
-        # For streaming (direct Function URL), return a generator for auth error
-        if is_function_url and not is_api_gateway:
-            def auth_error_stream():
-                yield {
-                    "statusCode": 401,
-                    "headers": {
-                        "Content-Type": "application/json"
-                        # Note: CORS headers handled by Lambda Function URL CORS config
-                    }
-                }
-                yield json.dumps({
-                    "success": False,
-                    "error": "Unauthorized - valid JWT token required",
-                    "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
-                })
-            # IMPORTANT: return the generator, don't yield from it
-            # Using yield from would make lambda_handler itself a generator,
-            # which breaks non-streaming invocations
-            return auth_error_stream()
-        else:
-            return error_response(401, "Unauthorized - valid JWT token required")
+        return error_response(401, "Unauthorized - valid JWT token required")
 
     # Extract user_id from JWT claims
     user_id = user_claims.get('user_id', user_claims.get('sub', 'anonymous'))

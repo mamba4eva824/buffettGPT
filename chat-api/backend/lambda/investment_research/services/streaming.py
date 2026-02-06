@@ -526,7 +526,12 @@ def followup_chunk_event(message_id: str, text: str) -> dict:
     }
 
 
-def followup_end_event(message_id: str) -> dict:
+def followup_end_event(
+    message_id: str,
+    token_usage: dict = None,
+    user_message_id: str = None,
+    assistant_message_id: str = None
+) -> dict:
     """
     Signal end of follow-up response streaming.
 
@@ -534,15 +539,25 @@ def followup_end_event(message_id: str) -> dict:
 
     Args:
         message_id: Unique identifier for this response message
+        token_usage: Optional dict with token usage stats
+        user_message_id: Optional ID of the saved user message
+        assistant_message_id: Optional ID of the saved assistant message
 
     Returns:
         Dict with event='followup_end' and completion data
     """
+    data = {
+        "type": "followup_end",
+        "message_id": message_id,
+        "timestamp": _timestamp()
+    }
+    if token_usage:
+        data["token_usage"] = token_usage
+    if user_message_id:
+        data["user_message_id"] = user_message_id
+    if assistant_message_id:
+        data["assistant_message_id"] = assistant_message_id
     return {
         "event": "followup_end",
-        "data": _json_dumps({
-            "type": "followup_end",
-            "message_id": message_id,
-            "timestamp": _timestamp()
-        })
+        "data": _json_dumps(data)
     }

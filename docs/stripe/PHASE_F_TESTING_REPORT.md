@@ -41,7 +41,7 @@ stripe listen --forward-to https://yn9nj0b654.execute-api.us-east-1.amazonaws.co
 ### Webhook Secret
 The Stripe CLI provides a webhook signing secret (`whsec_xxx`) that must be stored in:
 - **Secret Name:** `stripe-webhook-secret-dev`
-- **Value:** `whsec_286012c97346c99a6dfb45355825067399144c24ea7e8b3846f1a2bd5a8df739`
+- **Value:** `whsec_xxx` (stored in AWS Secrets Manager, never commit real values)
 
 ### Events Tested
 - `checkout.session.completed`

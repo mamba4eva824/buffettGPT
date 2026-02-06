@@ -3,6 +3,9 @@ import React, { createContext, useContext, useReducer, useRef, useCallback } fro
 // API base URL from environment - Investment Research uses API Gateway
 const API_BASE = import.meta.env.VITE_RESEARCH_API_URL || 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
 
+// Follow-up uses Lambda Function URL directly (bypasses API Gateway for SSE streaming)
+const FOLLOWUP_URL = import.meta.env.VITE_ANALYSIS_FOLLOWUP_URL || '';
+
 // Initial state
 const initialState = {
   selectedTicker: null,
@@ -559,24 +562,31 @@ export function ResearchProvider({ children }) {
     followUpAbortRef.current = new AbortController();
 
     // Build request body
-    // session_id is required by backend to save messages to the correct conversation
+    // Docker Lambda expects conversation_id; zip-based Lambda expects session_id
+    // Send both for compatibility with either backend
     const requestBody = {
       ticker: state.selectedTicker,
       question: question,
       section_id: state.activeSectionId,
-      session_id: conversationId,  // Maps to conversation_id in DynamoDB
+      session_id: conversationId,
+      conversation_id: conversationId,
     };
+
+    // Use Lambda Function URL directly for SSE streaming (bypasses API Gateway buffering)
+    // Falls back to API Gateway route if VITE_ANALYSIS_FOLLOWUP_URL is not set
+    const followUpUrl = FOLLOWUP_URL || `${API_BASE}/research/followup`;
 
     // DEBUG: Log the exact request being sent
     console.log('[FollowUp DEBUG] Request details:', {
-      url: `${API_BASE}/research/followup`,
+      url: followUpUrl,
+      streaming: !!FOLLOWUP_URL,
       method: 'POST',
       body: requestBody,
       bodyStringified: JSON.stringify(requestBody),
     });
 
     try {
-      const response = await fetch(`${API_BASE}/research/followup`, {
+      const response = await fetch(followUpUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -170,7 +170,7 @@ class TestSignatureVerification:
 
         assert response['statusCode'] == 400
         body = json.loads(response['body'])
-        assert 'Invalid webhook signature' in body.get('error', '')
+        assert body.get('error') == 'Webhook verification failed'
 
     @mock_aws
     @patch('handlers.stripe_webhook_handler.verify_webhook_signature')

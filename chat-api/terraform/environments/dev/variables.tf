@@ -59,7 +59,7 @@ variable "google_client_secret" {
 variable "frontend_url" {
   description = "Frontend application URL"
   type        = string
-  default     = "http://localhost:5173"
+  default     = "http://localhost:3000"
 }
 
 variable "jwt_secret" {

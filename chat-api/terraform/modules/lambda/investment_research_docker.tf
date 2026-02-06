@@ -136,11 +136,18 @@ resource "aws_cloudwatch_log_group" "investment_research_docker" {
 # ============================================================================
 # Function URL with RESPONSE_STREAM for Lambda Web Adapter compatibility.
 # Primary access is through REST API Gateway for centralized auth.
+#
+# SECURITY NOTE: authorization_type is NONE because this is an HTTP_PROXY target
+# for the REST API Gateway, which handles JWT auth via its TOKEN authorizer.
+# The FastAPI container ALSO validates JWT independently via JWTAuthMiddleware
+# (lambda/investment_research/app.py:181,353) with 32-char secret validation,
+# so direct Function URL access without a valid JWT returns 401.
+# See docs/api/SECURITY_REVIEW.md CRIT-2 for full analysis.
 # ============================================================================
 
 resource "aws_lambda_function_url" "investment_research_docker" {
   function_name      = aws_lambda_function.investment_research_docker.function_name
-  authorization_type = "NONE"  # JWT validation done in Lambda code or API Gateway
+  authorization_type = "NONE"
 
   cors {
     allow_credentials = true

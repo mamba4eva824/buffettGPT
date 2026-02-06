@@ -75,7 +75,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         stripe_event = verify_webhook_signature(body, sig_header)
     except ValueError as e:
         logger.error(f"Webhook signature verification failed: {str(e)}")
-        return _response(400, {'error': str(e)})
+        return _response(400, {'error': 'Webhook verification failed'})
 
     # Check for duplicate event (idempotency)
     event_id = stripe_event.get('id')
@@ -518,7 +518,7 @@ def _find_user_by_customer_id(customer_id: str) -> Optional[Dict[str, Any]]:
     except ClientError as e:
         # GSI may not exist, fall back to scan
         if 'ValidationException' not in str(e):
-            logger.warning(f"GSI query failed, falling back to scan: {str(e)}")
+            logger.critical(f"SECURITY_ALERT: stripe-customer-index GSI unavailable, falling back to table scan for customer {customer_id}: {str(e)}")
 
     # Fallback: scan (less efficient but works without GSI)
     try:
@@ -726,7 +726,6 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
         },
         'body': json.dumps(body)
     }

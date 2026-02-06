@@ -98,6 +98,7 @@ def get_stripe():
 
     if _stripe_module is None:
         stripe.api_key = get_stripe_secret_key()
+        stripe.api_version = '2026-01-28.clover'
         _stripe_module = stripe
         logger.info("Stripe client initialized")
 

@@ -4,9 +4,14 @@
 # NOTE: Prediction Ensemble Function URL is defined in prediction_ensemble_docker.tf (Docker-based)
 
 # Analysis Followup Function URL
+# SECURITY NOTE: authorization_type is NONE because this is an HTTP_PROXY target
+# for API Gateway REST API, which handles JWT auth via its own TOKEN authorizer.
+# The Lambda handler ALSO validates JWT independently (analysis_followup.py:794)
+# so direct Function URL access without a valid JWT returns 401.
+# See docs/api/SECURITY_REVIEW.md CRIT-2 for full analysis.
 resource "aws_lambda_function_url" "analysis_followup" {
   function_name      = aws_lambda_function.functions["analysis_followup"].function_name
-  authorization_type = "NONE"  # JWT validation handled in Lambda handler
+  authorization_type = "NONE"
   invoke_mode        = "RESPONSE_STREAM"
 
   cors {

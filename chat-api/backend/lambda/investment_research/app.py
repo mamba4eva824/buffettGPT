@@ -546,12 +546,16 @@ async def followup_question(raw_request: Request):
 
     logger.info(f"Follow-up question for {ticker}: {request.question[:100]}...")
 
+    # Extract user_id from JWT middleware (set by JWTAuthMiddleware)
+    user_id = getattr(raw_request.state, 'user_id', None)
+
     return EventSourceResponse(
         generate_followup_stream(
             ticker,
             request.question,
             request.conversation_id,
-            request.section_id
+            request.section_id,
+            user_id
         ),
         media_type="text/event-stream"
     )
@@ -561,7 +565,8 @@ async def generate_followup_stream(
     ticker: str,
     question: str,
     session_id: str = None,
-    section_id: str = None
+    section_id: str = None,
+    user_id: str = None
 ) -> AsyncGenerator[dict, None]:
     """
     Generate SSE events for streaming follow-up responses.
@@ -571,6 +576,7 @@ async def generate_followup_stream(
         question: User's follow-up question
         session_id: Optional session ID for conversation continuity
         section_id: Optional section ID for additional context
+        user_id: Optional user ID from JWT for token tracking
 
     Yields:
         SSE event dicts for EventSourceResponse
@@ -580,7 +586,7 @@ async def generate_followup_stream(
         yield connected_event()
 
         # 2. Stream Claude Haiku 4.5 response
-        async for event in invoke_followup_agent(ticker, question, session_id, section_id):
+        async for event in invoke_followup_agent(ticker, question, session_id, section_id, user_id):
             yield event
 
     except Exception as e:

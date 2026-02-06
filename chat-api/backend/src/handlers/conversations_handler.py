@@ -173,47 +173,10 @@ def get_user_id(event: Dict[str, Any]) -> Optional[str]:
             # 5. Log all keys to understand structure if nothing found
             logger.warning(f"Could not find user_id in authorizer. Available keys: {list(authorizer.keys())}")
 
-    # Try to decode JWT from Authorization header (fallback)
-    logger.info("Falling back to JWT extraction from Authorization header")
-    headers = event.get('headers', {})
-    auth_header = headers.get('authorization', headers.get('Authorization', ''))
-
-    if auth_header.startswith('Bearer '):
-        try:
-            import base64
-
-            token = auth_header[7:]  # Remove 'Bearer ' prefix
-            # JWT has 3 parts separated by dots: header.payload.signature
-            parts = token.split('.')
-            if len(parts) == 3:
-                # Decode the payload (middle part)
-                # Add padding if necessary
-                payload = parts[1]
-                padding = 4 - len(payload) % 4
-                if padding != 4:
-                    payload += '=' * padding
-
-                decoded = base64.urlsafe_b64decode(payload)
-                claims = json.loads(decoded)
-
-                # Get user_id from JWT claims
-                user_id = claims.get('sub') or claims.get('user_id') or claims.get('id')
-                if user_id:
-                    user_id_str = str(user_id)
-                    logger.info(f"Successfully extracted user_id from JWT: {user_id_str}")
-                    return user_id_str
-        except Exception as e:
-            logger.warning(f"Failed to decode JWT: {e}")
-
-    # Try to get from query parameters (anonymous users)
-    query_params = event.get('queryStringParameters', {})
-    if query_params and 'user_id' in query_params:
-        return query_params['user_id']
-
-    # Try to get from headers (for WebSocket or custom auth)
-    if 'x-user-id' in headers:
-        return headers['x-user-id']
-
+    # SECURITY: Only trust user_id from the verified API Gateway authorizer context.
+    # Never extract user_id from unsigned JWT payloads, query params, or custom headers
+    # as these are trivially spoofable. See docs/api/SECURITY_REVIEW.md CRIT-1.
+    logger.warning("No user_id found in authorizer context")
     return None
 
 def list_conversations(event: Dict[str, Any]) -> Dict[str, Any]:

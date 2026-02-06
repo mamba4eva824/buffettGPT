@@ -12,6 +12,7 @@ Requires JWT authentication for all endpoints.
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
 import boto3
@@ -35,7 +36,7 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 # Environment variables
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 USERS_TABLE = os.environ.get('USERS_TABLE') or f'buffett-{ENVIRONMENT}-users'
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'https://buffettgpt.com')
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb')
@@ -118,6 +119,18 @@ def handle_create_checkout(user_id: str, email: str, event: Dict[str, Any]) -> D
                 'message': 'You already have an active Plus subscription'
             })
 
+    # Rate limit: 1 checkout per 60 seconds per user
+    if user:
+        last_checkout = user.get('last_checkout_at')
+        if last_checkout:
+            try:
+                last_time = datetime.fromisoformat(last_checkout.replace('Z', '+00:00'))
+                elapsed = (datetime.now(timezone.utc) - last_time).total_seconds()
+                if elapsed < 60:
+                    return _response(429, {'error': 'Too many requests. Please wait before creating another checkout session.'})
+            except (ValueError, TypeError):
+                pass  # Malformed timestamp, allow through
+
     # Parse request body for optional return URLs
     body = {}
     if event.get('body'):
@@ -126,9 +139,11 @@ def handle_create_checkout(user_id: str, email: str, event: Dict[str, Any]) -> D
         except json.JSONDecodeError:
             pass
 
-    # Construct success/cancel URLs
-    success_url = body.get('success_url') or f"{FRONTEND_URL}?subscription=success"
-    cancel_url = body.get('cancel_url') or f"{FRONTEND_URL}?subscription=canceled"
+    # Construct success/cancel URLs with validation
+    default_success = f"{FRONTEND_URL}?subscription=success"
+    default_cancel = f"{FRONTEND_URL}?subscription=canceled"
+    success_url = _validate_redirect_url(body.get('success_url'), default_success)
+    cancel_url = _validate_redirect_url(body.get('cancel_url'), default_cancel)
 
     # Check if user already has a Stripe customer ID
     customer_id = user.get('stripe_customer_id') if user else None
@@ -149,6 +164,18 @@ def handle_create_checkout(user_id: str, email: str, event: Dict[str, Any]) -> D
             cancel_url=cancel_url,
             customer_id=customer_id
         )
+
+        # Update last_checkout_at for rate limiting
+        try:
+            now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            users_table.update_item(
+                Key={'user_id': user_id},
+                UpdateExpression='SET last_checkout_at = :ts',
+                ExpressionAttributeValues={':ts': now}
+            )
+        except ClientError:
+            pass  # Non-fatal: rate limit tracking failure shouldn't block checkout
+
         return _response(200, result)
     except Exception as e:
         logger.error(f"Failed to create checkout session: {str(e)}")
@@ -265,6 +292,22 @@ def handle_get_status(user_id: str) -> Dict[str, Any]:
 
 # Helper functions
 
+def _validate_redirect_url(url: Optional[str], default: str) -> str:
+    """Validate that a redirect URL belongs to the allowed frontend origin.
+
+    Rejects URLs that don't start with FRONTEND_URL or use dangerous schemes
+    (javascript:, data:) to prevent open-redirect attacks.
+    """
+    if not url or not isinstance(url, str):
+        return default
+    url_lower = url.lower().strip()
+    if url_lower.startswith(('javascript:', 'data:')):
+        return default
+    if not url.startswith(FRONTEND_URL):
+        return default
+    return url
+
+
 def _get_user_from_event(event: Dict[str, Any]) -> Optional[Dict[str, str]]:
     """Extract user info from JWT authorizer context."""
     # Try different locations for authorizer context
@@ -335,7 +378,7 @@ def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Origin': FRONTEND_URL,
             'Access-Control-Allow-Headers': 'Content-Type,Authorization',
             'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
         },
