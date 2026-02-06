@@ -78,6 +78,18 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         elif tool_name == "getAvailableReports":
             return get_available_reports()
 
+        elif tool_name == "compareStocks":
+            return compare_stocks(
+                tickers=tool_input.get('tickers', []),
+                metric_type=tool_input.get('metric_type', 'all'),
+                quarters=tool_input.get('quarters', 4)
+            )
+
+        elif tool_name == "getFinancialSnapshot":
+            return get_financial_snapshot(
+                ticker=tool_input.get('ticker', '')
+            )
+
         else:
             logger.warning(f"Unknown tool requested: {tool_name}")
             return {
@@ -405,4 +417,161 @@ def get_available_reports() -> Dict[str, Any]:
         return {
             "success": False,
             "error": f"Database error: {str(e)}"
+        }
+
+
+def compare_stocks(
+    tickers: List[str],
+    metric_type: str = 'all',
+    quarters: int = 4
+) -> Dict[str, Any]:
+    """
+    Compare 2-5 stocks side-by-side across metrics and ratings.
+
+    Runs parallel-style queries per ticker, then assembles a comparison.
+
+    Args:
+        tickers: List of 2-5 stock ticker symbols
+        metric_type: Category of metrics to compare ('all', 'revenue_profit', etc.)
+        quarters: Number of quarters to include (default 4 for recent comparison)
+
+    Returns:
+        Comparison object with per-ticker ratings and metrics
+    """
+    if not tickers or not isinstance(tickers, list):
+        return {"success": False, "error": "tickers must be a list of 2-5 stock symbols"}
+
+    if len(tickers) < 2:
+        return {"success": False, "error": "At least 2 tickers required for comparison"}
+
+    if len(tickers) > 5:
+        return {"success": False, "error": "Maximum 5 tickers for comparison"}
+
+    tickers = [t.upper().strip() for t in tickers if t and isinstance(t, str)]
+
+    if len(tickers) < 2:
+        return {"success": False, "error": "At least 2 valid ticker symbols required"}
+
+    quarters = min(max(int(quarters), 1), 20)
+
+    try:
+        comparison = {}
+        not_found = []
+
+        for ticker in tickers:
+            # Fetch ratings
+            ratings_result = get_report_ratings(ticker)
+
+            # Fetch latest metrics
+            metrics_result = get_metrics_history(ticker, metric_type, quarters)
+
+            if not ratings_result.get('success') and not metrics_result.get('success'):
+                not_found.append(ticker)
+                continue
+
+            comparison[ticker] = {
+                "company_name": ratings_result.get('company_name', ticker),
+                "ratings": ratings_result.get('ratings', {}) if ratings_result.get('success') else None,
+                "generated_at": ratings_result.get('generated_at', ''),
+                "metrics": metrics_result.get('data', {}) if metrics_result.get('success') else None,
+                "quarters_available": metrics_result.get('quarters_available', 0)
+            }
+
+        if not comparison:
+            return {
+                "success": False,
+                "error": f"No reports found for any of the requested tickers: {', '.join(not_found)}"
+            }
+
+        result = {
+            "success": True,
+            "tickers_compared": list(comparison.keys()),
+            "metric_type": metric_type,
+            "quarters": quarters,
+            "comparison": comparison
+        }
+
+        if not_found:
+            result["tickers_not_found"] = not_found
+            result["warning"] = f"No reports found for: {', '.join(not_found)}"
+
+        logger.info(f"Compared {len(comparison)} stocks: {list(comparison.keys())}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error comparing stocks {tickers}: {e}")
+        return {
+            "success": False,
+            "error": f"Comparison error: {str(e)}"
+        }
+
+
+def get_financial_snapshot(ticker: str) -> Dict[str, Any]:
+    """
+    Get a quick financial snapshot: latest quarter metrics + ratings in one call.
+
+    Combines getReportRatings and getMetricsHistory(quarters=1) into a single
+    response, reducing orchestration turns for quick assessments.
+
+    Args:
+        ticker: Stock ticker symbol
+
+    Returns:
+        Combined snapshot with ratings, verdict, and latest quarter metrics
+    """
+    if not ticker:
+        return {"success": False, "error": "ticker is required"}
+
+    ticker = ticker.upper().strip()
+
+    try:
+        # Fetch ratings
+        ratings_result = get_report_ratings(ticker)
+
+        # Fetch latest quarter across all categories
+        metrics_result = get_metrics_history(ticker, 'all', 1)
+
+        if not ratings_result.get('success') and not metrics_result.get('success'):
+            return {
+                "success": False,
+                "error": f"No data found for {ticker}. Report may not exist.",
+                "ticker": ticker
+            }
+
+        # Flatten the latest quarter metrics for easy consumption
+        latest_metrics = {}
+        if metrics_result.get('success') and metrics_result.get('data'):
+            for category, category_data in metrics_result['data'].items():
+                quarters_data = category_data.get('quarters', [])
+                if quarters_data:
+                    latest_metrics[category] = quarters_data[0].get('metrics', {})
+
+        # Extract fiscal period info from metrics
+        fiscal_period = {}
+        if metrics_result.get('success') and metrics_result.get('data'):
+            for category_data in metrics_result['data'].values():
+                quarters_data = category_data.get('quarters', [])
+                if quarters_data:
+                    fiscal_period = {
+                        'fiscal_date': quarters_data[0].get('fiscal_date', ''),
+                        'fiscal_year': quarters_data[0].get('fiscal_year'),
+                        'fiscal_quarter': quarters_data[0].get('fiscal_quarter', '')
+                    }
+                    break
+
+        return {
+            "success": True,
+            "ticker": ticker,
+            "company_name": ratings_result.get('company_name', ticker),
+            "ratings": ratings_result.get('ratings', {}) if ratings_result.get('success') else None,
+            "generated_at": ratings_result.get('generated_at', ''),
+            "fiscal_period": fiscal_period,
+            "latest_metrics": latest_metrics
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching snapshot for {ticker}: {e}")
+        return {
+            "success": False,
+            "error": f"Snapshot error: {str(e)}"
         }

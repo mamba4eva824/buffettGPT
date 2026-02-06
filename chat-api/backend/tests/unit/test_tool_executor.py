@@ -574,6 +574,341 @@ class TestDecimalEncoder:
         assert parsed == data
 
 
+class TestCompareStocks:
+    """Tests for compare_stocks function."""
+
+    def test_routes_to_compare_stocks(self):
+        """Test routing to compareStocks."""
+        with patch('utils.tool_executor.compare_stocks') as mock_func:
+            mock_func.return_value = {'success': True}
+
+            from utils.tool_executor import execute_tool
+            result = execute_tool('compareStocks', {
+                'tickers': ['AAPL', 'MSFT'],
+                'metric_type': 'valuation',
+                'quarters': 4
+            })
+
+            mock_func.assert_called_once_with(
+                tickers=['AAPL', 'MSFT'],
+                metric_type='valuation',
+                quarters=4
+            )
+            assert result['success'] is True
+
+    def test_compare_two_stocks_success(self):
+        """Test successful comparison of two stocks."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.side_effect = lambda ticker: {
+                'success': True,
+                'ticker': ticker,
+                'company_name': f'{ticker} Inc.',
+                'ratings': {'verdict': 'BUY', 'conviction': 85},
+                'generated_at': '2026-01-15T10:00:00Z'
+            }
+
+            mock_metrics.side_effect = lambda ticker, metric_type, quarters: {
+                'success': True,
+                'ticker': ticker,
+                'data': {'valuation': {'quarters': [{'metrics': {'roe': 25.0}}]}},
+                'quarters_available': 1
+            }
+
+            from utils.tool_executor import compare_stocks
+            result = compare_stocks(['AAPL', 'MSFT'], 'valuation', 4)
+
+            assert result['success'] is True
+            assert 'AAPL' in result['comparison']
+            assert 'MSFT' in result['comparison']
+            assert result['tickers_compared'] == ['AAPL', 'MSFT']
+            assert result['comparison']['AAPL']['company_name'] == 'AAPL Inc.'
+            assert result['comparison']['MSFT']['company_name'] == 'MSFT Inc.'
+
+    def test_compare_stocks_partial_not_found(self):
+        """Test comparison when some tickers have no data."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            def ratings_side_effect(ticker):
+                if ticker == 'AAPL':
+                    return {'success': True, 'ticker': 'AAPL', 'company_name': 'Apple',
+                            'ratings': {'verdict': 'BUY'}, 'generated_at': '2026-01-15'}
+                return {'success': False, 'error': 'Not found'}
+
+            def metrics_side_effect(ticker, metric_type, quarters):
+                if ticker == 'AAPL':
+                    return {'success': True, 'data': {}, 'quarters_available': 4}
+                return {'success': False, 'error': 'Not found'}
+
+            mock_ratings.side_effect = ratings_side_effect
+            mock_metrics.side_effect = metrics_side_effect
+
+            from utils.tool_executor import compare_stocks
+            result = compare_stocks(['AAPL', 'FAKE'], 'all', 4)
+
+            assert result['success'] is True
+            assert 'AAPL' in result['comparison']
+            assert 'FAKE' not in result['comparison']
+            assert 'FAKE' in result['tickers_not_found']
+            assert 'warning' in result
+
+    def test_compare_stocks_all_not_found(self):
+        """Test comparison when no tickers have data."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {'success': False, 'error': 'Not found'}
+            mock_metrics.return_value = {'success': False, 'error': 'Not found'}
+
+            from utils.tool_executor import compare_stocks
+            result = compare_stocks(['FAKE1', 'FAKE2'], 'all', 4)
+
+            assert result['success'] is False
+            assert 'No reports found' in result['error']
+
+    def test_compare_stocks_too_few_tickers(self):
+        """Test error when fewer than 2 tickers provided."""
+        from utils.tool_executor import compare_stocks
+        result = compare_stocks(['AAPL'], 'all', 4)
+
+        assert result['success'] is False
+        assert 'At least 2 tickers' in result['error']
+
+    def test_compare_stocks_too_many_tickers(self):
+        """Test error when more than 5 tickers provided."""
+        from utils.tool_executor import compare_stocks
+        result = compare_stocks(['A', 'B', 'C', 'D', 'E', 'F'], 'all', 4)
+
+        assert result['success'] is False
+        assert 'Maximum 5 tickers' in result['error']
+
+    def test_compare_stocks_empty_list(self):
+        """Test error when empty list provided."""
+        from utils.tool_executor import compare_stocks
+        result = compare_stocks([], 'all', 4)
+
+        assert result['success'] is False
+        assert 'tickers must be a list' in result['error']
+
+    def test_compare_stocks_not_a_list(self):
+        """Test error when tickers is not a list."""
+        from utils.tool_executor import compare_stocks
+        result = compare_stocks('AAPL', 'all', 4)
+
+        assert result['success'] is False
+
+    def test_compare_stocks_normalizes_tickers(self):
+        """Test that tickers are normalized to uppercase."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {
+                'success': True, 'company_name': 'Test', 'ratings': {},
+                'generated_at': ''
+            }
+            mock_metrics.return_value = {
+                'success': True, 'data': {}, 'quarters_available': 0
+            }
+
+            from utils.tool_executor import compare_stocks
+            result = compare_stocks(['aapl', ' msft '], 'all', 4)
+
+            assert result['success'] is True
+            assert 'AAPL' in result['comparison']
+            assert 'MSFT' in result['comparison']
+
+    def test_compare_stocks_clamps_quarters(self):
+        """Test that quarters are clamped to 1-20 range."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {
+                'success': True, 'company_name': 'Test', 'ratings': {},
+                'generated_at': ''
+            }
+            mock_metrics.return_value = {
+                'success': True, 'data': {}, 'quarters_available': 0
+            }
+
+            from utils.tool_executor import compare_stocks
+            result = compare_stocks(['AAPL', 'MSFT'], 'all', 50)
+
+            assert result['success'] is True
+            assert result['quarters'] == 20
+
+
+class TestGetFinancialSnapshot:
+    """Tests for get_financial_snapshot function."""
+
+    def test_routes_to_get_financial_snapshot(self):
+        """Test routing to getFinancialSnapshot."""
+        with patch('utils.tool_executor.get_financial_snapshot') as mock_func:
+            mock_func.return_value = {'success': True}
+
+            from utils.tool_executor import execute_tool
+            result = execute_tool('getFinancialSnapshot', {'ticker': 'AAPL'})
+
+            mock_func.assert_called_once_with(ticker='AAPL')
+            assert result['success'] is True
+
+    def test_snapshot_success(self):
+        """Test successful snapshot retrieval."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {
+                'success': True,
+                'ticker': 'AAPL',
+                'company_name': 'Apple Inc.',
+                'ratings': {
+                    'growth_rating': 'STRONG',
+                    'growth_confidence': 85,
+                    'overall_verdict': 'BUY',
+                    'conviction': 90
+                },
+                'generated_at': '2026-01-15T10:00:00Z'
+            }
+
+            mock_metrics.return_value = {
+                'success': True,
+                'data': {
+                    'revenue_profit': {
+                        'quarters': [{
+                            'fiscal_date': '2025-12-28',
+                            'fiscal_year': 2026,
+                            'fiscal_quarter': 'Q1',
+                            'metrics': {'revenue': 100000, 'net_margin': 0.25}
+                        }]
+                    },
+                    'valuation': {
+                        'quarters': [{
+                            'fiscal_date': '2025-12-28',
+                            'fiscal_year': 2026,
+                            'fiscal_quarter': 'Q1',
+                            'metrics': {'roe': 25.0}
+                        }]
+                    }
+                },
+                'quarters_available': 1
+            }
+
+            from utils.tool_executor import get_financial_snapshot
+            result = get_financial_snapshot('AAPL')
+
+            assert result['success'] is True
+            assert result['ticker'] == 'AAPL'
+            assert result['company_name'] == 'Apple Inc.'
+            assert result['ratings']['overall_verdict'] == 'BUY'
+            assert result['fiscal_period']['fiscal_year'] == 2026
+            assert result['fiscal_period']['fiscal_quarter'] == 'Q1'
+            assert 'revenue_profit' in result['latest_metrics']
+            assert 'valuation' in result['latest_metrics']
+            assert result['latest_metrics']['revenue_profit']['revenue'] == 100000
+
+    def test_snapshot_missing_ticker(self):
+        """Test error when ticker is empty."""
+        from utils.tool_executor import get_financial_snapshot
+        result = get_financial_snapshot('')
+
+        assert result['success'] is False
+        assert 'ticker is required' in result['error']
+
+    def test_snapshot_not_found(self):
+        """Test when no data found for ticker."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {'success': False, 'error': 'Not found'}
+            mock_metrics.return_value = {'success': False, 'error': 'Not found'}
+
+            from utils.tool_executor import get_financial_snapshot
+            result = get_financial_snapshot('FAKE')
+
+            assert result['success'] is False
+            assert 'No data found' in result['error']
+
+    def test_snapshot_ratings_only(self):
+        """Test snapshot when only ratings are available (no metrics)."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {
+                'success': True,
+                'ticker': 'AAPL',
+                'company_name': 'Apple Inc.',
+                'ratings': {'verdict': 'BUY'},
+                'generated_at': '2026-01-15'
+            }
+            mock_metrics.return_value = {'success': False, 'error': 'No metrics'}
+
+            from utils.tool_executor import get_financial_snapshot
+            result = get_financial_snapshot('AAPL')
+
+            assert result['success'] is True
+            assert result['ratings']['verdict'] == 'BUY'
+            assert result['latest_metrics'] == {}
+
+    def test_snapshot_metrics_only(self):
+        """Test snapshot when only metrics are available (no ratings)."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {'success': False, 'error': 'Not found'}
+            mock_metrics.return_value = {
+                'success': True,
+                'data': {
+                    'revenue_profit': {
+                        'quarters': [{
+                            'fiscal_date': '2025-12-28',
+                            'fiscal_year': 2026,
+                            'fiscal_quarter': 'Q1',
+                            'metrics': {'revenue': 100000}
+                        }]
+                    }
+                },
+                'quarters_available': 1
+            }
+
+            from utils.tool_executor import get_financial_snapshot
+            result = get_financial_snapshot('AAPL')
+
+            assert result['success'] is True
+            assert result['ratings'] is None
+            assert result['latest_metrics']['revenue_profit']['revenue'] == 100000
+
+    def test_snapshot_normalizes_ticker(self):
+        """Test that ticker is normalized to uppercase."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {
+                'success': True, 'company_name': 'Apple', 'ratings': {},
+                'generated_at': ''
+            }
+            mock_metrics.return_value = {
+                'success': True, 'data': {}, 'quarters_available': 0
+            }
+
+            from utils.tool_executor import get_financial_snapshot
+            result = get_financial_snapshot('  aapl  ')
+
+            assert result['success'] is True
+            assert result['ticker'] == 'AAPL'
+
+    def test_snapshot_database_error(self):
+        """Test handling of exceptions."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings:
+            mock_ratings.side_effect = Exception('Connection timeout')
+
+            from utils.tool_executor import get_financial_snapshot
+            result = get_financial_snapshot('AAPL')
+
+            assert result['success'] is False
+            assert 'Snapshot error' in result['error']
+
+
 class TestIntegration:
     """Integration tests combining multiple functions."""
 
@@ -598,3 +933,17 @@ class TestIntegration:
 
             mock_func.assert_called_once()
             assert result['success'] is True
+
+    def test_execute_tool_compare_stocks_defaults(self):
+        """Test execute_tool provides defaults for compareStocks optional params."""
+        with patch('utils.tool_executor.compare_stocks') as mock_func:
+            mock_func.return_value = {'success': True}
+
+            from utils.tool_executor import execute_tool
+            result = execute_tool('compareStocks', {'tickers': ['AAPL', 'MSFT']})
+
+            mock_func.assert_called_once_with(
+                tickers=['AAPL', 'MSFT'],
+                metric_type='all',
+                quarters=4
+            )
