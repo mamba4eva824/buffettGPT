@@ -195,6 +195,108 @@ paths:
               schema:
                 $ref: '#/components/schemas/AvailableReportsResponse'
 
+  /compareStocks:
+    post:
+      operationId: compareStocks
+      summary: Compare 2-5 stocks side-by-side
+      description: |
+        Compares multiple stocks across ratings and financial metrics in a single call.
+        Use for "X vs Y" style questions or when the user wants to evaluate alternatives.
+        Returns ratings and metrics for each ticker for easy comparison.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tickers
+              properties:
+                tickers:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 2
+                  maxItems: 5
+                  description: List of 2-5 stock ticker symbols to compare
+                  example: ["AAPL", "MSFT", "GOOGL"]
+                metric_type:
+                  type: string
+                  description: |
+                    Category of metrics to compare:
+                    - revenue_profit: Revenue, margins, profitability
+                    - cashflow: Operating cash flow, FCF, capital allocation
+                    - balance_sheet: Assets, liabilities, equity
+                    - debt_leverage: Debt ratios, coverage, liquidity
+                    - earnings_quality: GAAP vs adjusted earnings, SBC
+                    - dilution: Share counts, dilution trends
+                    - valuation: P/E, ROE, ROIC, EV/EBITDA
+                    - all: All categories (default)
+                  enum:
+                    - revenue_profit
+                    - cashflow
+                    - balance_sheet
+                    - debt_leverage
+                    - earnings_quality
+                    - dilution
+                    - valuation
+                    - all
+                  default: all
+                quarters:
+                  type: integer
+                  description: Number of quarters to compare (default 4 for recent snapshot)
+                  minimum: 1
+                  maximum: 20
+                  default: 4
+      responses:
+        '200':
+          description: Comparison retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompareStocksResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /getFinancialSnapshot:
+    post:
+      operationId: getFinancialSnapshot
+      summary: Get a quick financial snapshot for a stock
+      description: |
+        Combines latest quarter metrics and investment ratings into a single response.
+        More efficient than calling getReportRatings and getMetricsHistory separately.
+        Use as the first step when evaluating a stock.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ticker
+              properties:
+                ticker:
+                  type: string
+                  description: Stock ticker symbol
+                  example: "AAPL"
+      responses:
+        '200':
+          description: Snapshot retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialSnapshotResponse'
+        '400':
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   schemas:
     ReportSectionResponse:
@@ -302,6 +404,80 @@ components:
                 type: string
               generated_at:
                 type: string
+
+    CompareStocksResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        tickers_compared:
+          type: array
+          items:
+            type: string
+          description: Tickers that were successfully compared
+        metric_type:
+          type: string
+          description: Category of metrics compared
+        quarters:
+          type: integer
+          description: Number of quarters included
+        comparison:
+          type: object
+          description: Per-ticker comparison data with ratings and metrics
+          additionalProperties:
+            type: object
+            properties:
+              company_name:
+                type: string
+              ratings:
+                type: object
+              metrics:
+                type: object
+              quarters_available:
+                type: integer
+        tickers_not_found:
+          type: array
+          items:
+            type: string
+          description: Tickers that had no reports available
+        warning:
+          type: string
+          description: Warning message if some tickers were not found
+        error:
+          type: string
+
+    FinancialSnapshotResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        ticker:
+          type: string
+        company_name:
+          type: string
+        ratings:
+          type: object
+          description: Investment ratings with confidence scores and verdict
+        generated_at:
+          type: string
+          description: When the report was generated
+        fiscal_period:
+          type: object
+          description: Fiscal period of the latest metrics
+          properties:
+            fiscal_date:
+              type: string
+            fiscal_year:
+              type: integer
+            fiscal_quarter:
+              type: string
+        latest_metrics:
+          type: object
+          description: Latest quarter metrics across all categories
+          additionalProperties:
+            type: object
+        error:
+          type: string
 
     ErrorResponse:
       type: object
