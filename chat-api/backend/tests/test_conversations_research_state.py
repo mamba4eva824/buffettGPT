@@ -128,6 +128,67 @@ def create_mock_event(
 
 
 # =============================================================================
+# SECURITY: get_user_id TESTS (CRIT-1 - identity spoofing prevention)
+# =============================================================================
+
+class TestGetUserIdSecurity:
+    """Verify get_user_id only trusts API Gateway authorizer context."""
+
+    def test_returns_user_id_from_authorizer_lambda_context(self):
+        """AC-4: Properly authenticated request returns correct user_id."""
+        event = create_mock_event('GET', '/conversations', user_id='real-user-456')
+        assert get_user_id(event) == 'real-user-456'
+
+    def test_rejects_forged_jwt_in_authorization_header(self):
+        """AC-1: Forged JWT (no signature verification) must NOT return a user_id."""
+        import base64
+        # Craft a JWT with a fake user_id — valid structure, no valid signature
+        fake_payload = base64.urlsafe_b64encode(
+            json.dumps({'user_id': 'victim-123', 'sub': 'victim-123'}).encode()
+        ).rstrip(b'=').decode()
+        forged_jwt = f'eyJhbGciOiJIUzI1NiJ9.{fake_payload}.fakesignature'
+
+        event = {
+            'requestContext': {'http': {'method': 'GET', 'path': '/conversations'}},
+            'pathParameters': {},
+            'queryStringParameters': {},
+            'headers': {'authorization': f'Bearer {forged_jwt}'}
+        }
+        # No authorizer context → must return None, NOT the forged user_id
+        assert get_user_id(event) is None
+
+    def test_rejects_user_id_from_query_params(self):
+        """AC-3: user_id in query params must be ignored."""
+        event = {
+            'requestContext': {'http': {'method': 'GET', 'path': '/conversations'}},
+            'pathParameters': {},
+            'queryStringParameters': {'user_id': 'spoofed-user'},
+            'headers': {}
+        }
+        assert get_user_id(event) is None
+
+    def test_rejects_x_user_id_header(self):
+        """AC-3: x-user-id header must be ignored."""
+        event = {
+            'requestContext': {'http': {'method': 'GET', 'path': '/conversations'}},
+            'pathParameters': {},
+            'queryStringParameters': {},
+            'headers': {'x-user-id': 'spoofed-user'}
+        }
+        assert get_user_id(event) is None
+
+    def test_returns_none_when_no_authorizer(self):
+        """AC-5: No auth context returns None (handler will respond 401)."""
+        event = {
+            'requestContext': {'http': {'method': 'GET', 'path': '/conversations'}},
+            'pathParameters': {},
+            'queryStringParameters': {},
+            'headers': {}
+        }
+        assert get_user_id(event) is None
+
+
+# =============================================================================
 # FLOAT TO DECIMAL CONVERSION TESTS
 # =============================================================================
 

@@ -479,8 +479,8 @@ class TestHandleCreateCheckout:
             method='POST',
             path='/subscription/checkout',
             body={
-                'success_url': 'https://myapp.com/success',
-                'cancel_url': 'https://myapp.com/cancel'
+                'success_url': 'https://buffettgpt.test/checkout/success',
+                'cancel_url': 'https://buffettgpt.test/checkout/cancel'
             },
             authorizer_context={'lambda': {'user_id': 'custom-url-user', 'email': 'custom@example.com'}}
         )
@@ -488,8 +488,8 @@ class TestHandleCreateCheckout:
 
         assert response['statusCode'] == 200
         call_kwargs = mock_create_session.call_args[1]
-        assert call_kwargs['success_url'] == 'https://myapp.com/success'
-        assert call_kwargs['cancel_url'] == 'https://myapp.com/cancel'
+        assert call_kwargs['success_url'] == 'https://buffettgpt.test/checkout/success'
+        assert call_kwargs['cancel_url'] == 'https://buffettgpt.test/checkout/cancel'
 
     @mock_aws
     @patch('handlers.subscription_handler.create_checkout_session')
@@ -634,6 +634,141 @@ class TestHandleCreateCheckout:
 
         assert response['statusCode'] == 200
         # Verify default URLs were used (from FRONTEND_URL env var)
+        call_kwargs = mock_create_session.call_args[1]
+        assert 'subscription=success' in call_kwargs['success_url']
+        assert 'subscription=canceled' in call_kwargs['cancel_url']
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_checkout_rejects_external_success_url(self, mock_get_customer, mock_create_session):
+        """
+        Security: External URLs in success_url must be rejected to prevent open redirects.
+
+        Given: Request with success_url pointing to attacker domain
+        When: POST /subscription/checkout
+        Then: Falls back to default FRONTEND_URL-based success URL
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'redirect-test-user',
+            'email': 'redirect@example.com',
+            'subscription_tier': 'free',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/test',
+            'session_id': 'cs_test'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            body={
+                'success_url': 'https://evil.com/phish',
+                'cancel_url': 'https://evil.com/steal'
+            },
+            authorizer_context={'lambda': {'user_id': 'redirect-test-user', 'email': 'redirect@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs['success_url'].startswith('https://buffettgpt.test')
+        assert call_kwargs['cancel_url'].startswith('https://buffettgpt.test')
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_checkout_rejects_javascript_url(self, mock_get_customer, mock_create_session):
+        """
+        Security: javascript: URIs must be rejected.
+
+        Given: Request with javascript: scheme in success_url
+        When: POST /subscription/checkout
+        Then: Falls back to default URL
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'js-url-user',
+            'email': 'jsurl@example.com',
+            'subscription_tier': 'free',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/test',
+            'session_id': 'cs_test'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            body={
+                'success_url': 'javascript:alert(document.cookie)',
+                'cancel_url': 'data:text/html,<script>alert(1)</script>'
+            },
+            authorizer_context={'lambda': {'user_id': 'js-url-user', 'email': 'jsurl@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs['success_url'].startswith('https://buffettgpt.test')
+        assert call_kwargs['cancel_url'].startswith('https://buffettgpt.test')
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_checkout_uses_default_url_on_invalid_input(self, mock_get_customer, mock_create_session):
+        """
+        Security: Non-string or empty URL values fall back to defaults.
+
+        Given: Request with None/empty success_url
+        When: POST /subscription/checkout
+        Then: Uses default FRONTEND_URL-based URLs
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'empty-url-user',
+            'email': 'empty@example.com',
+            'subscription_tier': 'free',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/test',
+            'session_id': 'cs_test'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            body={
+                'success_url': '',
+                'cancel_url': None
+            },
+            authorizer_context={'lambda': {'user_id': 'empty-url-user', 'email': 'empty@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
         call_kwargs = mock_create_session.call_args[1]
         assert 'subscription=success' in call_kwargs['success_url']
         assert 'subscription=canceled' in call_kwargs['cancel_url']

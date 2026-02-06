@@ -90,40 +90,9 @@ def get_user_id(event: Dict[str, Any]) -> Optional[str]:
             if principal_id and principal_id != 'anonymous':
                 return str(principal_id)
 
-    # Try to decode JWT from Authorization header
-    headers = event.get('headers', {})
-    auth_header = headers.get('authorization', headers.get('Authorization', ''))
-
-    if auth_header.startswith('Bearer '):
-        try:
-            import base64
-            token = auth_header[7:]
-            parts = token.split('.')
-            if len(parts) == 3:
-                payload = parts[1]
-                padding = 4 - len(payload) % 4
-                if padding != 4:
-                    payload += '=' * padding
-
-                decoded = base64.urlsafe_b64decode(payload)
-                claims = json.loads(decoded)
-
-                user_id = claims.get('sub') or claims.get('user_id') or claims.get('id')
-                if user_id:
-                    return str(user_id)
-        except Exception as e:
-            logger.warning(f"Failed to decode JWT: {e}")
-
-    # Try query parameters (anonymous users)
-    query_params = event.get('queryStringParameters', {})
-    if query_params and 'user_id' in query_params:
-        return query_params['user_id']
-
-    # Try headers
-    if 'x-user-id' in headers:
-        return headers['x-user-id']
-
-    # Default to anonymous
+    # SECURITY: Only trust user_id from the verified API Gateway authorizer context.
+    # Never extract user_id from unsigned JWT payloads, query params, or custom headers
+    # as these are trivially spoofable. See docs/api/SECURITY_REVIEW.md CRIT-1.
     return 'anonymous'
 
 def save_message(conversation_id: str, user_id: str, message_type: str,

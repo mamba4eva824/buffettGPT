@@ -1,7 +1,8 @@
 # Follow-Up Agent - E2E Integration Testing Guide
 
-**Document Version:** 1.0
+**Document Version:** 1.1
 **Created:** February 4, 2026
+**Updated:** February 5, 2026
 **Status:** Reference Guide
 
 ---
@@ -17,9 +18,10 @@
 7. [Unit Test Patterns](#unit-test-patterns)
 8. [Integration Test Patterns](#integration-test-patterns)
 9. [E2E Test Patterns](#e2e-test-patterns)
-10. [Best Practices](#best-practices)
-11. [CI/CD Integration](#cicd-integration)
-12. [Troubleshooting](#troubleshooting)
+10. [AWS Dev Environment Testing](#aws-dev-environment-testing)
+11. [Best Practices](#best-practices)
+12. [CI/CD Integration](#cicd-integration)
+13. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -936,6 +938,377 @@ class TestFollowupAgentE2E:
 
 ---
 
+## AWS Dev Environment Testing
+
+This section covers running the integration and E2E test suites against real AWS dev environment services. Unlike unit tests (which use moto mocks), these tests hit live DynamoDB tables, Secrets Manager, and optionally the deployed API Gateway endpoint.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Integration Tests                                          │
+│  (tests/integration/test_followup_agent_integration.py)     │
+│                                                             │
+│  ┌──────────────┐    ┌────────────────┐    ┌────────────┐  │
+│  │ Mocked       │    │ Real DynamoDB  │    │ Real       │  │
+│  │ Bedrock      │    │ (dev tables)   │    │ Secrets Mgr│  │
+│  │ (boto3.client│    │ (boto3.resource│    │ (JWT only) │  │
+│  │  patched)    │    │  NOT patched)  │    │            │  │
+│  └──────────────┘    └────────────────┘    └────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│  E2E Tests                                                  │
+│  (tests/e2e/test_followup_agent_e2e.py)                     │
+│                                                             │
+│  ┌──────────────┐    ┌────────────────┐    ┌────────────┐  │
+│  │ Real Bedrock │    │ Real DynamoDB  │    │ Real       │  │
+│  │ (via API GW) │    │ (via Lambda)   │    │ API Gateway│  │
+│  │              │    │                │    │            │  │
+│  │ $$ COSTS $$  │    │                │    │            │  │
+│  └──────────────┘    └────────────────┘    └────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### AWS Authentication Utilities
+
+The project provides shared authentication helpers at `tests/performance/utils/aws_auth.py`:
+
+```python
+from tests.performance.utils.aws_auth import fetch_secret, generate_jwt
+
+# Fetch JWT secret from Secrets Manager (cached per session)
+jwt_secret = fetch_secret('buffett-dev-jwt-secret')
+
+# Generate a real JWT matching auth_callback.py format
+token = generate_jwt(
+    user_id='test-user-123',
+    email='test@example.com',
+    secret=jwt_secret,
+    subscription_tier='free',   # or 'plus'
+    expiry_hours=1
+)
+```
+
+**Available functions:**
+
+| Function | Purpose | Used By |
+|----------|---------|---------|
+| `fetch_secret(secret_id)` | Fetch secret from AWS Secrets Manager (LRU cached) | Integration, E2E, Performance |
+| `generate_jwt(user_id, email, secret, ...)` | Generate HS256 JWT matching auth_callback.py format | Integration, E2E, Performance |
+| `generate_stripe_signature(payload, secret)` | Generate Stripe webhook v1 signature | Performance |
+
+### Step-by-Step: Running Integration Tests Against AWS
+
+Integration tests use real DynamoDB but mock Bedrock to avoid AI costs.
+
+**1. Verify AWS credentials:**
+
+```bash
+aws sts get-caller-identity
+# Should show your IAM user/role with access to dev resources
+```
+
+**2. Verify DynamoDB table access:**
+
+```bash
+# Check tables exist and are accessible
+aws dynamodb describe-table --table-name investment-reports-v2-dev --query 'Table.TableStatus'
+aws dynamodb describe-table --table-name metrics-history-cache-dev --query 'Table.TableStatus'
+aws dynamodb describe-table --table-name buffett-dev-chat-messages --query 'Table.TableStatus'
+aws dynamodb describe-table --table-name buffett-dev-token-usage --query 'Table.TableStatus'
+```
+
+**3. Fetch the JWT secret:**
+
+```bash
+export BUFFETT_JWT_SECRET=$(aws secretsmanager get-secret-value \
+    --secret-id buffett-dev-jwt-secret \
+    --query SecretString --output text)
+
+# Verify it was fetched (should not be empty)
+echo "JWT secret length: ${#BUFFETT_JWT_SECRET}"
+```
+
+**4. Run integration tests:**
+
+```bash
+cd chat-api/backend
+
+# Run all integration tests with verbose output
+AWS_PROFILE=default pytest tests/integration/test_followup_agent_integration.py \
+    -v -s -m integration
+
+# Run specific test class
+AWS_PROFILE=default pytest tests/integration/test_followup_agent_integration.py \
+    ::TestToolExecutionIntegration -v -s
+
+# Run specific test
+AWS_PROFILE=default pytest tests/integration/test_followup_agent_integration.py \
+    ::TestMessagePersistenceIntegration::test_messages_saved_after_request -v -s
+```
+
+**What the integration tests verify against AWS:**
+
+| Test Class | DynamoDB Tables Hit | What It Validates |
+|------------|-------------------|-------------------|
+| `TestToolExecutionIntegration` | `investment-reports-v2-dev`, `metrics-history-cache-dev` | Tool functions read seeded data correctly |
+| `TestMessagePersistenceIntegration` | `buffett-dev-chat-messages` | User/assistant messages saved with correct metadata |
+| `TestTokenTrackingIntegration` | `buffett-dev-token-usage` | Token counts accumulate correctly across turns |
+| `TestAuthenticationIntegration` | (none, JWT validation only) | Valid/invalid/missing JWT handling |
+
+### Step-by-Step: Running E2E Tests Against AWS
+
+E2E tests hit the deployed API Gateway endpoint. **These incur Bedrock API costs.**
+
+**1. Set up environment:**
+
+```bash
+export AWS_PROFILE=default
+
+# Fetch JWT secret for signing test tokens
+export BUFFETT_JWT_SECRET=$(aws secretsmanager get-secret-value \
+    --secret-id buffett-dev-jwt-secret \
+    --query SecretString --output text)
+
+# API endpoint (defaults to dev if not set)
+export ANALYSIS_FOLLOWUP_URL="https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev"
+```
+
+**2. Verify the API is accessible:**
+
+```bash
+curl -s "${ANALYSIS_FOLLOWUP_URL}/health" | python3 -m json.tool
+# Should return: {"status": "healthy", ...}
+```
+
+**3. Run E2E tests:**
+
+```bash
+cd chat-api/backend
+
+# Run all E2E tests (costs money!)
+pytest tests/e2e/test_followup_agent_e2e.py -v -s -m e2e
+
+# Run just the health check (free, no Bedrock costs)
+pytest tests/e2e/test_followup_agent_e2e.py \
+    ::TestFollowupAgentE2E::test_health_check -v -s
+
+# Run just the auth rejection tests (free, no Bedrock costs)
+pytest tests/e2e/test_followup_agent_e2e.py \
+    -k "invalid_jwt or missing_auth or missing_required" -v -s
+
+# Run only the tests that invoke Bedrock (costs money)
+pytest tests/e2e/test_followup_agent_e2e.py \
+    -k "happy_path or growth_question or metrics_question" -v -s
+```
+
+**Cost-aware test selection:**
+
+| Test | Bedrock Cost | Timeout |
+|------|:----------:|:-------:|
+| `test_health_check` | Free | 30s |
+| `test_invalid_jwt_rejected` | Free | 30s |
+| `test_missing_auth_rejected` | Free | 30s |
+| `test_missing_required_fields` | Free | 30s |
+| `test_token_limit_exceeded` | Free (rejected before Bedrock) | 30s |
+| `test_happy_path_simple_question` | ~$0.001 | 60s |
+| `test_tool_invocation_growth_question` | ~$0.002 | 60s |
+| `test_multi_turn_metrics_question` | ~$0.002 | 60s |
+
+### Test User and Data Seeding for AWS
+
+**Follow-Up Agent tests** use `tests/fixtures/data_seeding.py`:
+
+```bash
+# Seed manually via Python (for debugging)
+cd chat-api/backend
+python3 -c "
+import sys; sys.path.insert(0, 'src')
+from tests.fixtures.data_seeding import seed_test_report, seed_test_metrics, seed_token_usage
+
+# Seed a test report
+result = seed_test_report('TESTXYZ')
+print(f'Seeded report: {result}')
+
+# Seed metrics history
+result = seed_test_metrics('TESTXYZ', quarters=4)
+print(f'Seeded metrics: {result}')
+
+# Seed token usage (under limit)
+result = seed_token_usage('test-user-001', total_tokens=1000, limit=50000)
+print(f'Seeded tokens: {result}')
+"
+```
+
+**Performance tests** use `tests/performance/utils/seed_test_user.py`:
+
+```bash
+# Seed performance test users
+cd chat-api/backend
+python3 -m tests.performance.utils.seed_test_user seed --count 10
+
+# Cleanup performance test users
+python3 -m tests.performance.utils.seed_test_user cleanup
+```
+
+**Cleanup after manual testing:**
+
+```bash
+cd chat-api/backend
+python3 -c "
+import sys; sys.path.insert(0, 'src')
+from tests.fixtures.data_seeding import cleanup_test_data
+cleanup_test_data('TESTXYZ', 'test-user-001')
+print('Cleanup complete')
+"
+```
+
+### Selective Mocking Strategy (Integration Tests)
+
+The integration tests use a key technique: **patch `boto3.client` but leave `boto3.resource` unpatched**. This allows real DynamoDB access while mocking Bedrock.
+
+```python
+# How it works in handler_with_mock_bedrock fixture:
+
+# 1. Clear cached handler modules (they init clients at import time)
+for mod_key in list(sys.modules.keys()):
+    if any(name in mod_key for name in (
+        'analysis_followup', 'token_usage_tracker', 'tool_executor',
+    )):
+        del sys.modules[mod_key]
+
+# 2. Patch only boto3.client (Bedrock, Secrets Manager)
+with patch('boto3.client') as mock_client:
+    def client_factory(service, **kwargs):
+        if service == 'bedrock-runtime':
+            return mock_bedrock_runtime    # Mocked
+        if service == 'secretsmanager':
+            return mock_secrets             # Mocked
+        return MagicMock()
+
+    mock_client.side_effect = client_factory
+
+    # 3. Import handler INSIDE the patch context
+    from handlers import analysis_followup
+
+# 4. boto3.resource was NEVER patched, so DynamoDB is real
+# But override messages_table to point to dev table explicitly
+real_dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+analysis_followup.messages_table = real_dynamodb.Table('buffett-dev-chat-messages')
+```
+
+**Why this works:**
+- `analysis_followup.py` uses `boto3.client('bedrock-runtime')` for Bedrock calls
+- `tool_executor.py` uses `boto3.resource('dynamodb')` for DynamoDB reads
+- `token_usage_tracker.py` uses `boto3.resource('dynamodb')` for token tracking
+- By only patching `boto3.client`, DynamoDB operations go to real AWS
+
+### Environment Variable Override (Integration Tests)
+
+The root `conftest.py` sets `ENVIRONMENT=test` via an autouse fixture. Integration tests override this with dev values using their own autouse `integration_env` fixture:
+
+```python
+@pytest.fixture(autouse=True)
+def integration_env():
+    """Override conftest test env vars with real dev values."""
+    overrides = {
+        'ENVIRONMENT': 'dev',
+        'CHAT_MESSAGES_TABLE': 'buffett-dev-chat-messages',
+        'TOKEN_USAGE_TABLE': 'buffett-dev-token-usage',
+        'PROJECT_NAME': 'buffett-chat-api',
+        'DEFAULT_TOKEN_LIMIT': '50000',
+    }
+    originals = {k: os.environ.get(k) for k in overrides}
+    for k, v in overrides.items():
+        os.environ[k] = v
+    yield
+    for k, v in originals.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+```
+
+### One-Command Test Scripts
+
+**Integration tests (free, no Bedrock costs):**
+
+```bash
+cd chat-api/backend
+
+# One-liner: fetch secret + run tests
+AWS_PROFILE=default BUFFETT_JWT_SECRET=$(aws secretsmanager get-secret-value \
+    --secret-id buffett-dev-jwt-secret \
+    --query SecretString --output text) \
+    pytest tests/integration/ -v -s -m integration
+```
+
+**E2E tests (costs money):**
+
+```bash
+cd chat-api/backend
+
+# One-liner: fetch secret + run tests
+AWS_PROFILE=default BUFFETT_JWT_SECRET=$(aws secretsmanager get-secret-value \
+    --secret-id buffett-dev-jwt-secret \
+    --query SecretString --output text) \
+    pytest tests/e2e/ -v -s -m e2e
+```
+
+**Free-only E2E tests (health + auth rejection):**
+
+```bash
+cd chat-api/backend
+
+AWS_PROFILE=default BUFFETT_JWT_SECRET=$(aws secretsmanager get-secret-value \
+    --secret-id buffett-dev-jwt-secret \
+    --query SecretString --output text) \
+    pytest tests/e2e/ -v -s -k "health or invalid_jwt or missing_auth or missing_required"
+```
+
+**Performance tests against AWS dev (Stripe load testing):**
+
+```bash
+cd chat-api/backend
+./scripts/run_performance_tests.sh --aws
+```
+
+### AWS Testing Checklist
+
+Before running tests against AWS dev, verify:
+
+- [ ] `aws sts get-caller-identity` returns your IAM identity
+- [ ] `BUFFETT_JWT_SECRET` is set (non-empty)
+- [ ] DynamoDB dev tables are accessible (run describe-table commands above)
+- [ ] For E2E: `curl ${ANALYSIS_FOLLOWUP_URL}/health` returns `{"status": "healthy"}`
+- [ ] For E2E: You understand that Bedrock tests incur ~$0.001-0.002 per test
+- [ ] Test data uses unique prefixes (`INT*`, `E2E*`, `perf-test-*`) to avoid collisions
+- [ ] Cleanup fixtures are in place (yield pattern in module-scoped fixtures)
+
+### AWS IAM Permissions Required
+
+| Permission | Resource | Required For |
+|-----------|----------|-------------|
+| `dynamodb:GetItem` | `investment-reports-v2-dev` | Integration: tool execution |
+| `dynamodb:Query` | `investment-reports-v2-dev` | Integration: tool execution |
+| `dynamodb:Scan` | `investment-reports-v2-dev` | Integration: getAvailableReports |
+| `dynamodb:PutItem` | `investment-reports-v2-dev` | Test data seeding |
+| `dynamodb:DeleteItem` | `investment-reports-v2-dev` | Test data cleanup |
+| `dynamodb:GetItem` | `metrics-history-cache-dev` | Integration: getMetricsHistory |
+| `dynamodb:Query` | `metrics-history-cache-dev` | Integration: getMetricsHistory |
+| `dynamodb:PutItem` | `metrics-history-cache-dev` | Test data seeding |
+| `dynamodb:DeleteItem` | `metrics-history-cache-dev` | Test data cleanup |
+| `dynamodb:PutItem` | `buffett-dev-chat-messages` | Integration: message persistence |
+| `dynamodb:Query` | `buffett-dev-chat-messages` | Integration: message verification |
+| `dynamodb:DeleteItem` | `buffett-dev-chat-messages` | Integration: message cleanup |
+| `dynamodb:PutItem` | `buffett-dev-token-usage` | Test data seeding |
+| `dynamodb:GetItem` | `buffett-dev-token-usage` | Integration: token checks |
+| `dynamodb:DeleteItem` | `buffett-dev-token-usage` | Test data cleanup |
+| `secretsmanager:GetSecretValue` | `buffett-dev-jwt-secret` | All: JWT signing |
+
+---
+
 ## Best Practices
 
 ### 1. Data Isolation
@@ -1254,14 +1627,25 @@ For implementing new tests, use the RALF workflow in separate Claude Code sessio
 ### Phase 3: Implement Integration Tests
 - Implement `TestToolExecutionIntegration`
 - Implement `TestMessagePersistenceIntegration`
-- Verify: `pytest tests/integration/ -v -m integration` passes
+- Implement `TestTokenTrackingIntegration`
+- Implement `TestAuthenticationIntegration`
+- Verify: `pytest --collect-only tests/integration/ -m integration` discovers 11 tests
+- Verify: Existing unit tests still pass
 
 ### Phase 4: Implement E2E Tests
-- Implement `TestFollowupAgentE2E`
-- Add health check, happy path, error cases
-- Verify: `pytest tests/e2e/ -v -m e2e` passes
+- Implement `TestFollowupAgentE2E` (8 test cases)
+- Include: health_check, happy_path, growth_question, metrics_question, token_limit_exceeded, invalid_jwt, missing_auth, missing_required_fields
+- Verify: `pytest --collect-only tests/e2e/ -m e2e` discovers 8 tests
+- Verify: Existing unit tests still pass
 
-### Phase 5: CI/CD Integration
+### Phase 5: AWS Dev Environment Validation
+- Verify AWS credentials and table access (see [AWS Testing Checklist](#aws-testing-checklist))
+- Run integration tests against real DynamoDB dev tables
+- Run free E2E tests (health check, auth rejection) against deployed API
+- Run paid E2E tests (Bedrock calls) against deployed API
+- Verify: All tests pass against live AWS dev environment
+
+### Phase 6: CI/CD Integration
 - Update `.github/workflows/` with test jobs
 - Add secrets to GitHub repository
 - Verify: CI pipeline runs tests correctly
@@ -1273,3 +1657,7 @@ For implementing new tests, use the RALF workflow in separate Claude Code sessio
 - [FOLLOWUP_AGENT.md](./FOLLOWUP_AGENT.md) - Architecture reference
 - [test_analysis_followup.py](../../tests/unit/test_analysis_followup.py) - Unit test examples
 - [conftest.py](../../tests/conftest.py) - Shared fixtures
+- [aws_auth.py](../../tests/performance/utils/aws_auth.py) - AWS authentication utilities (JWT, Stripe signatures)
+- [seed_test_user.py](../../tests/performance/utils/seed_test_user.py) - Performance test user seeding
+- [data_seeding.py](../../tests/fixtures/data_seeding.py) - Follow-up agent test data seeding
+- [run_performance_tests.sh](../../scripts/run_performance_tests.sh) - Performance test orchestration (`--aws` mode)

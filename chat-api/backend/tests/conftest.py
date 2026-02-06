@@ -18,6 +18,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (may incur API costs, can be skipped with -m 'not slow')"
     )
+    config.addinivalue_line(
+        "markers", "e2e: marks tests as end-to-end (require deployed API, can be skipped with -m 'not e2e')"
+    )
 
 
 @pytest.fixture(autouse=True)

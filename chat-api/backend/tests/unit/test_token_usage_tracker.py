@@ -37,7 +37,7 @@ class TestTokenUsageTrackerInit:
             from utils.token_usage_tracker import TokenUsageTracker
             tracker = TokenUsageTracker()
 
-            assert tracker.table_name == 'test-token-usage'
+            assert tracker.table_name == 'buffett-test-token-usage'
 
     def test_custom_table_name_override(self):
         """Test that custom table name can be provided."""
