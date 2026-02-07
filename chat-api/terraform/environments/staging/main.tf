@@ -41,34 +41,37 @@ locals {
 
   # Lambda environment variables
   lambda_common_env_vars = {
-    ENVIRONMENT                 = local.environment
-    PROJECT_NAME                = local.project_name
-    LOG_LEVEL                   = "INFO" # Less verbose than dev
-    CHAT_MESSAGES_TABLE = module.dynamodb.chat_messages_table_name
+    ENVIRONMENT         = local.environment
+    PROJECT_NAME        = local.project_name
+    LOG_LEVEL           = "INFO" # Less verbose than dev
     CONVERSATIONS_TABLE = module.dynamodb.conversations_table_name
-    KMS_KEY_ID                  = module.core.kms_key_id
-    CHAT_PROCESSING_QUEUE_URL   = module.core.chat_processing_queue_url
+    CHAT_MESSAGES_TABLE = module.dynamodb.chat_messages_table_name
+    KMS_KEY_ID          = module.core.kms_key_id
 
-    # Bedrock Configuration - Use module outputs when available
-    BEDROCK_AGENT_ID    = try(module.bedrock.agent_id, var.bedrock_agent_id)
-    BEDROCK_AGENT_ALIAS = try(module.bedrock.agent_alias_id, var.bedrock_agent_alias)
-    BEDROCK_REGION      = var.bedrock_region
+    # Bedrock Configuration
+    BEDROCK_REGION       = var.bedrock_region
+    FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
+    FOLLOWUP_AGENT_ALIAS = try(module.bedrock.agent_alias_id, var.bedrock_agent_alias)
 
-    # WebSocket endpoint for API Gateway Management API (needed by multiple functions)
-    # Format: {api-id}.execute-api.{region}.amazonaws.com/{stage}
-    WEBSOCKET_API_ENDPOINT = try("${module.api_gateway.websocket_api_id}.execute-api.us-east-1.amazonaws.com/${local.environment}", "")
+    # FMP API Configuration
+    FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
+    FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
+    TICKER_LOOKUP_TABLE        = try(module.dynamodb.ticker_lookup_table_name, "")
+
+    # Investment Research Tables
+    INVESTMENT_REPORTS_V2_TABLE = try(module.dynamodb.investment_reports_v2_table_name, "")
+    METRICS_HISTORY_CACHE_TABLE = try(module.dynamodb.metrics_history_cache_table_name, "")
 
     # Token Usage Tracking (monthly limits for follow-up agent)
     TOKEN_USAGE_TABLE   = try(module.dynamodb.token_usage_table_name, "")
     DEFAULT_TOKEN_LIMIT = "500000"  # 500K tokens for staging/testing
+
+    # JWT Authentication Configuration
+    JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
   }
 
   # Function-specific environment variables
-  # NOTE: Anonymous sessions and rate limits tables removed (2025-01)
-  lambda_function_env_vars = {
-    websocket_connect = {}
-    chat_processor    = {}
-  }
+  lambda_function_env_vars = {}
 }
 
 # ================================================
