@@ -209,7 +209,6 @@ module "monitoring" {
   # Resources to monitor
   lambda_function_names = module.lambda.function_names
   api_gateway_id        = module.api_gateway.http_api_id
-  websocket_api_id      = module.api_gateway.websocket_api_id
 
   # Alert configuration
   alert_email = var.alert_email
