@@ -109,24 +109,21 @@ module "dynamodb" {
 module "lambda" {
   source = "../../modules/lambda"
 
-  project_name              = local.project_name
-  environment               = local.environment
-  lambda_role_arn           = module.core.lambda_role_arn
-  lambda_package_path       = "${path.root}/../../../backend/build"
-  runtime                   = "python3.11"
-  common_env_vars           = local.lambda_common_env_vars
-  function_env_vars         = local.lambda_function_env_vars
-  dlq_arn                   = module.core.chat_dlq_arn
-  chat_processing_queue_arn = module.core.chat_processing_queue_arn
-  log_retention_days        = 14 # 2 week retention for staging
+  project_name        = local.project_name
+  environment         = local.environment
+  lambda_role_arn     = module.core.lambda_role_arn
+  lambda_package_path = "${path.root}/../../../backend/build"
+  runtime             = "python3.11"
+  common_env_vars     = local.lambda_common_env_vars
+  function_env_vars   = local.lambda_function_env_vars
+  log_retention_days  = 14 # 2 week retention for staging
 
   reserved_concurrency = {
     chat_processor = 5 # Higher than dev for multiple testers
   }
 
-  sqs_batch_window    = 10
-  sqs_max_concurrency = 5
-  common_tags         = local.common_tags
+  common_tags = local.common_tags
+  kms_key_arn = module.core.kms_key_arn
 }
 
 # ================================================
