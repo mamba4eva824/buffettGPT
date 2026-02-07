@@ -97,7 +97,7 @@
 
 ### CRIT-1: Unsigned JWT Payload Extraction
 
-**Severity**: CRITICAL
+**Severity**: CRITICAL -> **VERIFIED FIXED** (re-tested 2026-02-06)
 **Location**: `chat-api/backend/src/handlers/conversations_handler.py:183-204`, `chat-api/backend/src/handlers/search_handler.py:98-113`
 
 **Description**: Both handlers contain a fallback path that base64-decodes the JWT payload **without verifying the signature**. When the API Gateway authorizer context is missing but an `Authorization` header is present, the code splits the JWT on `.`, base64-decodes the middle segment, and trusts whatever `user_id` / `sub` is in the claims.
@@ -123,7 +123,7 @@
 
 ### CRIT-2: Public Lambda Function URLs Bypass API Gateway Auth
 
-**Severity**: CRITICAL -> **MITIGATED** (downgraded to LOW after investigation)
+**Severity**: CRITICAL -> **VERIFIED FIXED** (re-tested 2026-02-06, originally mitigated 2026-02-05)
 **Location**: `chat-api/terraform/modules/lambda/function_urls.tf:9`, `chat-api/terraform/modules/lambda/investment_research_docker.tf:143`
 
 **Description**: Two Lambda Function URLs are created with `authorization_type = "NONE"`:
@@ -333,10 +333,10 @@ The DynamoDB rate-limits table was removed in a cleanup. All three systems fail-
 
 | # | Action | Effort | Addresses |
 |---|--------|--------|-----------|
-| 1 | Remove unsigned JWT fallback in conversations + search handlers | S | CRIT-1 |
-| 2 | Remove `x-user-id` header / `user_id` query param acceptance | S | CRIT-1 |
+| 1 | ~~Remove unsigned JWT fallback in conversations + search handlers~~ | S | CRIT-1 — **DONE** (verified 2026-02-06) |
+| 2 | ~~Remove `x-user-id` header / `user_id` query param acceptance~~ | S | CRIT-1 — **DONE** (verified 2026-02-06) |
 | 3 | Consolidate JWT verification into shared `utils/jwt_utils.py` | M | HIGH-1 |
-| 4 | Secure Lambda Function URLs (add `AWS_IAM` or in-handler JWT validation) | M | CRIT-2 |
+| 4 | ~~Secure Lambda Function URLs (add `AWS_IAM` or in-handler JWT validation)~~ | M | CRIT-2 — **DONE** (verified 2026-02-06) |
 | 5 | Sanitize error responses (replace `str(e)` with generic messages) | S | MED-2 |
 | 6 | Deploy AWS WAF with managed rule groups on both API Gateways | M | HIGH-3 |
 | 7 | Wire rate limiting into all public-facing handlers | M | MED-4 |
@@ -459,3 +459,66 @@ Not all findings are negative. These security patterns are correctly implemented
 |------|--------|---------|
 | 2026-02-05 | Initial security review | All findings |
 | 2026-02-05 | Fixed BUG-1: `analysis_followup` auth error now returns HTTP 401 instead of HTTP 200 + `Runtime.MarshalError`. Replaced `auth_error_stream()` generator with `error_response()` dict. Deployed to dev, verified via live tests. | CRIT-2 |
+| 2026-02-06 | Re-test of CRIT-1 and CRIT-2 remediation — all 8 acceptance criteria passed. See [Re-test Results](#re-test-results-2026-02-06) below. CRIT-1: **VERIFIED FIXED**. CRIT-2: **VERIFIED FIXED**. | CRIT-1, CRIT-2 |
+
+---
+
+## Re-test Results (2026-02-06)
+
+> **Tester**: Claude Code (automated security re-test)
+> **Date**: 2026-02-06T23:14Z
+> **Scope**: CRIT-1 and CRIT-2 remediation verification — static code audit + live endpoint tests against dev environment
+
+### Summary
+
+| Finding | Original Status | Re-test Status | Evidence |
+|---------|----------------|----------------|----------|
+| CRIT-1: Unsigned JWT Payload Extraction | CRITICAL | **VERIFIED FIXED** | Code audit: no base64 JWT decode paths in conversations/search handlers. Live test: forged JWT returns 403. |
+| CRIT-2: Public Lambda Function URLs | MITIGATED | **VERIFIED FIXED** | Code audit: `error_response()` returns dict. Live tests: all Function URLs return 401 for invalid/missing JWT. |
+
+### Acceptance Criteria Results
+
+| AC | Description | Result | Evidence |
+|----|-------------|--------|----------|
+| AC-1 | No `base64`/`b64decode` JWT extraction in `conversations_handler.py` or `search_handler.py` | **PASS** | Grep for `base64\|b64decode` in `src/handlers/` found only `analysis_followup.py:401` (request body decoding for `isBase64Encoded`, not JWT extraction). Both handlers extract `user_id` solely from `requestContext.authorizer`. |
+| AC-2 | No `x-user-id` header or `user_id` query param extraction in `conversations_handler.py` | **PASS** | Grep for `x-user-id\|user_id.*query` returned only security comments at `conversations_handler.py:177` and `search_handler.py:94`. `get_user_id()` returns `None` (conversations) or `'anonymous'` (search) when authorizer context is missing. |
+| AC-3 | `analysis_followup.py` `verify_jwt_token()` returns proper `error_response()` dict (not generator) | **PASS** | `error_response()` at line 1058-1071 returns `Dict[str, Any]` with `statusCode`, `headers`, `body`. Auth gate at line 794-797: `return error_response(401, ...)`. No generator/yield in the auth path. |
+| AC-4 | POST to analysis_followup Function URL with invalid JWT returns HTTP 401 JSON | **PASS** | `curl POST https://buef5xunrsdmsyrhdpb37nyuuu0uhglg.lambda-url.us-east-1.on.aws/` with `Authorization: Bearer invalid.jwt.token` → **HTTP 401**, body: `{"success": false, "error": "Unauthorized - valid JWT token required", "timestamp": "2026-02-06T23:14:52.571727Z"}` |
+| AC-5 | POST to analysis_followup Function URL with NO auth header returns HTTP 401 JSON | **PASS** | `curl POST` (no Authorization header) → **HTTP 401**, body: `{"success": false, "error": "Unauthorized - valid JWT token required", "timestamp": "2026-02-06T23:14:55.800591Z"}` |
+| AC-6 | POST to Docker Lambda Function URL with invalid JWT returns HTTP 401 | **PASS** | `curl POST https://gls4xkzsobkxlzeatdfhz4ng740ynrfb.lambda-url.us-east-1.on.aws/followup` with `Authorization: Bearer invalid.jwt.token` → **HTTP 401**, body: `{"success": false, "error": "Unauthorized", "detail": "Invalid token", "timestamp": "2026-02-06T23:15:01.412982Z"}` |
+| AC-7 | POST to Docker Lambda Function URL with NO auth header returns HTTP 401 | **PASS** | `curl POST` (no Authorization header) → **HTTP 401**, body: `{"success": false, "error": "Unauthorized", "detail": "Missing Authorization header", "timestamp": "2026-02-06T23:15:09.652741Z"}` |
+| AC-8 | GET /conversations via API Gateway with crafted unsigned JWT returns 401/403 (not victim data) | **PASS** | Forged JWT: `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoidmljdGltLXVzZXItMTIzNDUi...}.fake-signature-not-valid` → **HTTP 403** `{"message":"Forbidden"}`. API Gateway Lambda authorizer rejected the token before it reached the handler. No victim data returned. |
+
+### REST API Gateway — Investment Research Endpoints
+
+The investment research Docker Lambda serves the follow-up agent endpoints that users interact with to ask questions about investment reports. These endpoints are accessed through the REST API Gateway (`t5wvlwfo5b`), which uses a TOKEN authorizer for JWT validation. The Docker Lambda also has a direct Function URL (tested in AC-6/AC-7 above). Both paths must reject unauthenticated requests.
+
+**Endpoints tested** (via REST API Gateway `https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev`):
+
+| Endpoint | Test | HTTP Status | Response |
+|----------|------|-------------|----------|
+| `POST /followup` | Invalid JWT (`Bearer invalid.jwt.token`) | **403** | `{"message":"Invalid key=value pair (missing equal-sign) in Authorization header..."}` |
+| `POST /followup` | No Authorization header | **403** | `{"message":"Missing Authentication Token"}` |
+| `GET /report/AAPL/stream` | Invalid JWT | **403** | `{"message":"Invalid key=value pair (missing equal-sign) in Authorization header..."}` |
+| `GET /report/AAPL/stream` | No Authorization header | **403** | `{"message":"Missing Authentication Token"}` |
+
+**Result**: All four requests rejected at the API Gateway TOKEN authorizer level — the request never reaches the Lambda handler. This confirms the primary auth gate for the user-facing follow-up agent flow is working correctly.
+
+**Defense in depth**: Even if the REST API Gateway authorizer were bypassed (e.g., via direct Function URL), the in-handler `JWTAuthMiddleware` provides a second layer of protection (verified in AC-6/AC-7).
+
+### Docker Lambda Reachability Proof
+
+The Docker Lambda Function URL health endpoint confirms the URL is live and accepting requests:
+- `GET https://gls4xkzsobkxlzeatdfhz4ng740ynrfb.lambda-url.us-east-1.on.aws/health` → **HTTP 200**, body: `{"status": "healthy", "timestamp": "2026-02-06T23:15:12.483405Z", "environment": "dev", "service": "investment-research"}`
+
+### Terraform Security Documentation
+
+Both Function URL Terraform resources have security comments documenting the in-handler JWT validation:
+- `function_urls.tf:7-11` — Documents that `analysis_followup.py:794` validates JWT independently
+- `investment_research_docker.tf:140-145` — Documents that `JWTAuthMiddleware` (`app.py:181,353`) validates JWT with 32-char secret validation
+
+### Notes
+
+- **AC-8 returns 403 (not 401)**: This is the expected behavior for AWS API Gateway HTTP API Lambda authorizers. When the authorizer Lambda returns a deny policy or throws an error, API Gateway returns 403 Forbidden. The critical security property — that no victim data is returned for a forged JWT — is confirmed.
+- **REST API Gateway returns 403 for auth failures**: The TOKEN authorizer on the REST API returns 403 with descriptive messages (`"Missing Authentication Token"` or `"Invalid key=value pair..."`) rather than 401. This is standard AWS API Gateway REST API behavior.
+- **HTTP API Gateway URL updated**: The HTTP API endpoint is now `https://yn9nj0b654.execute-api.us-east-1.amazonaws.com/dev` (previously documented as `4onfe7pbpc` which is no longer active).

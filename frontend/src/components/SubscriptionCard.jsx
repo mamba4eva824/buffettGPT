@@ -43,36 +43,36 @@ export default function SubscriptionCard({
 
   if (isLoading) {
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 animate-pulse">
-        <div className="h-6 bg-slate-200 dark:bg-slate-700 rounded w-1/3 mb-4" />
-        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-2/3 mb-2" />
-        <div className="h-4 bg-slate-200 dark:bg-slate-700 rounded w-1/2" />
+      <div className="bg-sand-50 dark:bg-warm-950 rounded-xl border border-sand-200 dark:border-warm-800 p-6 animate-pulse">
+        <div className="h-6 bg-sand-200 dark:bg-warm-900 rounded w-1/3 mb-4" />
+        <div className="h-4 bg-sand-200 dark:bg-warm-900 rounded w-2/3 mb-2" />
+        <div className="h-4 bg-sand-200 dark:bg-warm-900 rounded w-1/2" />
       </div>
     );
   }
 
   return (
     <div className={`
-      bg-white dark:bg-slate-800 rounded-xl border-2 p-6
-      ${isPlusActive ? 'border-indigo-500 dark:border-indigo-400' : 'border-slate-200 dark:border-slate-700'}
+      bg-sand-50 dark:bg-warm-950 rounded-xl border-2 p-6
+      ${isPlusActive ? 'border-indigo-500 dark:border-indigo-400' : 'border-sand-200 dark:border-warm-800'}
     `}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           {isPlusActive ? (
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/20 rounded-lg">
               <Crown className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
             </div>
           ) : (
-            <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg">
-              <Zap className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+            <div className="p-2 bg-sand-100 dark:bg-warm-900 rounded-lg">
+              <Zap className="h-5 w-5 text-sand-600 dark:text-warm-300" />
             </div>
           )}
           <div>
-            <h3 className="font-semibold text-slate-900 dark:text-white">
+            <h3 className="font-semibold text-sand-900 dark:text-warm-50">
               {isPlusActive ? 'Buffett Plus' : 'Free Plan'}
             </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-sand-500 dark:text-warm-300">
               {isPlusActive ? '$10/month' : 'No cost'}
             </p>
           </div>
@@ -164,7 +164,7 @@ export default function SubscriptionCard({
       {isPlusActive ? (
         <button
           onClick={onManage}
-          className="w-full py-2.5 px-4 text-sm font-medium text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-lg transition-colors"
+          className="w-full py-2.5 px-4 text-sm font-medium text-sand-700 dark:text-warm-200 bg-sand-100 dark:bg-warm-900 hover:bg-sand-200 dark:hover:bg-warm-700 rounded-lg transition-colors"
         >
           Manage Subscription
         </button>
@@ -189,15 +189,15 @@ function BenefitItem({ children, active = false, inactive = false }) {
     <div className="flex items-center gap-2">
       <Check className={`h-4 w-4 flex-shrink-0 ${
         inactive
-          ? 'text-slate-300 dark:text-slate-600'
+          ? 'text-sand-300 dark:text-warm-500'
           : active
             ? 'text-indigo-500 dark:text-indigo-400'
-            : 'text-slate-400 dark:text-slate-500'
+            : 'text-sand-400 dark:text-warm-400'
       }`} />
       <span className={`text-sm ${
         inactive
-          ? 'text-slate-400 dark:text-slate-500 line-through'
-          : 'text-slate-600 dark:text-slate-300'
+          ? 'text-sand-400 dark:text-warm-400 line-through'
+          : 'text-sand-600 dark:text-warm-200'
       }`}>
         {children}
       </span>

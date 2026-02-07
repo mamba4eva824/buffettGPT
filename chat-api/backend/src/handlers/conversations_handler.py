@@ -197,14 +197,40 @@ def list_conversations(event: Dict[str, Any]) -> Dict[str, Any]:
     logger.info(f"Listing conversations for user {user_id}")
 
     try:
-        # Query conversations using GSI
-        response = conversations_table.query(
-            IndexName='user-conversations-index',
-            KeyConditionExpression='user_id = :user_id',
-            ExpressionAttributeValues={':user_id': user_id},
-            ScanIndexForward=False  # Most recent first
-        )
+        # Filter out archived unless requested
+        query_params = event.get('queryStringParameters', {}) or {}
+        include_archived = query_params.get('include_archived', 'false').lower() == 'true'
 
+        # Pagination: limit per page and optional cursor
+        limit = int(query_params.get('limit', '50'))
+        limit = max(1, min(limit, 100))  # Clamp between 1 and 100
+        cursor = query_params.get('cursor')
+
+        # Build query kwargs
+        query_kwargs = {
+            'IndexName': 'user-conversations-index',
+            'KeyConditionExpression': 'user_id = :user_id',
+            'ScanIndexForward': False,  # Most recent first
+            'Limit': limit
+        }
+
+        if not include_archived:
+            # Filter archived items in DynamoDB to reduce payload size
+            query_kwargs['FilterExpression'] = 'attribute_not_exists(is_archived) OR is_archived = :false_val'
+            query_kwargs['ExpressionAttributeValues'] = {':user_id': user_id, ':false_val': False}
+        else:
+            query_kwargs['ExpressionAttributeValues'] = {':user_id': user_id}
+
+        # Resume from cursor if provided (base64-encoded LastEvaluatedKey)
+        if cursor:
+            import base64
+            try:
+                decoded = json.loads(base64.b64decode(cursor).decode('utf-8'))
+                query_kwargs['ExclusiveStartKey'] = decoded
+            except (ValueError, json.JSONDecodeError):
+                return create_response(400, {'error': 'Invalid cursor'})
+
+        response = conversations_table.query(**query_kwargs)
         conversations = response.get('Items', [])
 
         # Migrate any existing Unix timestamps to ISO format for backward compatibility
@@ -218,19 +244,23 @@ def list_conversations(event: Dict[str, Any]) -> Dict[str, Any]:
             if 'created_at' in conv and isinstance(conv['created_at'], (int, float, Decimal)):
                 conv['created_at'] = datetime.utcfromtimestamp(float(conv['created_at'])).isoformat() + 'Z'
 
-        # Filter out archived unless requested
-        query_params = event.get('queryStringParameters', {}) or {}
-        include_archived = query_params.get('include_archived', 'false').lower() == 'true'
-
-        if not include_archived:
-            conversations = [c for c in conversations if not c.get('is_archived', False)]
-
         logger.info(f"Found {len(conversations)} conversations for user {user_id}")
 
-        return create_response(200, {
+        # Build response with optional pagination cursor
+        result = {
             'conversations': conversations,
             'count': len(conversations)
-        })
+        }
+
+        # If DynamoDB has more results, encode the cursor for the next page
+        if 'LastEvaluatedKey' in response:
+            import base64
+            next_cursor = base64.b64encode(
+                json.dumps(response['LastEvaluatedKey'], default=str).encode('utf-8')
+            ).decode('utf-8')
+            result['next_cursor'] = next_cursor
+
+        return create_response(200, result)
 
     except Exception as e:
         logger.error(f"Error listing conversations for user {user_id}: {str(e)}", exc_info=True)
@@ -317,9 +347,10 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
         return create_response(401, {'error': 'User ID not found'})
 
     try:
-        # First verify the user owns this conversation
+        # Verify the user owns this conversation (fetch only user_id to reduce payload)
         conv_response = conversations_table.get_item(
-            Key={'conversation_id': conversation_id}
+            Key={'conversation_id': conversation_id},
+            ProjectionExpression='user_id'
         )
 
         conversation = conv_response.get('Item')

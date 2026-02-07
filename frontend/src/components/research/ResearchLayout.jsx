@@ -57,11 +57,11 @@ export default function ResearchLayout({
       {/* Main content area with ToC */}
       <div className="flex-1 flex min-h-0">
         {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-slate-300 dark:scrollbar-thumb-slate-600">
+        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
           <div className="mx-auto max-w-3xl space-y-4">
             {/* Research header */}
             {reportMeta && (
-              <div className="mb-4 pb-4 border-b border-slate-200 dark:border-slate-700">
+              <div className="mb-4 pb-4 border-b border-sand-200 dark:border-warm-800">
                 <div className="flex items-center justify-between">
                   <RatingsHeader
                     ticker={ticker}
@@ -70,7 +70,7 @@ export default function ResearchLayout({
                   />
                   <button
                     onClick={onClose}
-                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+                    className="p-2 text-sand-400 hover:text-sand-600 dark:hover:text-warm-200 hover:bg-sand-100 dark:hover:bg-warm-800 rounded-full transition-colors"
                     title="Close"
                   >
                     <X className="h-5 w-5" />
@@ -127,7 +127,7 @@ export default function ResearchLayout({
         {/* Table of Contents - right side, desktop only */}
         {hasToc && (
           <div
-            className="hidden md:block flex-shrink-0 border-l border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50"
+            className="hidden md:block flex-shrink-0 border-l border-sand-200 dark:border-warm-800 bg-sand-50 dark:bg-warm-800/50"
             style={{ width: tocWidth }}
           >
             <TableOfContents
@@ -144,7 +144,7 @@ export default function ResearchLayout({
       {/* Bottom composer - centered to align with main content, offset for ToC on desktop */}
       {composer && (
         <div
-          className="border-t border-slate-100 dark:border-slate-700 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out"
+          className="border-t border-sand-100 dark:border-warm-800 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out"
           style={{ paddingRight: hasToc ? `calc(1rem + ${tocWidth}px)` : undefined }}
         >
           <div className="mx-auto max-w-3xl">

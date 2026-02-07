@@ -11,21 +11,30 @@ export function useConversations({ token, userId, includeArchived = false }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedConversation, setSelectedConversation] = useState(null);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  // Fetch conversations from API
-  const fetchConversations = useCallback(async () => {
+  // Fetch conversations from API (first page or with cursor for subsequent pages)
+  const fetchConversations = useCallback(async (cursor = null) => {
     if (!token || !userId || !API_BASE_URL) {
       logger.log('Skipping conversation fetch - missing requirements', { hasToken: !!token, hasUserId: !!userId, hasUrl: !!API_BASE_URL });
       return;
     }
 
-    setLoading(true);
+    if (cursor) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
 
     try {
       const url = new URL(`${API_BASE_URL}/conversations`);
       if (includeArchived) {
         url.searchParams.set('include_archived', 'true');
+      }
+      if (cursor) {
+        url.searchParams.set('cursor', cursor);
       }
 
       const response = await fetch(url.toString(), {
@@ -50,14 +59,30 @@ export function useConversations({ token, userId, includeArchived = false }) {
         return dateB - dateA;
       });
 
-      setConversations(conversationsList);
+      if (cursor) {
+        // Append to existing conversations for "load more"
+        setConversations(prev => [...prev, ...conversationsList]);
+      } else {
+        setConversations(conversationsList);
+      }
+
+      // Store pagination cursor for next page
+      setNextCursor(data.next_cursor || null);
     } catch (err) {
       logger.error('Error fetching conversations:', err);
       setError(err.message);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   }, [token, userId, includeArchived]);
+
+  // Load more conversations using the pagination cursor
+  const loadMoreConversations = useCallback(async () => {
+    if (nextCursor && !loadingMore) {
+      await fetchConversations(nextCursor);
+    }
+  }, [nextCursor, loadingMore, fetchConversations]);
 
   // Create a new conversation
   const createConversation = useCallback(async (title = 'New Conversation') => {
@@ -118,18 +143,18 @@ export function useConversations({ token, userId, includeArchived = false }) {
         throw new Error(`Failed to update conversation: ${response.status}`);
       }
 
-      const updatedConversation = await response.json();
+      await response.json();
 
-      // Update local state
+      // Merge updates into local state (API returns success message, not full object)
       setConversations(prev =>
         prev.map(conv =>
-          conv.conversation_id === conversationId ? updatedConversation : conv
+          conv.conversation_id === conversationId ? { ...conv, ...updates } : conv
         )
       );
 
       // Update selected if it's the current one
       if (selectedConversation?.conversation_id === conversationId) {
-        setSelectedConversation(updatedConversation);
+        setSelectedConversation(prev => ({ ...prev, ...updates }));
       }
 
       return true;
@@ -199,6 +224,9 @@ export function useConversations({ token, userId, includeArchived = false }) {
     selectedConversation,
     setSelectedConversation,
     fetchConversations,
+    loadMoreConversations,
+    loadingMore,
+    hasMore: !!nextCursor,
     createConversation,
     updateConversation,
     archiveConversation,

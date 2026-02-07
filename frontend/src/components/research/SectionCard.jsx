@@ -130,18 +130,18 @@ export default function SectionCard({
 
   return (
     <div className="w-full mb-4">
-      <div className="relative bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div className="relative bg-sand-50 dark:bg-warm-950 rounded-xl border border-sand-200 dark:border-warm-800 shadow-sm overflow-hidden">
         {/* Header - clickable to collapse */}
         <button
           onClick={onToggleCollapse}
-          className="w-full flex items-center gap-3 px-6 py-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors text-left"
+          className="w-full flex items-center gap-3 px-6 py-4 bg-sand-50 dark:bg-warm-950/50 hover:bg-sand-100 dark:hover:bg-warm-800/50 transition-colors text-left"
         >
           <Icon className="w-5 h-5 text-indigo-500 flex-shrink-0" />
-          <h2 className="font-semibold text-lg text-slate-800 dark:text-slate-100 flex-1">
+          <h2 className="font-semibold text-lg text-sand-800 dark:text-warm-50 flex-1">
             {section.title}
           </h2>
           <ChevronDown
-            className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+            className={`w-4 h-4 text-sand-400 transition-transform duration-200 ${
               isCollapsed ? '-rotate-90' : ''
             }`}
           />
@@ -156,7 +156,7 @@ export default function SectionCard({
         >
           <div
             ref={contentRef}
-            className="px-6 py-4 prose dark:prose-invert prose-slate max-w-none prose-headings:font-semibold prose-h2:text-xl prose-h3:text-lg prose-p:text-slate-700 dark:prose-p:text-slate-300 prose-li:text-slate-700 dark:prose-li:text-slate-300 prose-strong:text-slate-900 dark:prose-strong:text-white prose-a:text-indigo-600 dark:prose-a:text-indigo-400"
+            className="px-6 py-4 prose dark:prose-invert prose-sand max-w-none prose-headings:font-semibold prose-h2:text-xl prose-h3:text-lg prose-p:text-sand-700 dark:prose-p:text-warm-200 prose-li:text-sand-700 dark:prose-li:text-warm-200 prose-strong:text-sand-900 dark:prose-strong:text-warm-50 prose-a:text-indigo-600 dark:prose-a:text-indigo-400"
           >
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {displayText}
@@ -170,7 +170,7 @@ export default function SectionCard({
 
           {/* Loading state when starting to stream */}
           {isStreaming && !section.content && (
-            <div className="px-6 pb-4 flex items-center gap-2 text-slate-500 dark:text-slate-400">
+            <div className="px-6 pb-4 flex items-center gap-2 text-sand-500 dark:text-warm-300">
               <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
               <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
