@@ -56,14 +56,14 @@ export default function RatingsHeader({ ticker, ratings = {}, generatedAt = null
   const VerdictIcon = style?.icon;
 
   return (
-    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-4 mb-6">
+    <div className="flex items-center justify-between border-b border-sand-200 dark:border-warm-800 pb-4 mb-6">
       {/* Ticker and date */}
       <div className="flex items-center gap-4">
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">
+        <h1 className="text-2xl font-bold text-sand-900 dark:text-warm-50">
           {ticker}
         </h1>
         {formattedDate && (
-          <div className="flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
+          <div className="flex items-center gap-1.5 text-sm text-sand-500 dark:text-warm-300">
             <Calendar className="h-4 w-4" />
             <span>{formattedDate}</span>
           </div>

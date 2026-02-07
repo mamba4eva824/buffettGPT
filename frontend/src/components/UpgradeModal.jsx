@@ -50,25 +50,25 @@ export default function UpgradeModal({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
       onClick={handleBackdropClick}
     >
-      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-sand-50 dark:bg-warm-950 rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-between p-5 border-b border-sand-200 dark:border-warm-800">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/20 rounded-lg">
               <Crown className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              <h2 className="text-lg font-semibold text-sand-900 dark:text-warm-50">
                 Upgrade to Buffett Plus
               </h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-sand-500 dark:text-warm-300">
                 Unlock the full experience
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            className="p-2 text-sand-400 hover:text-sand-600 dark:hover:text-warm-200 hover:bg-sand-100 dark:hover:bg-warm-800 rounded-lg transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -79,17 +79,17 @@ export default function UpgradeModal({
           {/* Price display */}
           <div className="text-center mb-6">
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-4xl font-bold text-slate-900 dark:text-white">$10</span>
-              <span className="text-slate-500 dark:text-slate-400">/month</span>
+              <span className="text-4xl font-bold text-sand-900 dark:text-warm-50">$10</span>
+              <span className="text-sand-500 dark:text-warm-300">/month</span>
             </div>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+            <p className="text-sm text-sand-500 dark:text-warm-300 mt-1">
               Cancel anytime
             </p>
           </div>
 
           {/* Benefits */}
           <div className="space-y-3 mb-6">
-            <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+            <h3 className="text-sm font-medium text-sand-700 dark:text-warm-200 mb-3">
               What you get:
             </h3>
             <PlusBenefit icon={<Zap className="h-4 w-4" />}>
@@ -139,7 +139,7 @@ export default function UpgradeModal({
           </button>
 
           {/* Security note */}
-          <p className="text-xs text-center text-slate-400 dark:text-slate-500 mt-4">
+          <p className="text-xs text-center text-sand-400 dark:text-warm-400 mt-4">
             Secure payment powered by Stripe.
             <br />
             You can cancel or change your plan at any time.
@@ -148,27 +148,27 @@ export default function UpgradeModal({
 
         {/* Comparison section */}
         <div className="px-5 pb-5">
-          <div className="bg-slate-50 dark:bg-slate-700/50 rounded-xl p-4">
-            <h4 className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">
+          <div className="bg-sand-50 dark:bg-warm-700/50 rounded-xl p-4">
+            <h4 className="text-xs font-medium text-sand-500 dark:text-warm-300 uppercase tracking-wider mb-3">
               Free vs Plus
             </h4>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="font-medium text-slate-600 dark:text-slate-400 mb-2">Free</p>
-                <ul className="space-y-1.5 text-slate-500 dark:text-slate-400">
+                <p className="font-medium text-sand-600 dark:text-warm-300 mb-2">Free</p>
+                <ul className="space-y-1.5 text-sand-500 dark:text-warm-300">
                   <li className="flex items-center gap-2">
-                    <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-600 text-xs">-</span>
+                    <span className="w-4 h-4 flex items-center justify-center rounded-full bg-sand-200 dark:bg-warm-800 text-xs">-</span>
                     Reports only
                   </li>
                   <li className="flex items-center gap-2">
-                    <span className="w-4 h-4 flex items-center justify-center rounded-full bg-slate-200 dark:bg-slate-600 text-xs">-</span>
+                    <span className="w-4 h-4 flex items-center justify-center rounded-full bg-sand-200 dark:bg-warm-800 text-xs">-</span>
                     No follow-ups
                   </li>
                 </ul>
               </div>
               <div>
                 <p className="font-medium text-indigo-600 dark:text-indigo-400 mb-2">Plus</p>
-                <ul className="space-y-1.5 text-slate-600 dark:text-slate-300">
+                <ul className="space-y-1.5 text-sand-600 dark:text-warm-200">
                   <li className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-indigo-500" />
                     Unlimited reports
@@ -193,10 +193,10 @@ export default function UpgradeModal({
 function PlusBenefit({ children, icon }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="p-1 bg-indigo-100 dark:bg-indigo-900/30 rounded text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5">
+      <div className="p-1 bg-indigo-100 dark:bg-indigo-900/20 rounded text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5">
         {icon}
       </div>
-      <span className="text-sm text-slate-600 dark:text-slate-300">{children}</span>
+      <span className="text-sm text-sand-600 dark:text-warm-200">{children}</span>
     </div>
   );
 }

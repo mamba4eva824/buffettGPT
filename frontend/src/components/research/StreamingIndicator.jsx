@@ -10,7 +10,7 @@ export default function StreamingIndicator({
   if (!isStreaming && status !== 'connecting') return null;
 
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+    <div className="flex items-center gap-2 text-sm text-sand-500 dark:text-warm-300">
       <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
       <span>
         {status === 'connecting' && 'Connecting...'}
@@ -19,7 +19,7 @@ export default function StreamingIndicator({
         )}
         {status === 'streaming' && !currentSection && 'Loading report...'}
         {progress && (
-          <span className="ml-2 text-slate-400 dark:text-slate-500">
+          <span className="ml-2 text-sand-400 dark:text-warm-400">
             ({progress.current}/{progress.total})
           </span>
         )}

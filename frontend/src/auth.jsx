@@ -201,7 +201,7 @@ export function GoogleLoginButton({ className = "" }) {
         <div id="gsi-button" />
         <button 
           disabled 
-          className="flex items-center gap-2 px-4 py-2 text-sm text-gray-400"
+          className="flex items-center gap-2 px-4 py-2 text-sm text-sand-400"
         >
           <LogIn size={16} />
           Loading...
@@ -233,19 +233,19 @@ export function UserProfile({ className = "" }) {
             className="w-8 h-8 rounded-full"
           />
         ) : (
-          <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+          <div className="w-8 h-8 bg-sand-200 rounded-full flex items-center justify-center">
             <User size={16} />
           </div>
         )}
         <div className="text-sm">
-          <div className="font-medium text-gray-900">{user.name}</div>
-          <div className="text-gray-500">{user.email}</div>
+          <div className="font-medium text-sand-900">{user.name}</div>
+          <div className="text-sand-500">{user.email}</div>
         </div>
       </div>
       <button
         onClick={logout}
         disabled={loading}
-        className="flex items-center gap-1 px-3 py-1 text-xs text-gray-600 hover:text-gray-800 border border-gray-200 rounded hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-1 px-3 py-1 text-xs text-sand-600 hover:text-sand-800 border border-sand-200 rounded hover:bg-sand-50 transition-colors"
       >
         <LogOut size={12} />
         Sign out
@@ -289,9 +289,9 @@ export function DevTokenTester({ className = "" }) {
         </button>
       ) : (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+          <div className="bg-sand-50 p-6 rounded-lg max-w-md w-full mx-4">
             <h3 className="text-lg font-medium mb-4">Test OAuth Token</h3>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-sand-600 mb-4">
               Get a Google OAuth token from{' '}
               <a 
                 href="https://developers.google.com/oauthplayground" 
@@ -306,7 +306,7 @@ export function DevTokenTester({ className = "" }) {
               value={testToken}
               onChange={(e) => setTestToken(e.target.value)}
               placeholder="Paste Google OAuth token here..."
-              className="w-full h-32 p-3 border border-gray-300 rounded resize-none text-sm"
+              className="w-full h-32 p-3 border border-sand-300 rounded resize-none text-sm"
             />
             <div className="flex gap-2 mt-4">
               <button 
@@ -318,7 +318,7 @@ export function DevTokenTester({ className = "" }) {
               </button>
               <button 
                 onClick={() => {setShowTester(false); setTestToken('');}}
-                className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                className="px-4 py-2 bg-sand-300 text-sand-700 rounded hover:bg-sand-400"
               >
                 Cancel
               </button>

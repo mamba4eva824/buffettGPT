@@ -127,7 +127,7 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
   const completedSections = Object.values(streamedContent).filter(s => s?.isComplete).length;
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-slate-900">
+    <div className="flex flex-col h-full bg-sand-50 dark:bg-warm-900">
       {/* Header */}
       <div className="flex-shrink-0 px-6 pt-6">
         <div className="flex items-center justify-between mb-4">
@@ -138,7 +138,7 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
           />
           <button
             onClick={handleClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+            className="p-2 text-sand-400 hover:text-sand-600 dark:hover:text-warm-200 hover:bg-sand-100 dark:hover:bg-warm-800 rounded-full transition-colors"
             title="Close"
           >
             <X className="h-5 w-5" />
@@ -178,7 +178,7 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
       {/* Main content area - two pane layout */}
       <div className="flex-1 flex min-h-0">
         {/* Report display - center/left */}
-        <div className="flex-1 min-w-0 border-r border-slate-200 dark:border-slate-700">
+        <div className="flex-1 min-w-0 border-r border-sand-200 dark:border-warm-800">
           <ReportDisplay
             key={activeSectionId}
             content={activeContent?.content || ''}
@@ -190,7 +190,7 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
 
         {/* Table of contents - right (resizable) */}
         <div
-          className="flex-shrink-0 bg-slate-50 dark:bg-slate-800/50 relative"
+          className="flex-shrink-0 bg-sand-50 dark:bg-warm-800/50 relative"
           style={{ width: tocWidth }}
         >
           {/* Resize handle */}
@@ -200,13 +200,13 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
             title="Drag to resize"
           >
             {/* Visible grip indicator on hover */}
-            <div className="absolute left-[-4px] w-3 h-12 rounded bg-slate-300 dark:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <GripVertical className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+            <div className="absolute left-[-4px] w-3 h-12 rounded bg-sand-300 dark:bg-warm-800 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <GripVertical className="h-4 w-4 text-sand-500 dark:text-warm-300" />
             </div>
           </div>
 
           {/* Border line */}
-          <div className="absolute left-0 top-0 bottom-0 w-px bg-slate-200 dark:bg-slate-700" />
+          <div className="absolute left-0 top-0 bottom-0 w-px bg-sand-200 dark:bg-warm-700" />
 
           <TableOfContents
             toc={reportMeta?.toc || []}

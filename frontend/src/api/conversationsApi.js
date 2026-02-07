@@ -167,8 +167,11 @@ export const conversationsApi = {
  */
 export async function loadConversationHistory(conversationId, token) {
   try {
-    // First get the conversation details
-    const conversation = await conversationsApi.get(conversationId, token);
+    // Fetch conversation details and messages in parallel
+    const [conversation, messagesResponse] = await Promise.all([
+      conversationsApi.get(conversationId, token),
+      conversationsApi.getMessages(conversationId, token)
+    ]);
 
     // DEBUG: Log raw conversation response to trace visible_sections persistence
     console.log('[API DEBUG] conversationsApi.get raw response:', {
@@ -179,12 +182,9 @@ export async function loadConversationHistory(conversationId, token) {
       visible_sections: conversation?.metadata?.research_state?.visible_sections,
     });
 
-    // Then get the messages
-    const messages = await conversationsApi.getMessages(conversationId, token);
-
     return {
       conversation,
-      messages: messages.messages || []
+      messages: messagesResponse.messages || []
     };
   } catch (error) {
     logger.error('Error loading conversation history:', error);

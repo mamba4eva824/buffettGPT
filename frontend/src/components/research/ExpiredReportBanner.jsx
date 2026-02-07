@@ -57,7 +57,7 @@ export default function ExpiredReportBanner({
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               onClick={onRegenerate}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-warm-800"
             >
               <RefreshCw className="h-4 w-4" />
               Generate New Report
@@ -65,7 +65,7 @@ export default function ExpiredReportBanner({
 
             <button
               onClick={onDismiss}
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-600 rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 dark:focus:ring-offset-slate-800"
+              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-sand-700 dark:text-warm-100 bg-sand-50 dark:bg-warm-900 border border-sand-300 dark:border-warm-800 hover:bg-sand-50 dark:hover:bg-warm-700 rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-sand-500 focus:ring-offset-2 dark:focus:ring-offset-warm-800"
             >
               <X className="h-4 w-4" />
               Return to Chat

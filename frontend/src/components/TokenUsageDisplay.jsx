@@ -58,8 +58,8 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
   // Get tier display info
   const getTierInfo = () => {
     const tiers = {
-      free: { name: 'Free', color: 'text-slate-600 dark:text-slate-400', badge: 'bg-slate-100 dark:bg-slate-700' },
-      plus: { name: 'Plus', color: 'text-indigo-600 dark:text-indigo-400', badge: 'bg-indigo-100 dark:bg-indigo-900/30' },
+      free: { name: 'Free', color: 'text-sand-600 dark:text-warm-300', badge: 'bg-sand-100 dark:bg-warm-900' },
+      plus: { name: 'Plus', color: 'text-indigo-600 dark:text-indigo-400', badge: 'bg-indigo-100 dark:bg-indigo-900/20' },
     };
     return tiers[subscription_tier] || tiers.free;
   };
@@ -73,7 +73,7 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
     <div className="space-y-4">
       {/* Header with tier badge */}
       <div className="flex items-center justify-between">
-        <label className="flex items-center gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+        <label className="flex items-center gap-2 text-xs font-medium text-sand-500 dark:text-warm-300">
           <Zap className="h-3.5 w-3.5" />
           Monthly Token Usage
         </label>
@@ -83,7 +83,7 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
       </div>
 
       {/* Main usage card */}
-      <div className={`rounded-lg border ${showWarning ? 'border-yellow-200 dark:border-yellow-800' : 'border-slate-200 dark:border-slate-600'} ${statusColor.bg} p-4`}>
+      <div className={`rounded-lg border ${showWarning ? 'border-yellow-200 dark:border-yellow-800' : 'border-sand-200 dark:border-warm-800'} ${statusColor.bg} p-4`}>
         {/* Progress section */}
         <div className="mb-3">
           {/* Stats row */}
@@ -92,18 +92,18 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
               <span className={`text-2xl font-bold ${statusColor.text}`}>
                 {percent_used.toFixed(0)}%
               </span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">used</span>
+              <span className="text-xs text-sand-500 dark:text-warm-300">used</span>
             </div>
             <div className="text-right">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              <span className="text-sm font-medium text-sand-700 dark:text-warm-200">
                 {formatNumber(remaining_tokens)}
               </span>
-              <span className="text-xs text-slate-400 dark:text-slate-500"> / {formatNumber(token_limit)}</span>
+              <span className="text-xs text-sand-400 dark:text-warm-400"> / {formatNumber(token_limit)}</span>
             </div>
           </div>
 
           {/* Progress bar */}
-          <div className="h-2.5 bg-slate-200 dark:bg-slate-600 rounded-full overflow-hidden">
+          <div className="h-2.5 bg-sand-200 dark:bg-warm-800 rounded-full overflow-hidden">
             <div
               className={`h-full ${statusColor.bar} transition-all duration-500 ease-out rounded-full`}
               style={{ width: `${Math.min(percent_used, 100)}%` }}
@@ -112,7 +112,7 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
         </div>
 
         {/* Details row */}
-        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex items-center justify-between text-xs text-sand-500 dark:text-warm-300">
           <div className="flex items-center gap-1">
             <TrendingUp className="h-3 w-3" />
             <span>{request_count} requests this month</span>
@@ -135,7 +135,7 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
                     : `You've used ${percent_used.toFixed(0)}% of your monthly tokens`
                   }
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                <p className="text-xs text-sand-500 dark:text-warm-300 mt-0.5">
                   {limitReached
                     ? `Usage resets on ${formatResetDate(reset_date)}.`
                     : ''
@@ -156,10 +156,10 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
                 <Crown className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
               </div>
               <div>
-                <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                <p className="text-sm font-medium text-sand-700 dark:text-warm-100">
                   Need more tokens?
                 </p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
+                <p className="text-xs text-sand-500 dark:text-warm-300">
                   Get 2M tokens/month with Buffett Plus
                 </p>
               </div>
@@ -175,7 +175,7 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
       )}
 
       {/* Helper text */}
-      <p className="text-[11px] text-slate-400 dark:text-slate-500">
+      <p className="text-[11px] text-sand-400 dark:text-warm-400">
         Tokens measure AI usage. Each follow-up question uses approximately 2,000-5,000 tokens depending on complexity.
       </p>
     </div>

@@ -123,8 +123,8 @@ export default function SubscriptionManagement({
   // Not authenticated
   if (!isAuthenticated) {
     return (
-      <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-6 text-center">
-        <p className="text-slate-500 dark:text-slate-400">
+      <div className="bg-sand-50 dark:bg-warm-950/50 rounded-xl p-6 text-center">
+        <p className="text-sand-500 dark:text-warm-300">
           Sign in to manage your subscription
         </p>
       </div>
@@ -134,7 +134,7 @@ export default function SubscriptionManagement({
   // Error state
   if (error && !subscriptionData) {
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-xl border border-red-200 dark:border-red-800 p-6">
+      <div className="bg-sand-50 dark:bg-warm-950 rounded-xl border border-red-200 dark:border-red-800 p-6">
         <div className="flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
@@ -168,9 +168,9 @@ export default function SubscriptionManagement({
 
       {/* Portal loading indicator */}
       {isPortalLoading && (
-        <div className="flex items-center justify-center gap-2 p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
-          <Loader2 className="h-4 w-4 animate-spin text-slate-500" />
-          <span className="text-sm text-slate-600 dark:text-slate-400">
+        <div className="flex items-center justify-center gap-2 p-3 bg-sand-100 dark:bg-warm-900 rounded-lg">
+          <Loader2 className="h-4 w-4 animate-spin text-sand-500" />
+          <span className="text-sm text-sand-600 dark:text-warm-300">
             Opening subscription portal...
           </span>
         </div>

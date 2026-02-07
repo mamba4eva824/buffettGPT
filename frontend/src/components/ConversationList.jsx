@@ -18,7 +18,10 @@ export function ConversationList({
   onArchiveConversation,
   onDeleteConversation,
   showArchived = false,
-  loading = false
+  loading = false,
+  onLoadMore,
+  loadingMore = false,
+  hasMore = false
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
@@ -77,20 +80,20 @@ export function ConversationList({
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <div className="text-sm text-slate-400">Loading conversations...</div>
+        <div className="text-sm text-sand-400">Loading conversations...</div>
       </div>
     );
   }
 
   if (visibleConversations.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-slate-200 p-4 text-center">
-        <MessageSquare className="mx-auto h-8 w-8 text-slate-300" />
-        <div className="mt-2 text-sm text-slate-500">
+      <div className="rounded-lg border border-dashed border-sand-200 p-4 text-center">
+        <MessageSquare className="mx-auto h-8 w-8 text-sand-300" />
+        <div className="mt-2 text-sm text-sand-500">
           {showArchived ? 'No archived conversations' : 'No conversations yet'}
         </div>
         {!showArchived && (
-          <div className="mt-1 text-xs text-slate-400">
+          <div className="mt-1 text-xs text-sand-400">
             Start a new chat to create your first conversation
           </div>
         )}
@@ -132,7 +135,7 @@ export function ConversationList({
               'group relative flex items-center rounded-lg px-3 py-3 md:py-2 transition-colors',
               isSelected
                 ? 'bg-indigo-50 text-indigo-700'
-                : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200'
+                : 'hover:bg-sand-100 dark:hover:bg-warm-800 text-sand-700 dark:text-warm-100'
             )}
           >
             {/* Conversation Details */}
@@ -150,7 +153,7 @@ export function ConversationList({
                       if (e.key === 'Enter') saveEdit();
                       if (e.key === 'Escape') cancelEdit();
                     }}
-                    className="flex-1 rounded border border-indigo-300 dark:border-indigo-600 bg-white dark:bg-slate-700 px-2 py-1 text-sm text-slate-900 dark:text-slate-100 outline-none focus:border-indigo-500 dark:focus:border-indigo-400"
+                    className="flex-1 rounded border border-indigo-300 dark:border-indigo-600 bg-sand-50 dark:bg-warm-900 px-2 py-1 text-sm text-sand-900 dark:text-warm-50 outline-none focus:border-indigo-500 dark:focus:border-indigo-400"
                     autoFocus
                     onClick={(e) => e.stopPropagation()}
                   />
@@ -179,7 +182,7 @@ export function ConversationList({
                     {conv.title || 'Untitled Conversation'}
                   </div>
                   {conv.message_count > 0 && (
-                    <div className="mt-1 text-xs text-slate-500">
+                    <div className="mt-1 text-xs text-sand-500">
                       {conv.message_count} messages
                     </div>
                   )}
@@ -195,7 +198,7 @@ export function ConversationList({
                     e.stopPropagation();
                     toggleDropdown(conv.conversation_id);
                   }}
-                  className="rounded p-1 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600 hover:text-slate-600 dark:hover:text-slate-300 opacity-0 transition-opacity group-hover:opacity-100"
+                  className="rounded p-1 text-sand-400 dark:text-warm-400 hover:bg-sand-200 dark:hover:bg-warm-700 hover:text-sand-600 dark:hover:text-warm-200 opacity-0 transition-opacity group-hover:opacity-100"
                   title="Options"
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -205,7 +208,7 @@ export function ConversationList({
                 {openDropdownId === conv.conversation_id && (
                   <div
                     ref={dropdownRef}
-                    className="absolute right-0 top-8 z-10 w-32 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 py-1 shadow-lg"
+                    className="absolute right-0 top-8 z-10 w-32 rounded-lg border border-sand-200 dark:border-warm-800 bg-sand-50 dark:bg-warm-900 py-1 shadow-lg"
                   >
                     <button
                       onClick={(e) => {
@@ -213,7 +216,7 @@ export function ConversationList({
                         startEdit(conv);
                         setOpenDropdownId(null);
                       }}
-                      className="flex w-full items-center px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600"
+                      className="flex w-full items-center px-3 py-2 text-sm text-sand-700 dark:text-warm-100 hover:bg-sand-100 dark:hover:bg-warm-700"
                     >
                       <Edit2 className="mr-2 h-3 w-3" />
                       Edit
@@ -225,7 +228,7 @@ export function ConversationList({
                           onArchiveConversation(conv.conversation_id);
                           setOpenDropdownId(null);
                         }}
-                        className="flex w-full items-center px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600"
+                        className="flex w-full items-center px-3 py-2 text-sm text-sand-700 dark:text-warm-100 hover:bg-sand-100 dark:hover:bg-warm-700"
                       >
                         <Archive className="mr-2 h-3 w-3" />
                         Archive
@@ -256,6 +259,17 @@ export function ConversationList({
         );
       })}
       </div>
+
+      {/* Load more button for paginated results */}
+      {hasMore && (
+        <button
+          onClick={onLoadMore}
+          disabled={loadingMore}
+          className="mt-2 w-full rounded-lg px-3 py-2 text-xs text-sand-500 dark:text-warm-400 hover:bg-sand-100 dark:hover:bg-warm-800 transition-colors disabled:opacity-50"
+        >
+          {loadingMore ? 'Loading...' : 'Load more conversations'}
+        </button>
+      )}
     </>
   );
 }

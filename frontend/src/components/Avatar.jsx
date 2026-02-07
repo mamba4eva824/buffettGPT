@@ -90,7 +90,7 @@ export function Avatar({
 
   // Generate a consistent color based on the name
   const getBackgroundColor = (name) => {
-    if (!name) return 'bg-slate-200 dark:bg-slate-600';
+    if (!name) return 'bg-sand-200 dark:bg-warm-800';
 
     // Simple hash function for consistent colors
     let hash = 0;
@@ -121,11 +121,11 @@ export function Avatar({
     return (
       <div className={`${size} ${backgroundColor} rounded-full flex items-center justify-center ${className}`}>
         {initials && initials.length > 0 ? (
-          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 select-none">
+          <span className="text-xs font-semibold text-sand-700 dark:text-warm-100 select-none">
             {initials}
           </span>
         ) : (
-          <FallbackIcon className="h-1/2 w-1/2 text-slate-500 dark:text-slate-400" />
+          <FallbackIcon className="h-1/2 w-1/2 text-sand-500 dark:text-warm-300" />
         )}
       </div>
     );
@@ -135,7 +135,7 @@ export function Avatar({
     <div className={`${size} rounded-full overflow-hidden ${backgroundColor} relative ${className}`}>
       {imageLoading && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="h-1/2 w-1/2 animate-pulse bg-slate-300 dark:bg-slate-500 rounded-full"></div>
+          <div className="h-1/2 w-1/2 animate-pulse bg-sand-300 dark:bg-warm-500 rounded-full"></div>
         </div>
       )}
       <img
