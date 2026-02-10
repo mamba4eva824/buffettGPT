@@ -1,8 +1,14 @@
 """
 Section Parser for Investment Research Reports
 
-Parses v4.8 report format into individual sections for DynamoDB storage.
+Parses v4.8 and v5.1 report formats into individual sections for DynamoDB storage.
 Handles dynamic headers with ticker-specific numbers and narratives.
+
+v5.1 changes vs v4.8:
+- Removed: Warning Signs (§15) and 6-Point Vibe Check (§16) — redundant with Quick Health Check
+- Added: Decision Triggers (§16) — actionable watch-list for investors
+- Real Talk renumbered from §17 to §15
+- Part 2 now has 9 sections (was 11), Part 3 now has 2 sections (was 1)
 """
 
 import re
@@ -31,13 +37,16 @@ class ParsedSection:
 # Section definitions with regex patterns for multiple header formats
 # Format: (pattern, section_id, display_order, part, icon, fallback_title)
 #
-# Supports multiple formats:
+# Supports multiple formats across v4.8 and v5.1:
 # - v4.8 numbered: "### 1. TL;DR", "### 6. From 37% to 5%: The Growth Story"
-# - Static:Dynamic: "## Growth: From 37% to 5% — The Slowdown Story"
+# - v5.1 keyword: "## Growth: From 37% to 5% — The Slowdown Story"
 # - Simple: "## TL;DR"
 #
+# v5.1 removed Warning Signs and Vibe Check (redundant with Quick Health Check)
+# and added Decision Triggers in Part 3.
+#
 SECTION_DEFINITIONS: List[Tuple[str, str, int, int, str, str]] = [
-    # Part 1: Executive Summary
+    # Part 1: Executive Summary (same in v4.8 and v5.1)
     # Matches: "### 1. TL;DR", "## TL;DR", "## 1. TL;DR"
     (r'^#{2,3}\s*(?:\d+\.\s*)?TL;?DR', '01_tldr', 1, 1, 'lightning', 'TL;DR'),
     # Matches: "### 2. What Does AAPL Actually Do?", "## What Does AAPL Actually Do?"
@@ -69,16 +78,13 @@ SECTION_DEFINITIONS: List[Tuple[str, str, int, int, str, str]] = [
     (r'^#{2,3}\s*(?:13\.\s+)?Bull Case', '13_bull', 13, 2, 'trending-up', 'Bull Case'),
     # Bear Case - matches "### 14. Bear Case", "## Bear Case"
     (r'^#{2,3}\s*(?:14\.\s+)?Bear Case', '14_bear', 14, 2, 'trending-down', 'Bear Case'),
-    # Warning Signs - matches "### 15. Warning Signs Checklist", "## Warning Signs" (v4.8 format)
-    (r'^#{2,3}\s*(?:15\.\s+)?Warning Signs', '15_warnings', 15, 2, 'alert-triangle', 'Warning Signs'),
-    # Vibe Check - matches "### 16. 6-Point Vibe Check", "## Vibe Check" (v4.8 format)
-    (r'^#{2,3}\s*(?:16\.\s+)?(?:6-Point )?Vibe Check', '16_vibe', 16, 2, 'check-circle', 'Vibe Check'),
 
     # Part 3: Real Talk
-    # Matches "### 15. Real Talk", "### 17. Real Talk", "## Real Talk" (v5.0+ uses 15, v4.8 uses 17)
-    (r'^#{2,3}\s*(?:(?:15|17)\.\s+)?Real Talk', '17_realtalk', 17, 3, 'message-circle', 'Real Talk'),
-    # Decision Triggers - matches "### 16. Decision Triggers:", "## Decision Triggers:" (v5.1+)
-    (r'^#{2,3}\s*(?:16\.\s+)?Decision Triggers', '18_triggers', 18, 3, 'crosshair', 'Decision Triggers'),
+    # Matches "### 15. Real Talk", "### 17. Real Talk", "## Real Talk"
+    # (v5.1 uses §15, v4.8 uses §17 — both supported)
+    (r'^#{2,3}\s*(?:(?:15|17)\.\s+)?Real Talk', '15_realtalk', 15, 3, 'message-circle', 'Real Talk'),
+    # Decision Triggers - matches "### 16. Decision Triggers:", "## Decision Triggers:" (v5.1)
+    (r'^#{2,3}\s*(?:16\.\s+)?Decision Triggers', '16_triggers', 16, 3, 'crosshair', 'Decision Triggers'),
 ]
 
 
@@ -255,7 +261,8 @@ def build_merged_toc(sections: List[ParsedSection]) -> List[Dict[str, Any]]:
         sections: List of ParsedSection objects
 
     Returns:
-        List of ToC entries with merged Executive Summary (13 entries instead of 17)
+        List of ToC entries with merged Executive Summary
+        (1 Executive Summary + N Part 2/3 sections)
     """
     # Separate Part 1 and Part 2/3 sections
     part1_sections = [s for s in sections if s.part == 1]
@@ -354,7 +361,7 @@ def calculate_total_word_count(sections: List[ParsedSection]) -> int:
     return sum(s.word_count for s in sections)
 
 
-# Icon mapping for frontend display
+# Icon mapping for frontend display (v5.1 section IDs)
 SECTION_ICONS = {
     '01_tldr': 'lightning',
     '02_business': 'building',
@@ -370,10 +377,8 @@ SECTION_ICONS = {
     '12_dilution': 'pie-chart',
     '13_bull': 'trending-up',
     '14_bear': 'trending-down',
-    '15_warnings': 'alert-triangle',
-    '16_vibe': 'check-circle',
-    '17_realtalk': 'message-circle',
-    '18_triggers': 'crosshair',
+    '15_realtalk': 'message-circle',
+    '16_triggers': 'crosshair',
 }
 
 
@@ -417,7 +422,7 @@ def build_executive_item(
         {
             'ticker': 'AAPL',
             'section_id': '00_executive',
-            'toc': [...],  # 13 entries (1 Executive Summary + 12 Detailed/RealTalk)
+            'toc': [...],  # 1 Executive Summary + N Part 2/3 sections
             'ratings': {...},
             'executive_summary': {  # Single merged section
                 'section_id': '01_executive_summary',
@@ -435,7 +440,7 @@ def build_executive_item(
             'fiscal_year': N
         }
     """
-    # Build merged ToC (13 entries instead of 17)
+    # Build merged ToC (1 executive summary + Part 2/3 sections)
     toc = build_merged_toc(sections)
 
     # Build merged Executive Summary (single section with all Part 1 content)

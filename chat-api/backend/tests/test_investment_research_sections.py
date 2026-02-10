@@ -55,21 +55,24 @@ from services.report_service import (
 # =============================================================================
 
 def get_mock_toc() -> list:
-    """Generate a mock table of contents structure."""
+    """Generate a mock table of contents matching v5.1 merged format.
+
+    This mirrors what build_merged_toc() produces:
+    1 Executive Summary (merged Part 1) + individual Part 2/3 sections.
+    """
     return [
-        {'section_id': '01_executive_summary', 'title': 'Executive Summary', 'part': 1, 'icon': '📋', 'word_count': 500, 'display_order': 1},
-        {'section_id': '02_investment_thesis', 'title': 'Investment Thesis', 'part': 1, 'icon': '💡', 'word_count': 400, 'display_order': 2},
-        {'section_id': '03_business_overview', 'title': 'Business Overview', 'part': 1, 'icon': '🏢', 'word_count': 600, 'display_order': 3},
-        {'section_id': '04_financials', 'title': 'Financial Analysis', 'part': 1, 'icon': '📊', 'word_count': 800, 'display_order': 4},
-        {'section_id': '05_valuation', 'title': 'Valuation', 'part': 2, 'icon': '💰', 'word_count': 700, 'display_order': 5},
-        {'section_id': '06_growth', 'title': 'Growth Analysis', 'part': 2, 'icon': '📈', 'word_count': 650, 'display_order': 6},
-        {'section_id': '07_cashflow', 'title': 'Cash Flow Analysis', 'part': 2, 'icon': '💵', 'word_count': 550, 'display_order': 7},
-        {'section_id': '08_profitability', 'title': 'Profitability', 'part': 2, 'icon': '🎯', 'word_count': 500, 'display_order': 8},
-        {'section_id': '09_balance_sheet', 'title': 'Balance Sheet', 'part': 2, 'icon': '⚖️', 'word_count': 450, 'display_order': 9},
-        {'section_id': '10_moat', 'title': 'Competitive Moat', 'part': 2, 'icon': '🏰', 'word_count': 400, 'display_order': 10},
-        {'section_id': '11_debt', 'title': 'Debt Analysis', 'part': 2, 'icon': '📉', 'word_count': 550, 'display_order': 11},
-        {'section_id': '12_realtalk', 'title': 'Real Talk', 'part': 3, 'icon': '🎤', 'word_count': 600, 'display_order': 12},
-        {'section_id': '13_conclusion', 'title': 'Conclusion', 'part': 3, 'icon': '✅', 'word_count': 300, 'display_order': 13},
+        {'section_id': '01_executive_summary', 'title': 'Executive Summary', 'part': 1, 'icon': 'lightning', 'word_count': 1900, 'display_order': 1},
+        {'section_id': '06_growth', 'title': 'Growth: 3% to 4% — The Slow Climb', 'part': 2, 'icon': 'chart-up', 'word_count': 800, 'display_order': 2},
+        {'section_id': '07_profit', 'title': 'Profitability: 77% Margins', 'part': 2, 'icon': 'piggy-bank', 'word_count': 750, 'display_order': 3},
+        {'section_id': '08_valuation', 'title': 'Valuation: 30% Off', 'part': 2, 'icon': 'calculator', 'word_count': 700, 'display_order': 4},
+        {'section_id': '09_earnings', 'title': 'Earnings Quality: Clean Books', 'part': 2, 'icon': 'eye', 'word_count': 650, 'display_order': 5},
+        {'section_id': '10_cashflow', 'title': 'Cash Flow: The $94B Cash Machine', 'part': 2, 'icon': 'cash', 'word_count': 600, 'display_order': 6},
+        {'section_id': '11_debt', 'title': 'Debt: The $50B War Chest', 'part': 2, 'icon': 'bank', 'word_count': 550, 'display_order': 7},
+        {'section_id': '12_dilution', 'title': 'Dilution: Buying Back 3%', 'part': 2, 'icon': 'pie-chart', 'word_count': 400, 'display_order': 8},
+        {'section_id': '13_bull', 'title': 'Bull Case', 'part': 2, 'icon': 'trending-up', 'word_count': 350, 'display_order': 9},
+        {'section_id': '14_bear', 'title': 'Bear Case', 'part': 2, 'icon': 'trending-down', 'word_count': 350, 'display_order': 10},
+        {'section_id': '15_realtalk', 'title': 'Real Talk', 'part': 3, 'icon': 'message-circle', 'word_count': 500, 'display_order': 11},
+        {'section_id': '16_triggers', 'title': 'Decision Triggers', 'part': 3, 'icon': 'crosshair', 'word_count': 400, 'display_order': 12},
     ]
 
 
@@ -102,8 +105,8 @@ def get_mock_executive_item(ticker: str = 'AAPL', expired: bool = False) -> Dict
             'title': 'Executive Summary',
             'content': f'# {ticker} Executive Summary\n\nThis is the merged executive summary content...',
             'part': 1,
-            'icon': '📋',
-            'word_count': 2300,
+            'icon': 'lightning',
+            'word_count': 1900,
             'display_order': 1
         },
         'total_word_count': Decimal('15000'),
@@ -113,7 +116,7 @@ def get_mock_executive_item(ticker: str = 'AAPL', expired: bool = False) -> Dict
 
 
 def get_mock_section(section_id: str, ticker: str = 'AAPL', expired: bool = False) -> Dict[str, Any]:
-    """Generate a mock section item."""
+    """Generate a mock section item matching v5.1 section IDs."""
     # TTL: 90 days in future if not expired, 1 day in past if expired
     if expired:
         ttl = int((datetime.utcnow() - timedelta(days=1)).timestamp())
@@ -121,12 +124,13 @@ def get_mock_section(section_id: str, ticker: str = 'AAPL', expired: bool = Fals
         ttl = int((datetime.utcnow() + timedelta(days=90)).timestamp())
 
     section_data = {
-        '06_growth': {'title': 'Growth Analysis', 'part': 2, 'icon': '📈', 'display_order': 6},
-        '11_debt': {'title': 'Debt Analysis', 'part': 2, 'icon': '📉', 'display_order': 11},
-        '12_realtalk': {'title': 'Real Talk', 'part': 3, 'icon': '🎤', 'display_order': 12},
+        '06_growth': {'title': 'Growth: 3% to 4% — The Slow Climb', 'part': 2, 'icon': 'chart-up', 'display_order': 6},
+        '11_debt': {'title': 'Debt: The $50B War Chest', 'part': 2, 'icon': 'bank', 'display_order': 11},
+        '15_realtalk': {'title': 'Real Talk', 'part': 3, 'icon': 'message-circle', 'display_order': 15},
+        '16_triggers': {'title': 'Decision Triggers', 'part': 3, 'icon': 'crosshair', 'display_order': 16},
     }
 
-    data = section_data.get(section_id, {'title': 'Unknown Section', 'part': 2, 'icon': '❓', 'display_order': 99})
+    data = section_data.get(section_id, {'title': 'Unknown Section', 'part': 2, 'icon': 'file-text', 'display_order': 99})
 
     return {
         'ticker': ticker,
@@ -254,7 +258,7 @@ class TestGetExecutive:
             assert 'toc' in result
             assert 'ratings' in result
             assert 'executive_summary' in result
-            assert len(result['toc']) == 13
+            assert len(result['toc']) == 12
 
     def test_returns_none_when_not_found(self):
         """Verify None is returned when executive item doesn't exist."""
@@ -328,7 +332,7 @@ class TestGetReportToc:
             assert result is not None
             assert 'toc' in result
             assert 'ratings' in result
-            assert len(result['toc']) == 13
+            assert len(result['toc']) == 12
             # Should NOT include executive_summary content
             assert 'executive_summary' not in result
 
@@ -413,7 +417,7 @@ class TestGetAllSections:
         mock_items = [
             get_mock_section('11_debt', 'AAPL'),
             get_mock_section('06_growth', 'AAPL'),
-            get_mock_section('12_realtalk', 'AAPL'),
+            get_mock_section('15_realtalk', 'AAPL'),
         ]
 
         mock_table = MagicMock()
@@ -423,10 +427,10 @@ class TestGetAllSections:
             result = get_all_sections('AAPL')
 
             assert len(result) == 3
-            # Should be sorted: 06_growth (6), 11_debt (11), 12_realtalk (12)
+            # Should be sorted: 06_growth (6), 11_debt (11), 15_realtalk (15)
             assert result[0]['section_id'] == '06_growth'
             assert result[1]['section_id'] == '11_debt'
-            assert result[2]['section_id'] == '12_realtalk'
+            assert result[2]['section_id'] == '15_realtalk'
 
     def test_excludes_executive_item(self):
         """Verify 00_executive item is filtered out."""

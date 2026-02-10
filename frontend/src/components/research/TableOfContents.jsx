@@ -10,6 +10,7 @@ import {
   DollarSign,
   Shield,
   TrendingUp,
+  TrendingDown,
   Percent,
   BarChart3,
   Gem,
@@ -18,30 +19,55 @@ import {
   Rocket,
   AlertTriangle,
   MessageSquare,
-  FileText
+  MessageCircle,
+  FileText,
+  ClipboardCheck,
+  Gavel,
+  PiggyBank,
+  Calculator,
+  Eye,
+  Banknote,
+  Landmark,
+  PieChart,
+  Crosshair,
 } from 'lucide-react';
 
-// Icon mapping from backend icon names
+// Icon mapping from backend section icon names to lucide-react components
 const iconMap = {
+  // Section-specific icons (from section_parser.py SECTION_ICONS)
   'lightning': Zap,
-  'zap': Zap,
   'building': Building2,
+  'clipboard': ClipboardCheck,
+  'target': Target,
+  'gavel': Gavel,
+  'chart-up': TrendingUp,
+  'piggy-bank': PiggyBank,
+  'calculator': Calculator,
+  'eye': Eye,
+  'cash': Banknote,
+  'bank': Landmark,
+  'pie-chart': PieChart,
+  'trending-up': TrendingUp,
+  'trending-down': TrendingDown,
+  'message-circle': MessageCircle,
+  'crosshair': Crosshair,
+  // Aliases and fallbacks
+  'zap': Zap,
   'building-2': Building2,
   'heart': Heart,
   'dollar': DollarSign,
   'dollar-sign': DollarSign,
   'shield': Shield,
-  'trending-up': TrendingUp,
   'percent': Percent,
   'bar-chart': BarChart3,
   'bar-chart-3': BarChart3,
   'gem': Gem,
   'users': Users,
-  'target': Target,
   'rocket': Rocket,
   'alert-triangle': AlertTriangle,
   'message-square': MessageSquare,
   'file-text': FileText,
+  'banknote': Banknote,
 };
 
 // Group sections by part
