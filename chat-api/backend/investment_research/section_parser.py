@@ -69,14 +69,16 @@ SECTION_DEFINITIONS: List[Tuple[str, str, int, int, str, str]] = [
     (r'^#{2,3}\s*(?:13\.\s+)?Bull Case', '13_bull', 13, 2, 'trending-up', 'Bull Case'),
     # Bear Case - matches "### 14. Bear Case", "## Bear Case"
     (r'^#{2,3}\s*(?:14\.\s+)?Bear Case', '14_bear', 14, 2, 'trending-down', 'Bear Case'),
-    # Warning Signs - matches "### 15. Warning Signs Checklist", "## Warning Signs"
+    # Warning Signs - matches "### 15. Warning Signs Checklist", "## Warning Signs" (v4.8 format)
     (r'^#{2,3}\s*(?:15\.\s+)?Warning Signs', '15_warnings', 15, 2, 'alert-triangle', 'Warning Signs'),
-    # Vibe Check - matches "### 16. 6-Point Vibe Check", "## Vibe Check"
+    # Vibe Check - matches "### 16. 6-Point Vibe Check", "## Vibe Check" (v4.8 format)
     (r'^#{2,3}\s*(?:16\.\s+)?(?:6-Point )?Vibe Check', '16_vibe', 16, 2, 'check-circle', 'Vibe Check'),
 
     # Part 3: Real Talk
-    # Matches "### 17. Real Talk", "## Real Talk"
-    (r'^#{2,3}\s*(?:17\.\s+)?Real Talk', '17_realtalk', 17, 3, 'message-circle', 'Real Talk'),
+    # Matches "### 15. Real Talk", "### 17. Real Talk", "## Real Talk" (v5.0+ uses 15, v4.8 uses 17)
+    (r'^#{2,3}\s*(?:(?:15|17)\.\s+)?Real Talk', '17_realtalk', 17, 3, 'message-circle', 'Real Talk'),
+    # Decision Triggers - matches "### 16. Decision Triggers:", "## Decision Triggers:" (v5.1+)
+    (r'^#{2,3}\s*(?:16\.\s+)?Decision Triggers', '18_triggers', 18, 3, 'crosshair', 'Decision Triggers'),
 ]
 
 
@@ -371,6 +373,7 @@ SECTION_ICONS = {
     '15_warnings': 'alert-triangle',
     '16_vibe': 'check-circle',
     '17_realtalk': 'message-circle',
+    '18_triggers': 'crosshair',
 }
 
 
