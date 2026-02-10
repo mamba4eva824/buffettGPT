@@ -2,6 +2,14 @@
 
 This template is used by each parallel Claude session to generate reports for its assigned batch of companies.
 
+## AUTOMATION MODE
+
+**You are running in FULLY AUTOMATED mode.**
+- Execute every step without waiting for confirmation
+- Do NOT ask for user approval at any point
+- Do NOT pause between reports
+- If a step fails, log the error and continue with the next ticker
+
 ## Your Assigned Companies
 
 {BATCH_TICKERS}
@@ -15,7 +23,7 @@ This template is used by each parallel Claude session to generate reports for it
 Before running this batch:
 
 1. **Data file exists**: `djia_30_batch_data.json` (from `prepare_batch_data.py`)
-2. **Prompt file exists**: `chat-api/backend/investment_research/prompts/investment_report_prompt_v4_8.txt`
+2. **Prompt file exists**: `chat-api/backend/investment_research/prompts/{PROMPT_FILE_NAME}`
 3. **AWS credentials configured** for DynamoDB access
 
 ---
@@ -39,15 +47,15 @@ ticker_data = batch_data[ticker]['metrics_context']
 ### Step 2: Read System Prompt
 
 ```python
-# Read the v4.8 prompt template
-prompt_path = 'chat-api/backend/investment_research/prompts/investment_report_prompt_v4_8.txt'
+# Read the prompt template
+prompt_path = 'chat-api/backend/investment_research/prompts/{PROMPT_FILE_NAME}'
 with open(prompt_path) as f:
     system_prompt = f.read()
 ```
 
 ### Step 3: Generate Report
 
-Using Claude Code, generate the investment report following the v4.8 structure:
+Using Claude Code, generate the investment report following the prompt structure:
 
 **Part 1: Executive Summary (5 sections)**
 1. TL;DR - One paragraph summary
@@ -100,21 +108,25 @@ At the end of the report, include:
 
 ### Step 5: Save to DynamoDB
 
-```python
-from investment_research.report_generator import ReportGenerator
+Write the report to a temp file, then save via Python:
 
-generator = ReportGenerator(prompt_version=4.8)
-generator.save_report_sections(
-    ticker='{TICKER}',
-    fiscal_year=2026,
-    report_content=report_markdown,
-    ratings=None  # Auto-extracted from JSON block
-)
+```bash
+# Write report to temp file (done via Write tool)
+# Then save to DynamoDB:
+cd {PROJECT_ROOT}/chat-api/backend && python3 -c "
+import sys; sys.path.insert(0, '.')
+from investment_research.report_generator import ReportGenerator
+generator = ReportGenerator(prompt_version={PROMPT_VERSION})
+report_content = open('/tmp/{TICKER}_report.md').read()
+generator.save_report_sections('{TICKER}', 2026, report_content)
+"
 ```
 
 ### Step 6: Confirm
 
 Print: `✓ {TICKER} saved`
+
+**Immediately proceed to the next ticker. Do not wait for confirmation.**
 
 ---
 
@@ -145,8 +157,12 @@ BATCH COMPLETE: {BATCH_TICKERS}
 If a report fails to generate or save:
 
 1. Log the error: `✗ {TICKER}: {error message}`
-2. Continue with next ticker
-3. Report failures at batch completion
+2. **Continue immediately** with the next ticker
+3. Report failures at batch completion:
+   ```
+   BATCH COMPLETE: AAPL,AMGN,AXP,BA,CAT,CRM
+   Failed: BA (DynamoDB write error), CRM (parse error)
+   ```
 
 ---
 

@@ -131,7 +131,7 @@ function MessageBubble({ msg, user, messageRef }) {
           />
         </div>
       )}
-      <div className={classNames("max-w-[85%] md:max-w-[80%] rounded-2xl px-3 md:px-4 py-2.5 md:py-3 text-sm md:text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-sand-50 dark:bg-warm-900 text-sand-800 dark:text-warm-50")}>
+      <div className={classNames("max-w-[85%] md:max-w-[82%] rounded-2xl px-3 md:px-4 py-2.5 md:py-3 text-sm md:text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-sand-50 dark:bg-warm-900 text-sand-800 dark:text-warm-50")}>
         <div className="whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
       {isUser && (
@@ -214,9 +214,6 @@ function ChatApp() {
   const [visibleSections, setVisibleSections] = useState([]); // Sections to display (on-demand via ToC clicks)
   const [userExpandedSections, setUserExpandedSections] = useState(['01_executive_summary']); // Only sections user explicitly clicked (persisted)
   const [researchTocWidth] = useState(300);
-  const [reportExpired, setReportExpired] = useState(false);  // Track if loaded report has expired
-  const [expiredReportMeta, setExpiredReportMeta] = useState(null);  // Metadata for expired report UI
-
   // Research context - provides streaming state and actions
   const {
     selectedTicker: researchTicker,
@@ -795,8 +792,6 @@ function ChatApp() {
     setCollapsedSections([]);
     setUserExpandedSections(['01_executive_summary']);
     setVisibleSections([]);
-    setReportExpired(false);
-    setExpiredReportMeta(null);
 
     // Clear selection - conversation will be created in doSend when user submits a company
     setSelectedConversation(null);
@@ -1034,9 +1029,6 @@ function ChatApp() {
         }
 
         if (ticker) {
-          setReportExpired(false);
-          setExpiredReportMeta(null);
-
           // Set up research view
           setShowInvestmentResearch(true);
 
@@ -1080,14 +1072,7 @@ function ChatApp() {
             const status = await checkReportStatus(ticker, token);
 
             if (!status.exists || status.expired) {
-              // Report has expired or doesn't exist - show expiration banner
-              setReportExpired(true);
-              setExpiredReportMeta({
-                ticker: ticker,
-                generated_at: savedResearchData.generated_at,
-                ratings: savedResearchData.reportMeta?.ratings,
-                toc: savedResearchData.reportMeta?.toc,
-              });
+              // Report has expired or doesn't exist
               setUserExpandedSections(savedVisibleSections);
               setVisibleSections(savedVisibleSections);
 
@@ -1391,8 +1376,6 @@ function ChatApp() {
                     setCollapsedSections([]);
                     setUserExpandedSections(['01_executive_summary']);
                     setVisibleSections([]);
-                    setReportExpired(false);
-                    setExpiredReportMeta(null);
                     researchStateConversationRef.current = null;
 
                     setSelectedConversation(conv);
@@ -1521,8 +1504,6 @@ function ChatApp() {
                     streamStatus={streamStatus}
                     error={researchError}
                     progress={researchProgress}
-                    reportExpired={reportExpired}
-                    expiredReportMeta={expiredReportMeta}
                     tocWidth={researchTocWidth}
                     onSectionClick={handleTocSectionClick}
                     onClose={() => {
@@ -1532,17 +1513,6 @@ function ChatApp() {
                     }}
                     onRetry={() => {
                       startResearch(researchTicker, token);
-                    }}
-                    onRegenerateExpired={() => {
-                      setReportExpired(false);
-                      setExpiredReportMeta(null);
-                      startResearch(expiredReportMeta.ticker, token);
-                    }}
-                    onDismissExpired={() => {
-                      setReportExpired(false);
-                      setExpiredReportMeta(null);
-                      setShowInvestmentResearch(false);
-                      resetResearch();
                     }}
                     composer={
                       <>
@@ -1589,7 +1559,7 @@ function ChatApp() {
                       if (item.type === 'section') {
                         const section = item.data;
                         return (
-                          <div key={`section-${section.section_id}`} id={`section-${section.section_id}`} className="mx-auto w-full max-w-2xl">
+                          <div key={`section-${section.section_id}`} id={`section-${section.section_id}`} className="mx-auto w-full max-w-3xl">
                             <SectionCard
                               section={section}
                               isStreaming={currentStreamingSection === section.section_id}
@@ -1610,7 +1580,7 @@ function ChatApp() {
                         const isFirstFollowup = interactionTimeline.slice(0, index).every(i => i.type !== 'followup');
 
                         return (
-                          <div key={`followup-${msg.id}`} className="mx-auto w-full max-w-2xl">
+                          <div key={`followup-${msg.id}`} className="mx-auto w-full max-w-3xl">
                             {isFirstFollowup && (
                               <div className="mt-6 pt-6 border-t border-sand-200 dark:border-warm-800">
                                 <div className="text-xs uppercase tracking-wide text-sand-400 dark:text-warm-400 mb-4 px-4">
@@ -1690,7 +1660,7 @@ function ChatApp() {
 
                     {/* Follow-up streaming indicator */}
                     {isFollowUpStreaming && followUpMessages.length === 0 && (
-                      <div className="mx-auto w-full max-w-2xl mt-4 px-4">
+                      <div className="mx-auto w-full max-w-3xl mt-4 px-4">
                         <div className="flex gap-3">
                           <div className="h-7 w-7 shrink-0">
                             <img
@@ -1713,7 +1683,7 @@ function ChatApp() {
                   /* REGULAR CHAT VIEW */
                   <div className="flex-1 flex min-h-0">
                     <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
-                      <div className="mx-auto max-w-3xl space-y-4">
+                      <div className="mx-auto max-w-4xl space-y-4">
                         {/* User messages */}
                         {messages.map((m) => {
                           const userMessages = messages.filter(msg => msg.type === 'user');
@@ -1853,7 +1823,7 @@ function RateLimitBanner({ remainingQueries, onClose, onSignUp, isVisible }) {
   };
 
   return (
-    <div className={`mx-auto max-w-3xl mb-4 px-4 transform transition-all duration-1000 ease-in-out ${
+    <div className={`mx-auto max-w-4xl mb-4 px-4 transform transition-all duration-1000 ease-in-out ${
       isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
     }`}>
       <div className="flex items-center justify-between px-4 py-3 bg-sand-50 dark:bg-warm-900 rounded-lg text-white text-sm shadow-sm">
@@ -2039,9 +2009,14 @@ function SearchComposer({
                   <span className="font-semibold text-indigo-600 dark:text-indigo-400 min-w-[60px]">
                     {result.ticker}
                   </span>
-                  <span className="text-sm text-sand-600 dark:text-warm-200 truncate">
+                  <span className="text-sm text-sand-600 dark:text-warm-200 truncate flex-1">
                     {result.name}
                   </span>
+                  {result.has_report && (
+                    <span className="flex-shrink-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded-full">
+                      Report
+                    </span>
+                  )}
                 </button>
               ))
             ) : input.trim().length > 0 ? (

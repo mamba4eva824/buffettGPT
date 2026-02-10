@@ -3,8 +3,6 @@ import { X, RefreshCw, AlertCircle } from 'lucide-react';
 import TableOfContents from './TableOfContents';
 import RatingsHeader from './RatingsHeader';
 import StreamingIndicator from './StreamingIndicator';
-import ExpiredReportBanner from './ExpiredReportBanner';
-
 /**
  * ResearchLayout - 2-column layout for research mode (content + ToC)
  *
@@ -27,10 +25,6 @@ export default function ResearchLayout({
   error,
   progress,
 
-  // Expired report state
-  reportExpired,
-  expiredReportMeta,
-
   // ToC state
   tocWidth = 300,
 
@@ -38,8 +32,6 @@ export default function ResearchLayout({
   onSectionClick,
   onClose,
   onRetry,
-  onRegenerateExpired,
-  onDismissExpired,
 
   // Token for retry
   token,
@@ -58,7 +50,7 @@ export default function ResearchLayout({
       <div className="flex-1 flex min-h-0">
         {/* Scrollable content area */}
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
-          <div className="mx-auto max-w-3xl space-y-4">
+          <div className="mx-auto max-w-4xl space-y-4">
             {/* Research header */}
             {reportMeta && (
               <div className="mb-4 pb-4 border-b border-sand-200 dark:border-warm-800">
@@ -106,16 +98,6 @@ export default function ResearchLayout({
                   </div>
                 )}
 
-                {/* Expired report banner */}
-                {reportExpired && expiredReportMeta && (
-                  <ExpiredReportBanner
-                    ticker={expiredReportMeta.ticker}
-                    generatedAt={expiredReportMeta.generated_at}
-                    ratings={expiredReportMeta.ratings}
-                    onRegenerate={onRegenerateExpired}
-                    onDismiss={onDismissExpired}
-                  />
-                )}
               </div>
             )}
 
@@ -147,7 +129,7 @@ export default function ResearchLayout({
           className="border-t border-sand-100 dark:border-warm-800 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out"
           style={{ paddingRight: hasToc ? `calc(1rem + ${tocWidth}px)` : undefined }}
         >
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-4xl">
             {composer}
           </div>
         </div>

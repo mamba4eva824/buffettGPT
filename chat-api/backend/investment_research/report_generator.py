@@ -139,6 +139,7 @@ class ReportGenerator:
         4.8: 'investment_report_prompt_v4_8.txt',  # Audit grade v4.8 (executive summary first, dynamic headers, simplified language)
         4.9: 'investment_report_prompt_v4_9.txt',  # Audit grade v4.9 (consolidated dashboard - removed redundant sections 15/16)
         5.0: 'investment_report_prompt_v5_0.txt',  # Audit grade v5.0 (visual momentum dashboards, progress bars, pattern alerts)
+        5.1: 'investment_report_prompt_v5_1.txt',  # Audit grade v5.1 (revenue stickiness, margin waterfall, operating leverage, peer comparisons, decision triggers)
     }
 
     def __init__(self, use_api: bool = False, prompt_version: float = 5.0):

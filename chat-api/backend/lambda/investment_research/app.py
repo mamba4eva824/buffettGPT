@@ -19,6 +19,7 @@ V2 Endpoints (section-based progressive loading):
 
 import os
 import json
+import time
 import asyncio
 import logging
 from datetime import datetime
@@ -73,7 +74,6 @@ from services.followup_service import (
     get_report_ratings,
     get_available_reports,
     get_section_id_from_name,
-    search_reports_in_dynamodb,
 )
 
 # Configure logging
@@ -612,6 +612,36 @@ async def list_available_reports():
     })
 
 
+# =============================================================================
+# Available Reports Cache (avoids DynamoDB scan per search keystroke)
+# =============================================================================
+
+_available_tickers_cache = {"tickers": set(), "timestamp": 0}
+_CACHE_TTL_SECONDS = 300  # 5 minutes
+
+
+def _get_available_tickers() -> set:
+    """
+    Get set of tickers that have reports in DynamoDB, with 5-minute TTL cache.
+
+    Returns cached result if fresh, otherwise refreshes from DynamoDB.
+    """
+    now = time.time()
+    if now - _available_tickers_cache["timestamp"] < _CACHE_TTL_SECONDS:
+        return _available_tickers_cache["tickers"]
+
+    try:
+        result = get_available_reports()
+        tickers = {r['ticker'] for r in result.get('reports', [])}
+        _available_tickers_cache["tickers"] = tickers
+        _available_tickers_cache["timestamp"] = now
+        logger.info(f"Refreshed available tickers cache: {len(tickers)} reports")
+        return tickers
+    except Exception as e:
+        logger.error(f"Failed to refresh available tickers cache: {e}")
+        return _available_tickers_cache["tickers"]
+
+
 @app.get("/reports/search")
 async def search_reports_by_company(
     q: str = Query(
@@ -624,42 +654,46 @@ async def search_reports_by_company(
     """
     Search for reports by company name or ticker.
 
-    Queries DynamoDB investment-reports-v2 table for reports matching
-    the search query. Allows users to type "Apple" and find AAPL reports.
-
-    Falls back to static company_names dictionary if DynamoDB search
-    returns no results (for companies without generated reports).
+    Uses static company_names dictionary as primary source (instant, always works),
+    then annotates results with has_report flag from a cached DynamoDB lookup.
+    Results with available reports are sorted first.
 
     Args:
         q: Search query (matches company name or ticker, case insensitive)
 
     Returns:
-        JSONResponse with matching ticker/name pairs
+        JSONResponse with matching ticker/name pairs and has_report flags
     """
-    # Primary: Search in DynamoDB for reports that actually exist
-    db_result = search_reports_in_dynamodb(q, limit=10)
+    from company_names import search_companies
 
-    if db_result.get('success') and db_result.get('count', 0) > 0:
-        return JSONResponse(content={
-            "success": True,
-            "query": q,
-            "count": db_result['count'],
-            "results": db_result['results'],
-            "source": "dynamodb",
-            "timestamp": datetime.utcnow().isoformat() + 'Z'
+    # 1. Search static dictionary (instant, covers 90+ companies)
+    static_matches = search_companies(q, limit=10)
+
+    # 2. Get cached set of tickers with available reports
+    available_tickers = _get_available_tickers()
+
+    # 3. Annotate results with has_report flag
+    results = []
+    for match in static_matches:
+        results.append({
+            'ticker': match['ticker'],
+            'name': match['name'],
+            'has_report': match['ticker'] in available_tickers,
         })
 
-    # Fallback: Search static dictionary (useful for suggesting companies
-    # that don't have reports yet, or if DynamoDB is temporarily unavailable)
-    from investment_research.company_names import search_companies
-    static_matches = search_companies(q, limit=10)
+    # 4. Sort: reports-available first, then exact ticker match, then alphabetically
+    query_lower = q.lower()
+    results.sort(key=lambda x: (
+        0 if x['has_report'] else 1,
+        0 if x['ticker'].lower() == query_lower else 1,
+        x['ticker'].lower()
+    ))
 
     return JSONResponse(content={
         "success": True,
         "query": q,
-        "count": len(static_matches),
-        "results": static_matches,
-        "source": "static",
+        "count": len(results),
+        "results": results,
         "timestamp": datetime.utcnow().isoformat() + 'Z'
     })
 
