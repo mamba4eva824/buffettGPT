@@ -1,5 +1,8 @@
 """
 Unit tests for the section parser module.
+
+Tests both v4.8 format (legacy: includes Warning Signs + Vibe Check)
+and v5.1 format (current: replaced with Decision Triggers).
 """
 
 import pytest
@@ -7,6 +10,7 @@ from investment_research.section_parser import (
     parse_report_sections,
     extract_ratings_json,
     build_toc,
+    build_merged_toc,
     get_executive_sections,
     get_detailed_sections,
     calculate_total_word_count,
@@ -15,34 +19,35 @@ from investment_research.section_parser import (
 )
 
 
-# Sample report content for testing (simulates v4.8 format)
+# Sample report content for testing (v5.1 format with numbered headers)
+# Uses the format that v5.1 prompt produces: "### N. Dynamic Title"
 SAMPLE_REPORT = '''
-## TL;DR
+### 1. TL;DR
 
 Apple is the digital bouncer for premium tech. Revenue is flat but they're swimming in cash.
 If you want steady returns without drama, this is your stock.
 
-## What Does AAPL Actually Do?
+### 2. What Does AAPL Actually Do?
 
 Apple sells premium hardware (iPhones, Macs, iPads) and increasingly sticky services
 (App Store, iCloud, Apple Music). Think of them as the toll booth operator for the
 premium smartphone lane.
 
-## Apple's 2026 Report Card
+### 3. Quick Health Check
 
-| Question | What's Happening | Flag | What It Means |
-|----------|------------------|------|---------------|
-| **How fast are they growing?** | 3% → 4% over 4 quarters | 🟡 | Slow but steady |
-| **Are profits growing?** | Went from 25% to 26% | 🟢 | Getting fatter |
+| Category | Question | What's Happening | Flag | What It Means |
+|----------|----------|------------------|------|---------------|
+| Growth | **How fast are they growing?** | 3% → 4% over 4 quarters | 🟡 | Slow but steady |
+| Profit | **Are profits growing?** | Went from 25% to 26% | 🟢 | Getting fatter |
 
-## Investment Fit Assessment
+### 4. Investment Fit Assessment
 
 | Investor Type | Verdict | Why |
 |---------------|---------|-----|
 | Building first portfolio | ✅ | Steady performer |
 | Has student debt | ⚠️ | Low yield |
 
-## The Verdict
+### 5. The Verdict
 
 | Category | Rating | The Short Version |
 |----------|--------|-------------------|
@@ -51,7 +56,7 @@ premium smartphone lane.
 
 **Overall:** HOLD — Conviction: High
 
-## From 3% to 4%: The Growth Crawl
+### 6. From 3% to 4%: The Growth Crawl
 
 Apple's growth has slowed dramatically from 19% in 2021 to just 3-4% today.
 This isn't surprising for a $3T company, but it means explosive returns are unlikely.
@@ -60,14 +65,14 @@ The services business is the bright spot, growing at 12% while hardware flatline
 
 **Bottom line:** ~ steady but not exciting
 
-## 77% Margins: The Profit Machine
+### 7. 77% Margins: The Profit Machine
 
 Apple keeps 77 cents of every dollar after product costs. That's insane.
 They've managed to maintain these margins even as hardware sales stall.
 
 **Bottom line:** + pristine margins
 
-## 30% Off: Apple's Cheapest in 5 Years
+### 8. 30% Off: Apple's Cheapest in 5 Years
 
 | The Price Tag | Today | 5-Year Avg | The Discount |
 |---------------|-------|------------|--------------|
@@ -75,7 +80,7 @@ They've managed to maintain these margins even as hardware sales stall.
 
 **Bottom line:** + on sale historically
 
-## Clean Books: What You See Is What You Get
+### 9. Clean Books: What You See Is What You Get
 
 | Step | Real Profit | Minor Adjustments | Almost The Same |
 |------|-------------|-------------------|-----------------|
@@ -86,7 +91,7 @@ Apple's earnings are clean. Low stock compensation gap.
 
 **Bottom line:** + trustworthy numbers
 
-## The $614M Cash Machine
+### 10. The $94B Cash Machine
 
 | Quarter | Cash That Came In | Money Left Over | The Machine |
 |---------|-------------------|-----------------|-------------|
@@ -96,7 +101,7 @@ Apple generates mountains of cash. Every dollar of profit turns into cash.
 
 **Bottom line:** + cash machine
 
-## The $50B War Chest
+### 11. The $50B War Chest
 
 | Year | What They Owe | Cash in Bank | Extra Cash After Debt |
 |------|---------------|--------------|----------------------|
@@ -106,7 +111,7 @@ Apple has more cash than debt. They could pay off everything tomorrow.
 
 **Bottom line:** + fortress balance sheet
 
-## Buying Back Faster Than They're Printing
+### 12. Buying Back Faster Than They're Printing
 
 | The Scoreboard | The Number | Net Effect |
 |----------------|------------|------------|
@@ -117,46 +122,49 @@ Apple is shrinking share count by 3% per year. Your slice gets bigger.
 
 **Bottom line:** + buyback king
 
-## Bull Case
+### 13. Bull Case
 
-1. **Services growth** - 12% growth in high-margin recurring revenue
-2. **Cash machine** - $100B+ annual free cash flow
-3. **Brand moat** - 90%+ iPhone retention rate
-4. **Buybacks** - 3% annual share reduction
+1. **Services growth** — 12% growth in high-margin recurring revenue
+   - *Evidence:* Services revenue at $24B/quarter, up from $19B two years ago
+   - *Impact:* Could add 2-3% to overall margins
 
-For the optimist: If services hits 30% of revenue, margins expand further.
+2. **Cash machine** — $100B+ annual free cash flow
+   - *Evidence:* 5 consecutive years of $90B+ FCF
+   - *Impact:* Funds buybacks and dividends without borrowing
 
-## Bear Case
+**Dream Scenario:** Services hits 30% of revenue, AI features trigger iPhone upgrade super cycle.
 
-1. **Hardware saturation** - iPhone growth is essentially zero
-2. **China risk** - 20% of revenue, geopolitical tensions
-3. **Regulation** - App Store fees under attack globally
-4. **No new category** - Vision Pro hasn't moved the needle
+### 14. Bear Case
 
-For the cautious: If China relations deteriorate, 20% of revenue is at risk.
+1. **Hardware saturation** — iPhone growth is essentially zero
+   - *Likelihood:* High — smartphone market is mature
+   - *Damage:* Could cap overall growth at 3-5% indefinitely
 
-## Warning Signs Checklist
+2. **China risk** — 20% of revenue, geopolitical tensions
+   - *Likelihood:* Medium — ongoing but manageable
+   - *Damage:* Could lose $15-20B annual revenue in worst case
 
-| The Question | Status | Details |
-|--------------|--------|---------|
-| Are sales growing? | 🟡 | 3% - slow but positive |
-| Are profits healthy? | 🟢 | 26% margins |
-| Is the profit real? | 🟢 | Low GAAP gap |
+**Nightmare Scenario:** China bans iPhone sales, regulation forces App Store fee cuts.
 
-## 6-Point Vibe Check
-
-| Apple's Story | What's Happening | Flag | So What? |
-|---------------|------------------|------|----------|
-| **How fast are they growing?** | 3% → 4% over 4 quarters | 🟡 | Slow but steady |
-| **Are they keeping more profit?** | 25% → 26% | 🟢 | Improving |
-
-## Real Talk
+### 15. Real Talk
 
 Apple is the blue chip of blue chips. If you're looking for 100x returns, look elsewhere.
 But if you want a steady performer that won't keep you up at night, Apple is your pick.
 
 Remember: this is the toll booth operator for premium smartphones. As long as people
 want the best phone, Apple will collect.
+
+### 16. Decision Triggers: Key Numbers to Track for AAPL
+
+| Signal | What to Watch | Current Level | Level to Watch | Why It Matters |
+|--------|--------------|---------------|----------------|----------------|
+| 🟢 **Bullish signal** | Services revenue crosses 30% of total | 24% | 30% | If services hits 30%, margins expand significantly |
+| 🟢 **Bullish signal** | iPhone upgrade cycle accelerates | 3% growth | 8%+ growth | AI features could trigger a super cycle |
+| 🔴 **Caution signal** | China revenue drops below 15% | 19% | 15% | Geopolitical risk materializing |
+| 🔴 **Caution signal** | Gross margin falls below 43% | 46% | 43% | Could signal pricing pressure |
+| ⚡ **Check-in date** | Q2 2026 earnings | April 2026 | — | New data drops — revisit this analysis |
+
+Set a calendar reminder for April 2026.
 
 ```json
 {
@@ -175,12 +183,12 @@ want the best phone, Apple will collect.
 
 
 class TestParseReportSections:
-    """Tests for parse_report_sections function."""
+    """Tests for parse_report_sections function (v5.1 format)."""
 
     def test_parses_all_sections(self):
-        """Should parse all 17 sections from a complete report."""
+        """Should parse all 16 sections from a complete v5.1 report."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
-        assert len(sections) == 17
+        assert len(sections) == 16
 
     def test_sections_in_order(self):
         """Sections should be sorted by display_order."""
@@ -189,19 +197,19 @@ class TestParseReportSections:
         assert orders == sorted(orders)
 
     def test_section_ids_correct(self):
-        """Section IDs should match expected pattern."""
+        """Section IDs should match v5.1 expected pattern."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
         expected_ids = [
             '01_tldr', '02_business', '03_health', '04_fit', '05_verdict',
             '06_growth', '07_profit', '08_valuation', '09_earnings',
             '10_cashflow', '11_debt', '12_dilution', '13_bull', '14_bear',
-            '15_warnings', '16_vibe', '17_realtalk'
+            '15_realtalk', '16_triggers'
         ]
         actual_ids = [s.section_id for s in sections]
         assert actual_ids == expected_ids
 
     def test_part_assignment(self):
-        """Sections should be assigned to correct parts."""
+        """Sections should be assigned to correct parts (v5.1 layout)."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
 
         part1 = [s for s in sections if s.part == 1]
@@ -209,18 +217,18 @@ class TestParseReportSections:
         part3 = [s for s in sections if s.part == 3]
 
         assert len(part1) == 5  # Executive summary
-        assert len(part2) == 11  # Detailed analysis
-        assert len(part3) == 1  # Real talk
+        assert len(part2) == 9  # Detailed analysis (no Warning Signs or Vibe Check)
+        assert len(part3) == 2  # Real Talk + Decision Triggers
 
     def test_dynamic_header_parsing(self):
         """Should extract dynamic headers correctly."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
 
-        # Find growth section (has dynamic header "From 3% to 4%: The Growth Crawl")
+        # Find growth section (has dynamic header "### 6. From 3% to 4%: The Growth Crawl")
         growth = next(s for s in sections if s.section_id == '06_growth')
         assert '3%' in growth.title or 'Growth' in growth.title
 
-        # Find profit section (has "77% Margins: The Profit Machine")
+        # Find profit section (has "### 7. 77% Margins: The Profit Machine")
         profit = next(s for s in sections if s.section_id == '07_profit')
         assert '77%' in profit.title or 'Margin' in profit.title
 
@@ -229,7 +237,7 @@ class TestParseReportSections:
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
 
         tldr = next(s for s in sections if s.section_id == '01_tldr')
-        assert not tldr.content.startswith('## TL;DR')
+        assert not tldr.content.startswith('### 1. TL;DR')
         assert 'digital bouncer' in tldr.content
 
     def test_word_count_calculated(self):
@@ -295,11 +303,11 @@ class TestBuildToc:
     """Tests for build_toc function."""
 
     def test_builds_complete_toc(self):
-        """Should build ToC with all sections."""
+        """Should build ToC with all v5.1 sections."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
         toc = build_toc(sections)
 
-        assert len(toc) == 17
+        assert len(toc) == 16
 
     def test_toc_entry_structure(self):
         """ToC entries should have correct structure."""
@@ -313,6 +321,39 @@ class TestBuildToc:
             assert 'part' in entry
             assert 'icon' in entry
             assert 'word_count' in entry
+
+
+class TestBuildMergedToc:
+    """Tests for build_merged_toc function."""
+
+    def test_merges_part1_into_executive_summary(self):
+        """Part 1 sections should be merged into single Executive Summary entry."""
+        sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
+        merged = build_merged_toc(sections)
+
+        # First entry should be merged executive summary
+        assert merged[0]['section_id'] == '01_executive_summary'
+        assert merged[0]['title'] == 'Executive Summary'
+        assert merged[0]['part'] == 1
+
+    def test_merged_toc_count(self):
+        """Merged ToC should have 1 executive + N Part 2/3 sections."""
+        sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
+        merged = build_merged_toc(sections)
+
+        # v5.1: 1 executive summary + 9 detailed + 2 real talk = 12
+        assert len(merged) == 12
+
+    def test_merged_toc_preserves_part2_3_sections(self):
+        """Part 2 and 3 sections should be preserved individually."""
+        sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
+        merged = build_merged_toc(sections)
+
+        section_ids = [entry['section_id'] for entry in merged]
+        assert '06_growth' in section_ids
+        assert '14_bear' in section_ids
+        assert '15_realtalk' in section_ids
+        assert '16_triggers' in section_ids
 
 
 class TestGetSectionsByPart:
@@ -333,7 +374,7 @@ class TestGetSectionsByPart:
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
         detailed = get_detailed_sections(sections)
 
-        assert len(detailed) == 11
+        assert len(detailed) == 9
         assert all(s.part == 2 for s in detailed)
 
 
@@ -354,28 +395,46 @@ class TestCalculateTotalWordCount:
 class TestDynamicHeaderPatterns:
     """Tests for dynamic header pattern matching."""
 
-    def test_growth_patterns(self):
-        """Should match various growth header patterns."""
+    def test_growth_numbered_patterns(self):
+        """Should match numbered growth header patterns."""
         patterns = [
-            "## From 19% to 12%: The Slowdown Story",
-            "## The 47% Rocket Ship",
-            "## Flatlined at 3%: Is Growth Over?",
-            "## Revenue Growth: The Numbers",
-            "## Growth Section",
+            "### 6. From 19% to 12%: The Slowdown Story",
+            "## 6. The 47% Rocket Ship",
+            "### 6. Flatlined at 3%: Is Growth Over?",
         ]
         for header in patterns:
             sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
             growth_sections = [s for s in sections if s.section_id == '06_growth']
             assert len(growth_sections) == 1, f"Failed to match: {header}"
 
-    def test_debt_patterns(self):
-        """Should match various debt header patterns."""
+    def test_growth_keyword_patterns(self):
+        """Should match keyword-based growth header patterns."""
         patterns = [
-            "## The $2B War Chest",
-            "## The $50B Mountain",
-            "## From $2.4B to $423M: The Great Paydown",
-            "## Debt Analysis",
-            "## More Savings Than Debt",
+            "## Growth: The Slowdown Story",
+            "### Growth: Revenue Growth Numbers",
+        ]
+        for header in patterns:
+            sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
+            growth_sections = [s for s in sections if s.section_id == '06_growth']
+            assert len(growth_sections) == 1, f"Failed to match: {header}"
+
+    def test_debt_numbered_patterns(self):
+        """Should match numbered debt header patterns."""
+        patterns = [
+            "### 11. The $2B War Chest",
+            "## 11. The $50B Mountain",
+            "### 11. From $2.4B to $423M: The Great Paydown",
+        ]
+        for header in patterns:
+            sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
+            debt_sections = [s for s in sections if s.section_id == '11_debt']
+            assert len(debt_sections) == 1, f"Failed to match: {header}"
+
+    def test_debt_keyword_patterns(self):
+        """Should match keyword-based debt header patterns."""
+        patterns = [
+            "## Debt: The Great Paydown",
+            "### Debt: More Savings Than Debt",
         ]
         for header in patterns:
             sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
@@ -385,15 +444,40 @@ class TestDynamicHeaderPatterns:
     def test_health_check_patterns(self):
         """Should match various health check header patterns."""
         patterns = [
-            "## Apple's 2026 Report Card",
-            "## Is AAPL Actually Healthy?",
             "## Quick Health Check",
-            "## NVDA's Health Check",
+            "### 3. Quick Health Check",
+            "## 3. Quick Health Check",
         ]
         for header in patterns:
             sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
             health_sections = [s for s in sections if s.section_id == '03_health']
             assert len(health_sections) == 1, f"Failed to match: {header}"
+
+    def test_real_talk_patterns(self):
+        """Should match Real Talk with both v4.8 (§17) and v5.1 (§15) numbering."""
+        patterns = [
+            "## Real Talk",
+            "## 15. Real Talk",
+            "## 17. Real Talk",
+            "### 15. Real Talk",
+        ]
+        for header in patterns:
+            sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
+            realtalk = [s for s in sections if s.section_id == '15_realtalk']
+            assert len(realtalk) == 1, f"Failed to match: {header}"
+
+    def test_decision_triggers_patterns(self):
+        """Should match Decision Triggers header patterns (v5.1)."""
+        patterns = [
+            "## Decision Triggers: Key Numbers to Track for AAPL",
+            "## 16. Decision Triggers: What Could Change the AAPL Story",
+            "### 16. Decision Triggers",
+            "## Decision Triggers",
+        ]
+        for header in patterns:
+            sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
+            triggers = [s for s in sections if s.section_id == '16_triggers']
+            assert len(triggers) == 1, f"Failed to match: {header}"
 
 
 class TestParsedSectionDataclass:
