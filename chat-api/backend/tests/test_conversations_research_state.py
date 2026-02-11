@@ -42,6 +42,8 @@ os.environ['PROJECT_NAME'] = 'buffett-test'
 from src.handlers.conversations_handler import (
     update_conversation,
     get_conversation,
+    get_conversation_messages,
+    save_conversation_message,
     create_conversation,
     create_response,
     get_user_id,
@@ -865,6 +867,619 @@ class TestCreateConversationWithMetadata:
             item = call_kwargs['Item']
             assert 'metadata' in item
             assert 'research_state' in item['metadata']
+
+
+# =============================================================================
+# GET CONVERSATION MESSAGES PAGINATION TESTS
+# =============================================================================
+
+class TestGetConversationMessagesPagination:
+    """Tests for GET /conversations/{id}/messages with limit and cursor pagination."""
+
+    def _make_event(self, user_id='test-user-123', conversation_id='test-conv-123',
+                    query_params=None):
+        """Helper to create a GET messages event with optional query params."""
+        event = create_mock_event(
+            method='GET',
+            path=f'/conversations/{conversation_id}/messages',
+            user_id=user_id,
+            path_params={'conversation_id': conversation_id}
+        )
+        if query_params:
+            event['queryStringParameters'] = query_params
+        return event
+
+    def test_default_limit_is_200(self):
+        """Verify default limit of 200 is passed to DynamoDB query."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        mock_msg_table = MagicMock()
+        mock_msg_table.query.return_value = {'Items': [], 'Count': 0}
+
+        event = self._make_event(user_id=user_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 200
+
+            # Verify Limit=200 was passed to DynamoDB query
+            query_kwargs = mock_msg_table.query.call_args.kwargs
+            assert query_kwargs['Limit'] == 200
+
+    def test_custom_limit_passed_to_query(self):
+        """Verify custom limit from query params is passed to DynamoDB."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        mock_msg_table = MagicMock()
+        mock_msg_table.query.return_value = {'Items': [], 'Count': 0}
+
+        event = self._make_event(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            query_params={'limit': '50'}
+        )
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 200
+            query_kwargs = mock_msg_table.query.call_args.kwargs
+            assert query_kwargs['Limit'] == 50
+
+    def test_limit_clamped_to_max_500(self):
+        """Verify limit is clamped to maximum of 500."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        mock_msg_table = MagicMock()
+        mock_msg_table.query.return_value = {'Items': [], 'Count': 0}
+
+        event = self._make_event(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            query_params={'limit': '9999'}
+        )
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 200
+            query_kwargs = mock_msg_table.query.call_args.kwargs
+            assert query_kwargs['Limit'] == 500
+
+    def test_limit_clamped_to_min_1(self):
+        """Verify limit is clamped to minimum of 1."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        mock_msg_table = MagicMock()
+        mock_msg_table.query.return_value = {'Items': [], 'Count': 0}
+
+        event = self._make_event(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            query_params={'limit': '0'}
+        )
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 200
+            query_kwargs = mock_msg_table.query.call_args.kwargs
+            assert query_kwargs['Limit'] == 1
+
+    def test_next_cursor_returned_when_more_results(self):
+        """Verify next_cursor is returned when DynamoDB has LastEvaluatedKey."""
+        import base64
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        last_key = {'conversation_id': conversation_id, 'timestamp': 1234567890}
+        mock_msg_table = MagicMock()
+        mock_msg_table.query.return_value = {
+            'Items': [{'conversation_id': conversation_id, 'timestamp': 1234567890,
+                        'content': 'hello', 'message_type': 'user'}],
+            'Count': 1,
+            'LastEvaluatedKey': last_key
+        }
+
+        event = self._make_event(user_id=user_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 200
+            body = json.loads(response['body'])
+            assert 'next_cursor' in body
+
+            # Decode the cursor and verify it matches the LastEvaluatedKey
+            decoded = json.loads(base64.b64decode(body['next_cursor']).decode('utf-8'))
+            assert decoded['conversation_id'] == conversation_id
+            assert decoded['timestamp'] == 1234567890
+
+    def test_no_next_cursor_when_no_more_results(self):
+        """Verify next_cursor is absent when DynamoDB has no LastEvaluatedKey."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        mock_msg_table = MagicMock()
+        mock_msg_table.query.return_value = {
+            'Items': [{'conversation_id': conversation_id, 'timestamp': 1234567890,
+                        'content': 'hello', 'message_type': 'user'}],
+            'Count': 1
+        }
+
+        event = self._make_event(user_id=user_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 200
+            body = json.loads(response['body'])
+            assert 'next_cursor' not in body
+
+    def test_cursor_passed_as_exclusive_start_key(self):
+        """Verify cursor is decoded and passed as ExclusiveStartKey."""
+        import base64
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        mock_msg_table = MagicMock()
+        mock_msg_table.query.return_value = {'Items': [], 'Count': 0}
+
+        # Encode a cursor
+        start_key = {'conversation_id': conversation_id, 'timestamp': 1000000}
+        encoded_cursor = base64.b64encode(
+            json.dumps(start_key).encode('utf-8')
+        ).decode('utf-8')
+
+        event = self._make_event(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            query_params={'cursor': encoded_cursor}
+        )
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 200
+            query_kwargs = mock_msg_table.query.call_args.kwargs
+            assert 'ExclusiveStartKey' in query_kwargs
+            assert query_kwargs['ExclusiveStartKey'] == start_key
+
+    def test_invalid_cursor_returns_400(self):
+        """Verify invalid (non-base64/non-JSON) cursor returns 400."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': user_id}
+        }
+
+        mock_msg_table = MagicMock()
+
+        event = self._make_event(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            query_params={'cursor': 'not-valid-base64!!!'}
+        )
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'Invalid cursor' in body['error']
+
+    def test_access_denied_for_non_owner(self):
+        """Verify 403 when user does not own the conversation."""
+        owner_id = 'owner-user-123'
+        requester_id = 'other-user-456'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.get_item.return_value = {
+            'Item': {'conversation_id': conversation_id, 'user_id': owner_id}
+        }
+
+        mock_msg_table = MagicMock()
+
+        event = self._make_event(user_id=requester_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = get_conversation_messages(event)
+
+            assert response['statusCode'] == 403
+            # Messages table should NOT be queried
+            mock_msg_table.query.assert_not_called()
+
+
+# =============================================================================
+# SAVE MESSAGE OWNERSHIP CHECK TESTS (ConditionExpression pattern)
+# =============================================================================
+
+class TestSaveMessageOwnershipCheck:
+    """Tests for POST /conversations/{id}/messages with ConditionExpression ownership."""
+
+    def _make_event(self, user_id='test-user-123', conversation_id='test-conv-123',
+                    body=None):
+        """Helper to create a POST message event."""
+        if body is None:
+            body = {'content': 'Test message', 'message_type': 'user'}
+        return create_mock_event(
+            method='POST',
+            path=f'/conversations/{conversation_id}/messages',
+            user_id=user_id,
+            body=body,
+            path_params={'conversation_id': conversation_id}
+        )
+
+    def test_save_message_succeeds_for_owner(self):
+        """Verify message is saved when user owns the conversation."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_msg_table = MagicMock()
+
+        event = self._make_event(user_id=user_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = save_conversation_message(event)
+
+            assert response['statusCode'] == 201
+            body = json.loads(response['body'])
+            assert 'message_id' in body
+            assert body['conversation_id'] == conversation_id
+
+            # Verify put_item was called on messages table
+            mock_msg_table.put_item.assert_called_once()
+
+            # Verify update_item was called with ConditionExpression
+            mock_conv_table.update_item.assert_called_once()
+            update_kwargs = mock_conv_table.update_item.call_args.kwargs
+            assert update_kwargs['ConditionExpression'] == 'user_id = :user'
+            assert update_kwargs['ExpressionAttributeValues'][':user'] == user_id
+
+    def test_save_message_put_item_before_update_item(self):
+        """Verify messages_table.put_item is called BEFORE conversations_table.update_item."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        call_order = []
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.update_item.side_effect = lambda **kw: call_order.append('update_item')
+
+        mock_msg_table = MagicMock()
+        mock_msg_table.put_item.side_effect = lambda **kw: call_order.append('put_item')
+
+        event = self._make_event(user_id=user_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = save_conversation_message(event)
+
+            assert response['statusCode'] == 201
+            assert call_order == ['put_item', 'update_item']
+
+    def test_save_message_returns_403_when_condition_fails(self):
+        """Verify 403 when ConditionExpression fails (wrong user)."""
+        user_id = 'wrong-user-456'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'ConditionalCheckFailedException',
+                       'Message': 'The conditional request failed'}},
+            'UpdateItem'
+        )
+
+        mock_msg_table = MagicMock()
+
+        event = self._make_event(user_id=user_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = save_conversation_message(event)
+
+            assert response['statusCode'] == 403
+            body = json.loads(response['body'])
+            assert 'Access denied' in body['error']
+
+    def test_save_message_returns_400_for_missing_content(self):
+        """Verify 400 when message content is missing."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        event = self._make_event(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            body={'message_type': 'user'}  # No 'content'
+        )
+
+        mock_conv_table = MagicMock()
+        mock_msg_table = MagicMock()
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = save_conversation_message(event)
+
+            assert response['statusCode'] == 400
+            body = json.loads(response['body'])
+            assert 'content' in body['error'].lower()
+
+    def test_save_message_other_client_error_returns_500(self):
+        """Verify non-ConditionalCheckFailed ClientError returns 500."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        mock_conv_table = MagicMock()
+        mock_conv_table.update_item.side_effect = ClientError(
+            {'Error': {'Code': 'ProvisionedThroughputExceededException',
+                       'Message': 'Throughput exceeded'}},
+            'UpdateItem'
+        )
+
+        mock_msg_table = MagicMock()
+
+        event = self._make_event(user_id=user_id, conversation_id=conversation_id)
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_conv_table), \
+             patch('src.handlers.conversations_handler.messages_table', mock_msg_table):
+            response = save_conversation_message(event)
+
+            assert response['statusCode'] == 500
+
+
+# =============================================================================
+# UPDATE CONVERSATION PROJECTION EXPRESSION TESTS
+# =============================================================================
+
+class TestUpdateConversationProjection:
+    """Tests for update_conversation GetItem using ProjectionExpression."""
+
+    def test_get_item_uses_projection_expression(self):
+        """Verify GetItem fetches only user_id and metadata using ProjectionExpression."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        existing_conv = {
+            'user_id': user_id,
+            'metadata': {'source': 'research'}
+        }
+
+        event = create_mock_event(
+            method='PUT',
+            path=f'/conversations/{conversation_id}',
+            user_id=user_id,
+            body={'title': 'Updated Title'},
+            path_params={'conversation_id': conversation_id}
+        )
+
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {'Item': existing_conv}
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_table):
+            response = update_conversation(event)
+
+            assert response['statusCode'] == 200
+
+            # Verify get_item was called with ProjectionExpression
+            get_item_kwargs = mock_table.get_item.call_args.kwargs
+            assert get_item_kwargs['ProjectionExpression'] == 'user_id, #metadata'
+            assert get_item_kwargs['ExpressionAttributeNames'] == {'#metadata': 'metadata'}
+
+    def test_projection_returns_only_needed_fields(self):
+        """Verify update works when GetItem returns only projected fields (no title, etc)."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        # Simulates DynamoDB returning only projected fields
+        projected_item = {
+            'user_id': user_id,
+            'metadata': {}
+        }
+
+        event = create_mock_event(
+            method='PUT',
+            path=f'/conversations/{conversation_id}',
+            user_id=user_id,
+            body={'metadata': {'research_state': {'ticker': 'MSFT'}}},
+            path_params={'conversation_id': conversation_id}
+        )
+
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {'Item': projected_item}
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_table):
+            response = update_conversation(event)
+
+            assert response['statusCode'] == 200
+            mock_table.update_item.assert_called_once()
+
+            call_kwargs = mock_table.update_item.call_args.kwargs
+            merged_metadata = call_kwargs['ExpressionAttributeValues'][':metadata']
+            assert merged_metadata['research_state']['ticker'] == 'MSFT'
+
+
+# =============================================================================
+# GET CONVERSATION PROJECTION EXPRESSION TESTS
+# =============================================================================
+
+class TestGetConversationProjection:
+    """Tests for get_conversation using ProjectionExpression to reduce payload."""
+
+    def test_get_item_uses_projection_expression(self):
+        """Verify GetItem fetches only essential fields using ProjectionExpression."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        conversation = {
+            'conversation_id': conversation_id,
+            'user_id': user_id,
+            'title': 'Research: AAPL',
+            'metadata': {'research_state': {'ticker': 'AAPL'}},
+            'created_at': '2026-01-01T00:00:00Z',
+            'updated_at': '2026-01-01T00:00:00Z',
+        }
+
+        event = create_mock_event(
+            method='GET',
+            path=f'/conversations/{conversation_id}',
+            user_id=user_id,
+            path_params={'conversation_id': conversation_id}
+        )
+
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {'Item': conversation}
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_table):
+            response = get_conversation(event)
+
+            assert response['statusCode'] == 200
+
+            # Verify get_item was called with ProjectionExpression
+            get_item_kwargs = mock_table.get_item.call_args.kwargs
+            assert 'ProjectionExpression' in get_item_kwargs
+            assert 'conversation_id' in get_item_kwargs['ProjectionExpression']
+            assert 'user_id' in get_item_kwargs['ProjectionExpression']
+            assert 'title' in get_item_kwargs['ProjectionExpression']
+            assert '#metadata' in get_item_kwargs['ProjectionExpression']
+            assert 'message_count' in get_item_kwargs['ProjectionExpression']
+            assert get_item_kwargs['ExpressionAttributeNames'] == {'#metadata': 'metadata'}
+
+    def test_projection_returns_metadata_with_research_state(self):
+        """Verify research_state metadata is included in projected response."""
+        user_id = 'test-user-123'
+        conversation_id = 'test-conv-123'
+
+        research_state = {
+            'ticker': 'AAPL',
+            'toc': [{'section_id': '01_executive_summary', 'title': 'Executive Summary'}],
+            'visible_sections': ['01_executive_summary', '06_growth'],
+            'active_section_id': '06_growth',
+        }
+        conversation = {
+            'conversation_id': conversation_id,
+            'user_id': user_id,
+            'title': 'Research: AAPL',
+            'metadata': {'research_state': research_state},
+            'created_at': '2026-01-01T00:00:00Z',
+            'updated_at': '2026-01-01T00:00:00Z',
+        }
+
+        event = create_mock_event(
+            method='GET',
+            path=f'/conversations/{conversation_id}',
+            user_id=user_id,
+            path_params={'conversation_id': conversation_id}
+        )
+
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {'Item': conversation}
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_table):
+            response = get_conversation(event)
+
+            assert response['statusCode'] == 200
+            body = json.loads(response['body'])
+            assert body['metadata']['research_state']['ticker'] == 'AAPL'
+            assert body['metadata']['research_state']['visible_sections'] == ['01_executive_summary', '06_growth']
+
+    def test_get_conversation_access_denied(self):
+        """Verify 403 when requesting user doesn't own the conversation."""
+        owner_id = 'owner-123'
+        requester_id = 'other-456'
+        conversation_id = 'test-conv-123'
+
+        conversation = {
+            'conversation_id': conversation_id,
+            'user_id': owner_id,
+            'title': 'Private convo',
+        }
+
+        event = create_mock_event(
+            method='GET',
+            path=f'/conversations/{conversation_id}',
+            user_id=requester_id,
+            path_params={'conversation_id': conversation_id}
+        )
+
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {'Item': conversation}
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_table):
+            response = get_conversation(event)
+            assert response['statusCode'] == 403
+
+    def test_get_conversation_not_found(self):
+        """Verify 404 when conversation doesn't exist."""
+        user_id = 'test-user-123'
+        conversation_id = 'nonexistent-conv'
+
+        event = create_mock_event(
+            method='GET',
+            path=f'/conversations/{conversation_id}',
+            user_id=user_id,
+            path_params={'conversation_id': conversation_id}
+        )
+
+        mock_table = MagicMock()
+        mock_table.get_item.return_value = {}  # No Item
+
+        with patch('src.handlers.conversations_handler.conversations_table', mock_table):
+            response = get_conversation(event)
+            assert response['statusCode'] == 404
 
 
 # =============================================================================

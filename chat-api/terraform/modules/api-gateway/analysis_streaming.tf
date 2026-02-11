@@ -87,6 +87,13 @@ resource "aws_api_gateway_deployment" "analysis" {
       try(aws_api_gateway_integration.research_section_lambda[0].uri, ""),
       try(aws_api_gateway_method.research_section_options[0].id, ""),
       try(aws_api_gateway_integration.research_section_options[0].id, ""),
+      # Research Batch Sections API resources
+      try(aws_api_gateway_resource.research_report_sections_batch[0].id, ""),
+      try(aws_api_gateway_method.research_sections_batch_post[0].id, ""),
+      try(aws_api_gateway_integration.research_sections_batch_lambda[0].id, ""),
+      try(aws_api_gateway_integration.research_sections_batch_lambda[0].uri, ""),
+      try(aws_api_gateway_method.research_sections_batch_options[0].id, ""),
+      try(aws_api_gateway_integration.research_sections_batch_options[0].id, ""),
     ]))
   }
 
@@ -104,7 +111,9 @@ resource "aws_api_gateway_deployment" "analysis" {
     aws_api_gateway_integration.research_status_lambda,
     aws_api_gateway_integration.research_status_options,
     aws_api_gateway_integration.research_section_lambda,
-    aws_api_gateway_integration.research_section_options
+    aws_api_gateway_integration.research_section_options,
+    aws_api_gateway_integration.research_sections_batch_lambda,
+    aws_api_gateway_integration.research_sections_batch_options
   ]
 }
 
@@ -601,6 +610,107 @@ resource "aws_api_gateway_integration_response" "research_section_options" {
   }
 
   depends_on = [aws_api_gateway_integration.research_section_options]
+}
+
+# ============================================================================
+# /research/report/{ticker}/sections - POST endpoint for batch section fetch
+# ============================================================================
+# Used by frontend to fetch multiple report sections in a single request.
+# Replaces N individual GET /section/{id} calls with 1 POST.
+# ============================================================================
+
+# /research/report/{ticker}/sections resource
+resource "aws_api_gateway_resource" "research_report_sections_batch" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.research_report_ticker[0].id
+  path_part   = "sections"
+}
+
+# POST Method with JWT Authorization
+resource "aws_api_gateway_method" "research_sections_batch_post" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_sections_batch[0].id
+  http_method   = "POST"
+  authorization = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id = var.enable_authorization ? aws_api_gateway_authorizer.analysis_jwt[0].id : null
+
+  request_parameters = {
+    "method.request.path.ticker"          = true
+    "method.request.header.Authorization" = false
+  }
+}
+
+# HTTP_PROXY Integration to Investment Research Lambda Function URL
+resource "aws_api_gateway_integration" "research_sections_batch_lambda" {
+  count                   = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id             = aws_api_gateway_rest_api.analysis[0].id
+  resource_id             = aws_api_gateway_resource.research_report_sections_batch[0].id
+  http_method             = aws_api_gateway_method.research_sections_batch_post[0].http_method
+  integration_http_method = "POST"
+  type                    = "HTTP_PROXY"
+
+  uri = "${trimsuffix(var.investment_research_function_url, "/")}/report/{ticker}/sections"
+
+  request_parameters = {
+    "integration.request.path.ticker"          = "method.request.path.ticker"
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+  }
+
+  passthrough_behavior = "WHEN_NO_MATCH"
+  timeout_milliseconds = 10000
+}
+
+# CORS Preflight (OPTIONS) for Batch Sections
+resource "aws_api_gateway_method" "research_sections_batch_options" {
+  count         = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.research_report_sections_batch[0].id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "research_sections_batch_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_sections_batch[0].id
+  http_method = aws_api_gateway_method.research_sections_batch_options[0].http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "research_sections_batch_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_sections_batch[0].id
+  http_method = aws_api_gateway_method.research_sections_batch_options[0].http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "research_sections_batch_options" {
+  count       = var.enable_analysis_api && var.enable_research_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.research_report_sections_batch[0].id
+  http_method = aws_api_gateway_method.research_sections_batch_options[0].http_method
+  status_code = aws_api_gateway_method_response.research_sections_batch_options[0].status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cloudfront_url != "" ? "'${var.cloudfront_url}'" : "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.research_sections_batch_options]
 }
 
 # ============================================================================

@@ -414,7 +414,7 @@ chat-api/backend/build/
 
 ## CRITICAL: Use Claude Code Mode (NOT API Mode)
 
-**ABSOLUTE RULE**: Investment reports MUST be generated using Claude Code mode, NOT the Anthropic API.
+**ABSOLUTE RULE**: Investment reports MUST be generated using Claude Code mode, NOT the Anthropic API. There is no Anthropic API key — we use a Claude Max subscription.
 
 ### Why Claude Code Mode?
 - Cost efficiency: Uses Claude Code's context window instead of API calls
@@ -424,38 +424,51 @@ chat-api/backend/build/
 
 ### Report Generation Workflow
 
-1. **Prepare Data** - Fetch financial data from FMP API:
+1. **Prepare Data** - Fetch financial data from FMP API and cache metrics:
 ```python
 from investment_research.report_generator import ReportGenerator
 
-generator = ReportGenerator(use_api=False, prompt_version=4.8)
+generator = ReportGenerator(use_api=False, prompt_version=5.1)
 data = generator.prepare_data('AMZN')
 ```
+This step:
+- Fetches raw financials, extracts features, and pulls valuation data
+- **Caches metrics to `metrics-history-dev` table** (7 categories × N quarters) for the follow-up agent
+- Returns `ticker`, `fiscal_year`, `metrics_context`, `features`, `raw_financials`, `currency_info`, `valuation_data`
 
 2. **Read the System Prompt** - Load the appropriate prompt template:
 ```
-chat-api/backend/investment_research/prompts/investment_report_prompt_v4_8.txt
+chat-api/backend/investment_research/prompts/investment_report_prompt_v5_1.txt
 ```
 
-3. **Generate Report** - Use Claude Code to generate the report content following the prompt
+3. **Generate Report** - Use Claude Code to generate the report content following the prompt, using `data['metrics_context']` as the financial data input.
 
-4. **Save Report** - Save to DynamoDB:
+4. **Save Report + Metrics** - Save report to DynamoDB and ensure metrics are cached:
 ```python
-generator.save_report(
+generator.save_report_sections(
     ticker='AMZN',
     fiscal_year=2026,
     report_content=report_markdown,
-    ratings={'growth': 'Strong', 'profitability': 'Exceptional', ...}
+    ratings=None,  # auto-extracted from JSON block in report
+    raw_financials=data['raw_financials'],
+    currency_info=data['currency_info']
 )
 ```
+This step:
+- Deletes any existing report sections for the ticker
+- Parses the markdown into 16 sections and saves to `investment-reports-v2-dev`
+- **Caches metrics to `metrics-history-dev`** when `raw_financials` is provided
+
+**IMPORTANT**: Always pass `raw_financials` and `currency_info` from `prepare_data()` to `save_report_sections()`. This ensures the follow-up agent has fresh metrics data. If you skip `prepare_data()` (e.g., using pre-fetched JSON), call `prepare_data()` separately to populate the metrics cache.
 
 ### Prohibited Actions
 - DO NOT use `generate_report()` with `use_api=True`
 - DO NOT set or use `ANTHROPIC_API_KEY` for report generation
 - DO NOT bypass the Claude Code workflow
+- DO NOT call `save_report_sections()` without providing `raw_financials` — metrics won't be cached
 
 ### Prompt Versions
-Current recommended version: **v4.8** (executive summary first, dynamic headers, simplified language)
+Current recommended version: **v5.1** (executive summary first, dynamic headers, simplified language, ROE in profitability, P/E deep dive valuation)
 
 Available versions are defined in `ReportGenerator.PROMPT_VERSIONS` in:
 `chat-api/backend/investment_research/report_generator.py`

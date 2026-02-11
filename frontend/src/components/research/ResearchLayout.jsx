@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, RefreshCw, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 import TableOfContents from './TableOfContents';
 import RatingsHeader from './RatingsHeader';
 import StreamingIndicator from './StreamingIndicator';
@@ -30,11 +30,13 @@ export default function ResearchLayout({
 
   // Callbacks
   onSectionClick,
-  onClose,
   onRetry,
 
   // Token for retry
   token,
+
+  // Sections the user has opened (for ToC checkmarks)
+  visibleSections = [],
 
   // Children - main content (messages, sections, follow-up)
   children,
@@ -43,6 +45,13 @@ export default function ResearchLayout({
   composer,
 }) {
   const hasToc = reportMeta?.toc?.length > 0;
+  const [tocOpen, setTocOpen] = useState(true);
+  const tocVisible = hasToc && tocOpen;
+
+  // Filter streamedContent to only show checkmarks for sections the user has opened
+  const tocStreamedSections = Object.fromEntries(
+    Object.entries(streamedContent).filter(([sectionId]) => visibleSections.includes(sectionId))
+  );
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -53,21 +62,12 @@ export default function ResearchLayout({
           <div className="mx-auto max-w-4xl space-y-4">
             {/* Research header */}
             {reportMeta && (
-              <div className="mb-4 pb-4 border-b border-sand-200 dark:border-warm-800">
-                <div className="flex items-center justify-between">
-                  <RatingsHeader
-                    ticker={ticker}
-                    ratings={reportMeta?.ratings}
-                    generatedAt={reportMeta?.generated_at}
-                  />
-                  <button
-                    onClick={onClose}
-                    className="p-2 text-sand-400 hover:text-sand-600 dark:hover:text-warm-200 hover:bg-sand-100 dark:hover:bg-warm-800 rounded-full transition-colors"
-                    title="Close"
-                  >
-                    <X className="h-5 w-5" />
-                  </button>
-                </div>
+              <div className="mb-2">
+                <RatingsHeader
+                  ticker={ticker}
+                  ratings={reportMeta?.ratings}
+                  generatedAt={reportMeta?.generated_at}
+                />
 
                 {/* Streaming indicator */}
                 {(isStreaming || streamStatus === 'connecting') && (
@@ -109,14 +109,17 @@ export default function ResearchLayout({
         {/* Table of Contents - right side, desktop only */}
         {hasToc && (
           <div
-            className="hidden md:block flex-shrink-0 border-l border-sand-200 dark:border-warm-800 bg-sand-50 dark:bg-warm-800/50"
-            style={{ width: tocWidth }}
+            className="hidden md:block flex-shrink-0 border-l border-transparent hover:border-indigo-400 dark:hover:border-indigo-400 bg-sand-50 dark:bg-warm-950 transition-all duration-300 ease-in-out overflow-hidden"
+            style={{ width: tocOpen ? tocWidth : 48 }}
           >
             <TableOfContents
               toc={reportMeta.toc}
               activeSectionId={activeSectionId}
               onSectionClick={onSectionClick}
-              streamedSections={streamedContent}
+              onCollapse={() => setTocOpen(false)}
+              onExpand={() => setTocOpen(true)}
+              isCollapsed={!tocOpen}
+              streamedSections={tocStreamedSections}
               currentStreamingSection={currentStreamingSection}
             />
           </div>
@@ -126,8 +129,8 @@ export default function ResearchLayout({
       {/* Bottom composer - centered to align with main content, offset for ToC on desktop */}
       {composer && (
         <div
-          className="border-t border-sand-100 dark:border-warm-800 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out"
-          style={{ paddingRight: hasToc ? `calc(1rem + ${tocWidth}px)` : undefined }}
+          className="p-3 md:p-3 pb-6 md:pb-5 transition-all duration-300 ease-in-out"
+          style={{ paddingRight: tocVisible ? `calc(1rem + ${tocWidth}px)` : undefined }}
         >
           <div className="mx-auto max-w-4xl">
             {composer}

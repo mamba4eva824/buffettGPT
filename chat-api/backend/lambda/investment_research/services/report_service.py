@@ -359,6 +359,92 @@ def get_report_section(ticker: str, section_id: str) -> Optional[Dict[str, Any]]
         return None
 
 
+def get_report_sections_batch(ticker: str, section_ids: list) -> Dict[str, Any]:
+    """
+    Get multiple sections in a single DynamoDB batch_get_item call.
+
+    Handles 01_executive_summary specially by fetching from 00_executive item.
+
+    Args:
+        ticker: Stock symbol (e.g., 'AAPL')
+        section_ids: List of section IDs to fetch (e.g., ['01_executive_summary', '06_growth'])
+
+    Returns:
+        Dict with 'sections' (dict of section_id -> section data) and 'report_exists' bool.
+    """
+    ticker = ticker.upper()
+    if not section_ids:
+        return {'sections': {}, 'report_exists': False}
+
+    table = _get_table_v2()
+    result_sections = {}
+    needs_executive = '01_executive_summary' in section_ids
+    other_ids = [sid.lower() for sid in section_ids if sid != '01_executive_summary']
+
+    try:
+        # Fetch executive item if needed (also serves as existence check)
+        exec_item = get_executive(ticker)
+        report_exists = exec_item is not None
+
+        if needs_executive and exec_item:
+            section = exec_item.get('executive_summary')
+            if section:
+                result_sections['01_executive_summary'] = {
+                    'section_id': '01_executive_summary',
+                    'title': section.get('title', 'Executive Summary'),
+                    'content': section.get('content', ''),
+                    'part': section.get('part', 1),
+                    'icon': section.get('icon'),
+                    'word_count': section.get('word_count', 0),
+                    'display_order': section.get('display_order', 1),
+                }
+
+        # Batch fetch remaining sections
+        if other_ids and report_exists:
+            keys = [{'ticker': ticker, 'section_id': sid} for sid in other_ids]
+
+            # DynamoDB batch_get_item supports up to 100 keys
+            table_name = table.table_name
+            dynamodb = boto3.resource('dynamodb')
+            response = dynamodb.batch_get_item(
+                RequestItems={
+                    table_name: {
+                        'Keys': keys
+                    }
+                }
+            )
+
+            items = response.get('Responses', {}).get(table_name, [])
+            now_ts = datetime.utcnow().timestamp()
+
+            for item in items:
+                # Check TTL
+                ttl = item.get('ttl', 0)
+                if ttl and isinstance(ttl, (int, float, Decimal)):
+                    ttl_value = float(ttl) if isinstance(ttl, Decimal) else ttl
+                    if ttl_value < now_ts:
+                        continue
+
+                item = decimal_to_float(item)
+                sid = item.get('section_id')
+                if sid:
+                    result_sections[sid] = {
+                        'section_id': sid,
+                        'title': item.get('title', ''),
+                        'content': item.get('content', ''),
+                        'part': item.get('part'),
+                        'icon': item.get('icon'),
+                        'word_count': item.get('word_count', 0),
+                        'display_order': item.get('display_order'),
+                    }
+
+        return {'sections': result_sections, 'report_exists': report_exists}
+
+    except Exception as e:
+        logger.error(f"Error batch fetching sections for {ticker}: {e}")
+        return {'sections': {}, 'report_exists': False}
+
+
 def get_executive_sections(ticker: str) -> list:
     """
     Get Part 1 (executive summary) sections from the v2 table.
