@@ -632,6 +632,26 @@ Open with ONE sentence connecting profitability to the reader's investment:
 
    **One-line summary:** "{ticker}'s XX% net margin is [well above / in line with / below] their peer group, which typically earns X-Y%."
 
+6. **The Efficiency Grade: Are They Good With Your Money? (ROE)**
+   This is a simple but powerful check. ROE (Return on Equity) answers: **"For every $1 that shareholders have invested in this company, how much annual profit does it generate?"**
+
+   Think of it like a restaurant review, but for management: Are they turning ingredients (your investment dollars) into great meals (profits) — or wasting food?
+
+   **{ticker}'s ROE:** XX.X%
+
+   **The grade scale:**
+   | ROE | Grade | What It Means |
+   |-----|-------|---------------|
+   | Above 25% | A+ | "Exceptional — every $1 invested generates 25+ cents of profit per year. Management is squeezing serious value out of what they've got" |
+   | 15–25% | A | "Strong — above-average efficiency. This is a well-run business" |
+   | 10–15% | B | "Average — nothing special, but not wasteful either" |
+   | 5–10% | C | "Below average — they're not getting much out of what they have" |
+   | Below 5% | D | "Concerning — either the business model is inefficient or management needs to step up" |
+
+   **One-line read (REQUIRED):** "For every $1 shareholders have invested in {ticker}, the company generates $X.XX in annual profit. That's an [A+/A/B/C/D] grade — [context: how this compares to what's typical for the industry]."
+
+   **NOTE:** Very high ROE (above 40%) can sometimes be inflated by high debt (borrowing magnifies returns). If {ticker} has high debt AND high ROE, add: "A caveat: some of this efficiency comes from using borrowed money — which boosts ROE but also adds risk. Check the Debt section for the full picture."
+
 ---
 
 **📊 Profitability Momentum Check (v5.0 Visual Dashboard):**
@@ -705,19 +725,38 @@ Open with ONE sentence that makes valuation personal:
 - "You wouldn't pay $50 for a $20 item just because it's popular. Valuation tells you whether the stock price matches what the company is actually worth."
 - "A great company at a bad price is still a bad investment. This section answers: are you overpaying, underpaying, or getting a fair deal?"
 
+**Threading Analogy: The Used Car Lot**
+Use a "shopping for a deal" analogy that threads through the ENTIRE valuation section. Think of every subsection as answering a different question a smart shopper would ask:
+- Is it on sale? (Mean reversion)
+- What are other buyers willing to pay? (Analyst expectations)
+- What is the seller assuming about this car's future? (Baked-in growth)
+- Am I paying a fair price for the mileage? (PEG ratio)
+
+Adapt the specific shopping analogy to match {ticker}'s situation (used car, house, concert tickets, etc.), but keep the thread: **every subsection answers one shopping question.**
+
 **Include the following subsections:**
 
-1. **What You're Paying vs History (Mean Reversion Table)** — customize headers:
-   - Cheap stock: `| The Price Tag | Today | 5-Year Avg | The Discount |`
-   - Expensive stock: `| The Price Tag | Today | 5-Year Avg | The Premium |`
+1. **The Main Price Tag: How Many Years of Profits Are You Paying For? (P/E Deep Dive)**
 
-   Include these metrics with plain English:
-   | The Price Tag | Today | 5-Year Avg | vs History |
-   |---------------|-------|------------|------------|
-   | Years of Profits (P/E) | Xx | Xx | X% cheaper/pricier |
-   | Price per $1 Sales (P/S) | Xx | Xx | X% cheaper/pricier |
-   | Price vs What They Own (P/B) | Xx | Xx | X% cheaper/pricier |
-   | Buyout Price (EV/EBITDA) | Xx | Xx | X% cheaper/pricier |
+   Lead with the ONE number that matters most. Don't overwhelm with 4 ratios — teach P/E deeply, then use the others as backup evidence.
+
+   **The concept (REQUIRED — explain BEFORE showing numbers):**
+   "The simplest way to judge if a stock is expensive or cheap is the P/E ratio. Here's what it really means: **if {ticker} handed you ALL of its profits every year, how many years would it take to earn back what you paid for the stock?**
+
+   If P/E = 30, it would take 30 years of current profits to 'pay back' your investment at today's price. That sounds like a lot — but you're not just buying today's profits. You're buying a company that (hopefully) makes MORE profit every year. So you're really asking: 'Am I paying a fair price for a business that keeps growing?'"
+
+   **Make it tangible with a {ticker}-specific example:**
+   "At {ticker}'s current P/E of Xx, you're essentially saying: 'I believe this company's profits will grow enough over the next Xx years to justify what I'm paying today.' Compare that to a savings account (which would take ~20 years to double your money at 4%) and you start to see whether Xx years is reasonable."
+
+   **Now compare to history — is this on sale or marked up?**
+   | {ticker}'s Price Tag | Today | 5-Year Avg | On Sale or Marked Up? |
+   |---------------------|-------|------------|----------------------|
+   | Years of Profits (P/E) | Xx | Xx | 🟢/🟡/🔴 X% [cheaper/pricier] than usual |
+
+   **The shopping analogy (REQUIRED):** Frame the discount/premium in terms the reader lives:
+   - On sale: "Imagine your favorite pair of sneakers usually costs $150. Right now they're $117. Same sneakers, X% off. That's what's happening with {ticker}'s stock — same company, cheaper price tag."
+   - Marked up: "Imagine those $150 sneakers are now $195. They might be worth it if they're limited edition — but you're paying a premium and hoping they hold their value."
+   - Fair price: "Full retail. Not a deal, not a ripoff. You're paying what most people pay."
 
    **Honesty check on the 5-year average (REQUIRED):**
    The 5-year average can be misleading if it includes extreme periods (pandemic highs, bubble valuations, or earnings crashes that inflated ratios). Always check whether outlier years are skewing the average.
@@ -728,57 +767,71 @@ Open with ONE sentence that makes valuation personal:
 
    **Why this matters:** A skeptical reader might ask, "Is it really 'on sale,' or is the old average just inflated by hype?" This one sentence builds enormous trust by showing you've thought about it honestly. Never cherry-pick the comparison that makes the stock look best — show the full picture.
 
-2. **Is the Company Making Good Use of Money?**
-   | How Well They Use Your Money | {ticker} | What It Means |
-   |-----------------------------|----------|---------------|
-   | Profit from Shareholder Money (ROE) | X% | Every $1 you invest makes X cents |
-   | Profit from All Assets (ROA) | X% | Every $1 of stuff makes X cents |
-   | Take-Home Profit (Net Margin) | X% | Keeps X cents per dollar of sales |
-   | Sales per $1 of Assets (Turnover) | Xx | How hard their assets work |
+   **Supporting Evidence (Other Price Tags):**
+   "P/E is the main price tag, but here are a few more ways to check if the sticker price is fair:"
 
-3. **What Analysts Expect (vs Current):**
-   | What Wall Street Expects | TTM (Now) | FY 2025 | FY 2026 | The Growth Bet |
-   |--------------------------|-----------|---------|---------|----------------|
-   | Revenue | $XXB | $XXB | $XXB | +X% / +X% |
-   | Earnings Per Share | $X.XX | $X.XX | $X.XX | +X% / +X% |
+   | Other Ways to Check the Price | Today | 5-Year Avg | The Read |
+   |-------------------------------|-------|------------|----------|
+   | Price per $1 of Sales (P/S) | Xx | Xx | [cheaper/pricier/same] — "Are you paying more or less per dollar of revenue?" |
+   | What a Buyer Would Pay for the Whole Business (EV/EBITDA) | Xx | Xx | [cheaper/pricier/same] — "If someone bought the entire company, is it a deal?" |
 
-4. **What Growth Is Already "Baked In" to the Price?**
-   The stock price already assumes a certain growth rate. This answers: "Is the market expecting too much, too little, or about right?"
+   **NOTE:** Only include P/B (Price vs. What They Own) for asset-heavy industries (banks, real estate, industrials) where book value is meaningful. For tech, SaaS, and services companies, skip P/B entirely — their value is in intellectual property and customers, not physical assets.
+
+   **One-line read across all metrics (REQUIRED):** "Most price tags point in the same direction: {ticker} is [on sale / fairly priced / marked up] compared to its own history. [If metrics disagree: 'The signals are mixed — P/E says cheap, but P/S says fair. That usually means profits improved faster than revenue.']"
+
+2. **What Other Buyers Expect (Analyst Projections):**
+   Think of analysts as professional shoppers who study {ticker} full-time. Here's what they think the business will look like over the next 1-2 years:
+
+   | What the Pros Expect | Now (TTM) | Next Year | Year After | How Much Growth? |
+   |---------------------|-----------|-----------|------------|------------------|
+   | Total Sales | $XXB | $XXB | $XXB | +X% / +X% |
+   | Profit Per Share You Own | $X.XX | $X.XX | $X.XX | +X% / +X% |
+
+   **The translation (REQUIRED):** "Analysts think {ticker} will grow sales by X% and profits by X% over the next two years. That means they expect the business to be [significantly / somewhat / barely] bigger than today. [If estimates are rising: 'And these estimates have been going UP — meaning the pros keep getting more optimistic.' / If falling: 'But these estimates have been coming DOWN — the pros are getting less excited.']"
+
+   **Why this matters for valuation:** "If analysts are right about X% profit growth, then today's P/E of Xx drops to Xx next year — which makes the stock [look even cheaper / still look pricey / look fairly priced] on a forward basis."
+
+3. **What's Already Priced In? (The Expectations Game)**
+   This is the concept most beginners miss, and it's the most important one in all of investing.
+
+   **The concept (REQUIRED — use an analogy):**
+   "Think of buying a stock like buying concert tickets on a resale site. A $300 ticket to see a new artist is a BET — you're paying extra because you believe the show will be incredible. If it IS incredible, great — you got your money's worth. If the artist has an off night, you overpaid.
+
+   Stocks work the same way. Today's stock price already includes a bet about how fast the company will grow. The question isn't 'Will {ticker} grow?' — it's 'Will they grow FASTER or SLOWER than what the price already assumes?'"
 
    **The simple version:** "At today's price of $XXX, the market is betting {ticker} will grow earnings by ~X% per year for the next 5 years. Based on the last 3 years of actual growth (X%), that seems [aggressive / reasonable / conservative]."
 
-   **How to frame it:**
-   - Market expects MORE than recent growth = "The price already assumes things get BETTER — if they don't, the stock could drop"
-   - Market expects LESS than recent growth = "The price assumes things slow down — if they maintain current pace, there's upside"
-   - Market expects about the same = "Fairly priced for current performance — no windfall, but no trap either"
+   **How to frame it for the reader:**
+   | What the Price Assumes | What It Means for You |
+   |----------------------|----------------------|
+   | Market expects MORE than recent growth | "The price already bets on things getting BETTER. If they don't improve — even if the business is fine — the stock could drop. You're paying for a promise." |
+   | Market expects LESS than recent growth | "The price assumes a slowdown. If {ticker} keeps growing at its current pace, there's upside — the market is underestimating them." |
+   | Market expects about the same | "Fairly priced for what they're doing right now. No windfall, but no trap either. You're paying a fair price for a fair business." |
 
-5. **Are You Paying a Fair Price for Growth? (PEG Ratio):**
-   P/E alone doesn't tell you much. A stock with a 30x P/E that's growing 30% per year is cheaper than a 15x P/E stock growing 5%.
+   **One-line verdict (REQUIRED):** "The market is pricing in [X% / aggressive / conservative] growth. Based on {ticker}'s recent trajectory of [X%], the stock appears to be [priced for perfection / priced for disappointment / fairly priced]. [This means there's room for a positive surprise / This means any stumble could hurt / This means the stock should track earnings growth closely.]"
 
-   **The PEG Ratio:** P/E ÷ Earnings Growth Rate = PEG
-   **{ticker}'s PEG:** X.Xx
+4. **Are You Paying a Fair Price for the Growth? (The Speed-of-Growth Check)**
 
-   **How to read it:**
-   - Under 1.0 = 🟢 "You're paying LESS than $1 for each % of growth — that's a deal"
-   - 1.0-2.0 = 🟡 "Fair price — you're paying about $1-2 for each % of growth"
-   - Above 2.0 = 🔴 "Expensive — you're paying a premium above what the growth justifies"
+   **The concept (REQUIRED — lead with the idea, NOT the formula):**
+   "Here's the thing about P/E — it doesn't tell the whole story by itself. A stock trading at 30x profits that's growing 30% per year is actually CHEAPER than a stock at 15x profits that's only growing 5%. Why? Because the fast grower delivers WAY more profit over time.
 
-   **One-liner:** "At a PEG of X.Xx, you're paying $X.XX for every percentage point of earnings growth — which is [a bargain / fair / steep] for this kind of company."
+   The PEG ratio captures this. Think of it as: **'How much am I paying for each mile-per-hour of growth?'** A sports car that costs $60K and goes 200 mph is a better deal per-mph than a sedan that costs $40K and goes 100 mph."
 
-**Translation for valuation terms:**
-- P/E = "How many years of profits to pay back your investment"
-- P/S = "What you pay for every $1 of sales"
-- P/B = "Stock price vs what the company owns on paper"
-- EV/EBITDA = "What a buyer would pay for the whole business"
-- ROE = "How much profit they make from shareholder money"
-- ROA = "How much profit they squeeze from everything they own"
-- PEG = "Are you paying a fair price for the growth you're getting?"
-- Mean Reversion = "Stocks tend to return to their historical average"
+   **{ticker}'s speed-of-growth price:** P/E (Xx) ÷ Earnings Growth Rate (X%) = **PEG of X.Xx**
+
+   **What your PEG means:**
+   | Your PEG | The Read | The Shopping Analogy |
+   |----------|----------|---------------------|
+   | Under 1.0 | 🟢 **Bargain** | "You're paying less than $1 for each mph of growth — like getting a sports car at sedan prices" |
+   | 1.0–2.0 | 🟡 **Fair price** | "You're paying $1-2 per mph of growth — reasonable for what you're getting" |
+   | Above 2.0 | 🔴 **Pricey** | "You're paying a luxury premium — this better be a really good car" |
+
+   **One-liner (REQUIRED):** "At a PEG of X.Xx, you're paying $X.XX for every percentage point of earnings growth — which is [a deal / fair / steep] for a [dominant market leader / fast-growing disruptor / mature business]."
 
 **Bottom line:** +/~/- indicator with mean reversion insight
-- "+" = Trading below historical avg AND analysts expect growth
-- "~" = Near historical avg OR mixed signals
-- "-" = Trading above historical avg AND/OR declining estimates
+- "+" = Trading below historical avg AND analysts expect growth — "On sale with tailwinds"
+- "~" = Near historical avg OR mixed signals — "Fair price, no edge either way"
+- "-" = Trading above historical avg AND/OR declining estimates — "Marked up or losing momentum"
 
 ### 9. Earnings Quality: [Dynamic Subtitle]
 **Format:** `## Earnings Quality: [Gap %, SBC %, or "Clean Books"]`
@@ -1325,6 +1378,7 @@ Before submitting, verify:
 - [ ] Profitability section includes operating leverage analysis (revenue CAGR vs opex CAGR)
 - [ ] Profitability section explains WHY margins are expanding/contracting (causal analysis)
 - [ ] Profitability section includes peer margin comparison table or industry benchmark
+- [ ] Profitability section includes ROE efficiency grade with letter scale (A+ through D)
 - [ ] Profitability momentum dashboard includes 8-quarter trend AND operating leverage visual
 - [ ] DCA scenario uses split 5-Year/10-Year tables with "Your $X Becomes" and "That's a Gain of" columns
 - [ ] Decision Triggers section has at least 2 bullish + 2 caution signals for BUY/HOLD, or 1 potential-turnaround + 1 continued-concern signal for SELL
@@ -1333,9 +1387,13 @@ Before submitting, verify:
 - [ ] Decision Triggers include a "check-in date" with next earnings date
 
 **v5.2 Section Depth Additions:**
-- [ ] Valuation includes "What Growth Is Already Baked In?" analysis (market expectations vs actual growth)
-- [ ] Valuation includes PEG ratio with plain English ("paying $X.XX per % of growth")
+- [ ] Valuation leads with P/E deep dive (concept explanation BEFORE numbers, shopping analogy, tangible example)
 - [ ] Valuation includes honesty check on 5-year average if outlier years exist (pandemic highs, earnings crashes)
+- [ ] Valuation includes P/S and EV/EBITDA as "supporting evidence" (NOT equal weight with P/E)
+- [ ] Valuation includes "What's Already Priced In?" with concert ticket/shopping analogy for expectations
+- [ ] Valuation includes PEG as "speed-of-growth check" with concept-first explanation (NOT formula-first)
+- [ ] Valuation uses a threading shopping analogy across all subsections
+- [ ] Profitability section includes ROE "Efficiency Grade" with letter grade scale and one-line read
 - [ ] Earnings Quality includes "What's Getting Added Back?" adjustment breakdown table
 - [ ] Earnings Quality includes "timing reality" explanation when D&A dominates the GAAP-to-adjusted gap
 - [ ] Earnings Quality includes "Is the Cash Real?" cash conversion trend table (3+ years of OCF/NI)

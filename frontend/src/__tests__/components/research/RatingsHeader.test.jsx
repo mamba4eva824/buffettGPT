@@ -1,7 +1,7 @@
 /**
  * RatingsHeader Component Tests
  *
- * P1 Tests for the report header showing ticker, verdict badge, and metadata.
+ * P1 Tests for the report header showing ticker, signal pills, and metadata.
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -46,101 +46,30 @@ describe('RatingsHeader', () => {
     });
   });
 
-  describe('Verdict Badge', () => {
-    it('should display BUY verdict with green styling', () => {
-      render(
-        <RatingsHeader
-          ticker="AAPL"
-          ratings={{ overall_verdict: 'BUY' }}
-        />
-      );
-      expect(screen.getByText('BUY')).toBeInTheDocument();
-      // Check for emerald/green styling
-      const badge = screen.getByText('BUY').closest('div');
-      expect(badge).toHaveClass('bg-emerald-50');
-    });
-
-    it('should display SELL verdict with red styling', () => {
-      render(
-        <RatingsHeader
-          ticker="AAPL"
-          ratings={{ overall_verdict: 'SELL' }}
-        />
-      );
-      expect(screen.getByText('SELL')).toBeInTheDocument();
-      const badge = screen.getByText('SELL').closest('div');
-      expect(badge).toHaveClass('bg-red-50');
-    });
-
-    it('should display HOLD verdict with amber styling', () => {
-      render(
-        <RatingsHeader
-          ticker="AAPL"
-          ratings={{ overall_verdict: 'HOLD' }}
-        />
-      );
-      expect(screen.getByText('HOLD')).toBeInTheDocument();
-      const badge = screen.getByText('HOLD').closest('div');
-      expect(badge).toHaveClass('bg-amber-50');
-    });
-
-    it('should handle lowercase verdict', () => {
-      render(
-        <RatingsHeader
-          ticker="AAPL"
-          ratings={{ overall_verdict: 'buy' }}
-        />
-      );
-      expect(screen.getByText('buy')).toBeInTheDocument();
-    });
-
-    it('should not display verdict badge when no verdict', () => {
-      render(<RatingsHeader ticker="AAPL" ratings={{}} />);
-      expect(screen.queryByText(/BUY|SELL|HOLD/)).not.toBeInTheDocument();
-    });
-
-    it('should not display verdict badge when ratings is empty', () => {
-      render(<RatingsHeader ticker="AAPL" />);
-      expect(screen.queryByText(/BUY|SELL|HOLD/)).not.toBeInTheDocument();
-    });
-  });
-
-  describe('Conviction Display', () => {
-    it('should display conviction level when provided', () => {
-      render(
-        <RatingsHeader
-          ticker="AAPL"
-          ratings={{ overall_verdict: 'BUY', conviction: 'High' }}
-        />
-      );
-      expect(screen.getByText('(High conviction)')).toBeInTheDocument();
-    });
-
-    it('should not display conviction when not provided', () => {
-      render(
-        <RatingsHeader
-          ticker="AAPL"
-          ratings={{ overall_verdict: 'BUY' }}
-        />
-      );
-      expect(screen.queryByText(/conviction/)).not.toBeInTheDocument();
-    });
-  });
-
   describe('Complete Header', () => {
-    it('should display all elements together', () => {
+    it('should display ticker and date together', () => {
       render(
         <RatingsHeader
           ticker="MSFT"
-          ratings={{ overall_verdict: 'HOLD', conviction: 'Medium' }}
+          ratings={{ growth: { rating: 'Strong' } }}
           generatedAt="2026-01-15T08:30:00Z"
         />
       );
 
       expect(screen.getByText('MSFT')).toBeInTheDocument();
       expect(screen.getByText('Jan 15, 2026')).toBeInTheDocument();
-      expect(screen.getByText('HOLD')).toBeInTheDocument();
-      expect(screen.getByText('(Medium conviction)')).toBeInTheDocument();
+      expect(screen.getByText(/Growth: Strong/)).toBeInTheDocument();
+    });
+
+    it('should not display verdict or conviction', () => {
+      render(
+        <RatingsHeader
+          ticker="AAPL"
+          ratings={{ overall_verdict: 'BUY', conviction: 'High' }}
+        />
+      );
+      expect(screen.queryByText('BUY')).not.toBeInTheDocument();
+      expect(screen.queryByText(/conviction/)).not.toBeInTheDocument();
     });
   });
 });

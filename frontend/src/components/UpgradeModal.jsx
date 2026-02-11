@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { X, Crown, Check, Zap, Loader2, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 /**
  * UpgradeModal - Modal for upgrading to Buffett Plus
@@ -30,8 +31,6 @@ export default function UpgradeModal({
     return () => document.removeEventListener('keydown', handleEscape);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
-
   const handleUpgrade = () => {
     if (!isLoading) {
       onUpgrade();
@@ -46,11 +45,24 @@ export default function UpgradeModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={handleBackdropClick}
-    >
-      <div className="bg-sand-50 dark:bg-warm-950 rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={handleBackdropClick}
+        >
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+          <motion.div
+            className="relative bg-sand-50 dark:bg-warm-950 rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            transition={{ duration: 0.2, delay: 0.05 }}
+          >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-sand-200 dark:border-warm-800">
           <div className="flex items-center gap-3">
@@ -93,16 +105,10 @@ export default function UpgradeModal({
               What you get:
             </h3>
             <PlusBenefit icon={<Zap className="h-4 w-4" />}>
-              <span className="font-medium">2,000,000 tokens/month</span> for follow-up questions
+              <span className="font-medium">AI-powered Q&A</span> on any investment report
             </PlusBenefit>
             <PlusBenefit icon={<Check className="h-4 w-4" />}>
-              Ask unlimited follow-up questions on any report
-            </PlusBenefit>
-            <PlusBenefit icon={<Check className="h-4 w-4" />}>
-              Full conversation history saved across sessions
-            </PlusBenefit>
-            <PlusBenefit icon={<Check className="h-4 w-4" />}>
-              Priority response times
+              Unlimited investment reports
             </PlusBenefit>
             <PlusBenefit icon={<Check className="h-4 w-4" />}>
               Early access to new features
@@ -171,19 +177,21 @@ export default function UpgradeModal({
                 <ul className="space-y-1.5 text-sand-600 dark:text-warm-200">
                   <li className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-indigo-500" />
-                    Unlimited reports
+                    Investment reports
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-4 h-4 text-indigo-500" />
-                    2M tokens/mo
+                    Follow-up questions
                   </li>
                 </ul>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

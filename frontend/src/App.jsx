@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
-import TokenUsageDisplay from "./components/TokenUsageDisplay.jsx";
-import SubscriptionManagement from "./components/SubscriptionManagement.jsx";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown } from "lucide-react";
+import SettingsPanel from "./components/SettingsPanel.jsx";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
@@ -14,32 +13,6 @@ import { ResearchProvider, useResearch } from "./contexts/ResearchContext.jsx";
 import SectionCard from "./components/research/SectionCard.jsx";
 import ResearchLayout from "./components/research/ResearchLayout.jsx";
 import { useCompanySearch } from "./hooks/useCompanySearch.js";
-
-// Research API URL for status checks
-const RESEARCH_API_URL = import.meta.env.VITE_RESEARCH_API_URL || 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
-
-/**
- * Check if a research report exists and is not expired.
- * Used when loading conversations with reference-only format.
- */
-async function checkReportStatus(ticker, token = null) {
-  try {
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-    const response = await fetch(`${RESEARCH_API_URL}/research/report/${ticker.toUpperCase()}/status`, { headers });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        return { exists: false, expired: true };
-      }
-      throw new Error(`Status check failed: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    logger.error('Error checking report status:', error);
-    return { exists: false, expired: true, error: error.message };
-  }
-}
 
 
 /*************************
@@ -166,6 +139,8 @@ function ChatApp() {
   // Refs for auto-scroll functionality
   const messagesEndRef = useRef(null);
   const lastUserMessageRef = useRef(null);
+  const chatScrollRef = useRef(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   // Refs for rate limit banner timeouts (to prevent memory leaks)
   const showBannerTimeoutRef = useRef(null);
@@ -226,6 +201,7 @@ function ChatApp() {
     currentStreamingSection,
     startResearch,
     fetchSection,
+    fetchSectionsBatch,
     setActiveSection,
     reset: resetResearch,
     loadSavedReport,  // Load report from history without streaming
@@ -349,7 +325,7 @@ function ChatApp() {
       setTimeout(() => {
         const sectionEl = document.getElementById(`section-${sectionId}`);
         if (sectionEl) {
-          sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }, 100);
       return;
@@ -363,7 +339,7 @@ function ChatApp() {
         setTimeout(() => {
           const sectionEl = document.getElementById(`section-${sectionId}`);
           if (sectionEl) {
-            sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
         }, 100);
       } catch (err) {
@@ -620,8 +596,10 @@ function ChatApp() {
     };
   }, []);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change (skip in research mode to avoid page shift)
   useEffect(() => {
+    if (showInvestmentResearch) return;
+
     const scrollTimeout = setTimeout(() => {
       if (messagesEndRef.current && messages.length > 0) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -629,7 +607,21 @@ function ChatApp() {
     }, 100);
 
     return () => clearTimeout(scrollTimeout);
-  }, [messages]);
+  }, [messages, showInvestmentResearch]);
+
+  // Track scroll position to show/hide "scroll to bottom" button
+  const handleChatScroll = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollToBottom(distanceFromBottom > 200);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, []);
 
   // Auto-open sidebar when user authenticates
   useEffect(() => {
@@ -1029,6 +1021,13 @@ function ChatApp() {
         }
 
         if (ticker) {
+          // Clean up previous state before entering research view
+          // (moved from onSelectConversation to avoid intermediate layout flash)
+          setCollapsedSections([]);
+          setUserExpandedSections(['01_executive_summary']);
+          setVisibleSections([]);
+          researchStateConversationRef.current = null;
+
           // Set up research view
           setShowInvestmentResearch(true);
 
@@ -1068,67 +1067,41 @@ function ChatApp() {
               ];
             }
 
-            // Check if report still exists and is not expired
-            const status = await checkReportStatus(ticker, token);
+            // Load metadata first, then batch fetch sections (replaces checkReportStatus + N individual fetches)
+            setUserExpandedSections(savedVisibleSections);
+            setVisibleSections(savedVisibleSections);
+            setCollapsedSections([...savedVisibleSections]);
 
-            if (!status.exists || status.expired) {
-              // Report has expired or doesn't exist
-              setUserExpandedSections(savedVisibleSections);
-              setVisibleSections(savedVisibleSections);
+            loadSavedReport({
+              ticker: ticker,
+              reportMeta: savedResearchData.reportMeta,
+              streamedContent: {},  // Empty - batch fetch will populate
+              activeSectionId: savedActiveSectionId,
+              followUpMessages: savedFollowUpMessages,
+              interactionLog: savedInteractionLog,
+            });
+            researchStateConversationRef.current = conversationId;
+            lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
+            lastSavedSectionsRef.current = savedVisibleSections.length;
 
-              // Load metadata-only (no content to display)
-              loadSavedReport({
-                ticker: ticker,
-                reportMeta: savedResearchData.reportMeta,
-                streamedContent: {},  // Empty - report expired
-                activeSectionId: savedActiveSectionId,  // Restore ToC highlight
-                followUpMessages: savedFollowUpMessages,
-                interactionLog: savedInteractionLog,  // Restore interaction timeline
-              });
-              // Track which conversation this research state belongs to (prevents cross-contamination on switch)
-              researchStateConversationRef.current = conversationId;
-              // Set counters to prevent re-saving loaded data
-              lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
-              lastSavedSectionsRef.current = savedVisibleSections.length;
-            } else {
-              // Report exists - load metadata and fetch sections on-demand
-              console.log('[ToC Load DEBUG] Report exists - calling setUserExpandedSections and setVisibleSections with:', savedVisibleSections);
-              setUserExpandedSections(savedVisibleSections);
-              setVisibleSections(savedVisibleSections);
-              setCollapsedSections([...savedVisibleSections]);
+            // Single batch fetch: gets all sections + report_exists in one request
+            try {
+              const batchResult = await fetchSectionsBatch(ticker, savedVisibleSections, token);
 
-              // Load with metadata, empty content (will be populated by fetchSection)
-              loadSavedReport({
-                ticker: ticker,
-                reportMeta: savedResearchData.reportMeta,
-                streamedContent: {},  // Empty - fetch on-demand
-                activeSectionId: savedActiveSectionId,  // Restore ToC highlight
-                followUpMessages: savedFollowUpMessages,
-                interactionLog: savedInteractionLog,  // Restore interaction timeline
-              });
-              // Track which conversation this research state belongs to (prevents cross-contamination on switch)
-              researchStateConversationRef.current = conversationId;
-              // Set counters to prevent re-saving loaded data
-              lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
-              lastSavedSectionsRef.current = savedVisibleSections.length;
-
-              // Fetch visible sections in parallel from investment_reports_v2
-              // Use animate: false for instant display when restoring saved conversations
-              try {
-                await Promise.all(
-                  savedVisibleSections.map(sectionId => fetchSection(ticker, sectionId, token, { animate: false }))
-                );
+              if (!batchResult.report_exists) {
+                // Report expired or doesn't exist — metadata is still shown, sections will be empty
+                logger.warn(`Report for ${ticker} not found or expired`);
+              } else {
                 // Scroll to restored active section after content loads
                 setTimeout(() => {
                   const sectionEl = document.getElementById(`section-${savedActiveSectionId}`);
                   if (sectionEl) {
-                    sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                   }
                 }, 150);
-              } catch (err) {
-                logger.error('Error fetching sections on-demand:', err);
-                // Continue anyway - partial content is better than none
               }
+            } catch (err) {
+              logger.error('Error batch fetching sections:', err);
             }
           } else if (isLegacyFormat) {
             // LEGACY FORMAT: Full content embedded - load directly (backward compatible)
@@ -1176,7 +1149,7 @@ function ChatApp() {
             setTimeout(() => {
               const sectionEl = document.getElementById(`section-${savedActiveSectionId}`);
               if (sectionEl) {
-                sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
               }
             }, 150);
           } else {
@@ -1215,14 +1188,19 @@ function ChatApp() {
       }
 
       // Regular conversation (including legacy "Analysis:" conversations) - show messages as chat
-      setShowInvestmentResearch(false);
+      // Clean up research state to avoid stale data from previous research conversation
+      resetResearch();
+      setCollapsedSections([]);
+      setUserExpandedSections(['01_executive_summary']);
+      setVisibleSections([]);
       researchStateConversationRef.current = null;
+      setShowInvestmentResearch(false);
       setMessages(formattedMessages);
     } catch (error) {
       logger.error('Error loading conversation messages:', error);
       // Don't alert on error, just log it
     }
-  }, [token, setMessages, startResearch, loadSavedReport, fetchSection, setInteractionLog]);
+  }, [token, setMessages, startResearch, loadSavedReport, fetchSection, fetchSectionsBatch, setInteractionLog, resetResearch]);
 
 
 
@@ -1242,7 +1220,7 @@ function ChatApp() {
           {/* Sidebar - Show for authenticated users (visible in all modes including Research) */}
           {isAuthenticated && (
             <aside className={classNames(
-              "shrink-0 border-r border-sand-100 dark:border-warm-800 transition-all duration-300 ease-in-out",
+              "shrink-0 border-r border-transparent hover:border-indigo-400 dark:hover:border-indigo-400 transition-all duration-300 ease-in-out",
               // Mobile: fixed overlay that slides in from left
               "fixed inset-y-0 left-0 z-50 bg-sand-50 dark:bg-warm-950",
               // Desktop: relative positioning (normal flow)
@@ -1325,13 +1303,13 @@ function ChatApp() {
 
             {sidebarOpen && (
               <div className="flex flex-col h-full pb-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-2">
               <button onClick={newChat} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg hover:bg-indigo-700 hover:shadow-indigo-200 dark:hover:shadow-warm-900/30 transition-all">
                 <Plus className="h-4 w-4"/> New Analysis
               </button>
             </div>
 
-            <div className="mt-4 h-8 flex items-center gap-2 rounded-full border border-sand-200/80 dark:border-warm-800/50 bg-sand-50/90 dark:bg-warm-900/50 backdrop-blur-sm px-3 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
+            <div className="mt-4 h-8 flex items-center gap-2 rounded-full border border-transparent bg-sand-50/90 dark:bg-warm-900/50 backdrop-blur-sm px-3 hover:border-indigo-400 dark:hover:border-indigo-400 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
               <Search className="h-3.5 w-3.5 text-sand-400"/>
               <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search" className="w-full bg-transparent text-xs outline-none placeholder:text-sand-400 dark:placeholder:text-warm-400"/>
             </div>
@@ -1366,20 +1344,10 @@ function ChatApp() {
                   )}
                   selectedConversation={selectedConversation}
                   onSelectConversation={async (conv) => {
-                    // Only clear messages if no cached data (avoids blank flash on revisit)
-                    const hasCached = !!conversationCacheRef.current[conv.conversation_id];
-                    if (!hasCached) {
-                      setMessages([]);
-                    }
-                    setShowInvestmentResearch(false);
-                    resetResearch();
-                    setCollapsedSections([]);
-                    setUserExpandedSections(['01_executive_summary']);
-                    setVisibleSections([]);
-                    researchStateConversationRef.current = null;
-
+                    // Set selection immediately for sidebar highlight
                     setSelectedConversation(conv);
-                    // Load messages for this conversation
+                    // Let loadConversationMessages handle layout transitions
+                    // to avoid intermediate empty/landing layout flash
                     if (conv.conversation_id) {
                       await loadConversationMessages(conv.conversation_id, conv.title);
                     }
@@ -1428,6 +1396,14 @@ function ChatApp() {
                 darkMode={darkMode}
                 onDarkModeToggle={toggleDarkMode}
                 dropdownPosition="top"
+                subscriptionTier={effectiveTokenUsage?.subscription_tier || 'free'}
+                onPlanClick={() => {
+                  const tier = effectiveTokenUsage?.subscription_tier || 'free';
+                  setSettingsOpen(true);
+                  if (tier !== 'plus') {
+                    setTimeout(() => setShowUpgradeModal(true), 300);
+                  }
+                }}
               />
             </div>
               </div>
@@ -1436,7 +1412,7 @@ function ChatApp() {
           )}
 
           {/* Main panel */}
-          <main className="relative flex min-w-0 flex-1 flex-col">
+          <main className="relative flex min-w-0 flex-1 flex-col min-h-0 overflow-hidden">
             {/* Header - minimal, only for mobile menu and non-authenticated users */}
             <div className="flex items-center justify-between px-4 md:px-6 py-2">
               <div className="flex items-center gap-2 md:gap-3">
@@ -1460,6 +1436,14 @@ function ChatApp() {
                     onSettingsClick={() => setSettingsOpen(true)}
                     darkMode={darkMode}
                     onDarkModeToggle={toggleDarkMode}
+                    subscriptionTier={effectiveTokenUsage?.subscription_tier || 'free'}
+                    onPlanClick={() => {
+                      const tier = effectiveTokenUsage?.subscription_tier || 'free';
+                      setSettingsOpen(true);
+                      if (tier !== 'plus') {
+                        setTimeout(() => setShowUpgradeModal(true), 300);
+                      }
+                    }}
                   />
                 )}
               </div>
@@ -1505,6 +1489,7 @@ function ChatApp() {
                     error={researchError}
                     progress={researchProgress}
                     tocWidth={researchTocWidth}
+                    visibleSections={visibleSections}
                     onSectionClick={handleTocSectionClick}
                     onClose={() => {
                       setShowInvestmentResearch(false);
@@ -1681,8 +1666,8 @@ function ChatApp() {
                   </ResearchLayout>
                 ) : (
                   /* REGULAR CHAT VIEW */
-                  <div className="flex-1 flex min-h-0">
-                    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
+                  <div className="flex-1 flex min-h-0 relative">
+                    <div ref={chatScrollRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
                       <div className="mx-auto max-w-4xl space-y-4">
                         {/* User messages */}
                         {messages.map((m) => {
@@ -1704,6 +1689,18 @@ function ChatApp() {
                         <div ref={messagesEndRef} />
                       </div>
                     </div>
+
+                    {/* Scroll to bottom button */}
+                    {showScrollToBottom && messages.length > 0 && (
+                      <button
+                        onClick={scrollToBottom}
+                        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-full bg-sand-100 dark:bg-warm-800 border border-sand-200 dark:border-warm-700 shadow-md px-3 py-1.5 text-xs font-medium text-sand-600 dark:text-warm-200 hover:bg-sand-200 dark:hover:bg-warm-700 transition-all"
+                        aria-label="Scroll to bottom"
+                      >
+                        <ChevronDown className="h-4 w-4 inline-block mr-1" />
+                        New messages
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1741,57 +1738,19 @@ function ChatApp() {
 
 
       {/* Settings Panel */}
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>setSettingsOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-full md:max-w-xl overflow-y-auto bg-sand-50 dark:bg-warm-950 shadow-xl" onClick={(e)=>e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-sand-100 dark:border-warm-800 px-4 md:px-6 py-4">
-              <div className="text-sm font-semibold text-sand-900 dark:text-warm-50">Settings</div>
-              <button onClick={()=>setSettingsOpen(false)} className="rounded-md border border-sand-200 dark:border-warm-800 px-3 py-2 md:px-2 md:py-1 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 active:bg-sand-100 dark:active:bg-warm-600">Close</button>
-            </div>
-            <div className="space-y-6 p-4 md:p-6">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-sand-500 dark:text-warm-300">User ID</label>
-                {isAuthenticated ? (
-                  <div className="w-full rounded-lg border border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 py-2 text-sm text-green-800 dark:text-green-300">
-                    {user?.id} (Google ID)
-                  </div>
-                ) : (
-                  <input value={userName} onChange={(e)=>setUserName(e.target.value)} className="w-full rounded-lg border border-sand-200 dark:border-warm-800 bg-sand-50 dark:bg-warm-900 px-3 py-2 text-sm text-sand-900 dark:text-warm-50 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"/>
-                )}
-                <div className="mt-1 text-[11px] text-sand-400 dark:text-warm-400">
-                  {isAuthenticated ?
-                    "Using your authenticated Google ID for consistent message tracking." :
-                    "Sign in to use your Google ID, or use a custom name for demo mode."
-                  }
-                </div>
-              </div>
-
-
-
-              {/* Token Usage Section */}
-              <TokenUsageDisplay
-                tokenUsage={effectiveTokenUsage}
-                isAuthenticated={isAuthenticated}
-                onUpgrade={() => setShowUpgradeModal(true)}
-              />
-
-              {/* Subscription Management Section */}
-              <SubscriptionManagement
-                token={token}
-                isAuthenticated={isAuthenticated}
-                showUpgradeModal={showUpgradeModal}
-                onShowUpgradeModalChange={setShowUpgradeModal}
-                onTokenUsageUpdate={setSettingsTokenUsage}
-              />
-
-              <div className="rounded-lg bg-sand-50 dark:bg-warm-900 p-3 text-sm text-sand-600 dark:text-warm-200">
-                <div className="font-medium text-sand-800 dark:text-warm-100 mb-2">About Buffett</div>
-                <p>Your personal AI assistant trained on Warren Buffett&apos;s investing wisdom and business philosophy. All connections are automatically configured and ready to use.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsPanel
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        user={user}
+        isAuthenticated={isAuthenticated}
+        userName={userName}
+        onUserNameChange={setUserName}
+        tokenUsage={effectiveTokenUsage}
+        token={token}
+        showUpgradeModal={showUpgradeModal}
+        onShowUpgradeModalChange={setShowUpgradeModal}
+        onTokenUsageUpdate={setSettingsTokenUsage}
+      />
     </div>
   );
 }
@@ -1945,7 +1904,7 @@ function SearchComposer({
     <div className="mx-auto max-w-3xl px-2 md:px-0">
       {/* Search Bar Container - iOS 26 liquid glass style */}
       <div className="relative">
-        <div className="relative flex items-center rounded-full border border-sand-200/80 dark:border-warm-800/50 bg-sand-50/90 dark:bg-warm-900/80 backdrop-blur-xl shadow-lg px-5 py-3.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
+        <div className="relative flex items-center rounded-full border border-sand-200/80 dark:border-warm-800/50 bg-sand-50/90 dark:bg-warm-900/80 backdrop-blur-xl shadow-lg px-5 py-2.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
           {/* Input */}
           <input
             ref={inputRef}
@@ -2088,9 +2047,10 @@ function DarkModeToggle({ darkMode, onToggle }) {
 }
 
 // Account Dropdown Component
-function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle, dropdownPosition = "bottom" }) {
+function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle, dropdownPosition = "bottom", subscriptionTier = "free", onPlanClick }) {
   const { user, isAuthenticated, logout } = useAuth();
   const dropdownRef = useRef(null);
+  const [learnMoreOpen, setLearnMoreOpen] = useState(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -2176,6 +2136,65 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
                   <Settings className="h-4 w-4" />
                   Settings
                 </button>
+                <button
+                  onClick={() => {
+                    onPlanClick?.();
+                    onToggle(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-2 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                >
+                  <Crown className="h-4 w-4" />
+                  {subscriptionTier === 'plus' ? 'Manage Plan' : 'Upgrade Plan'}
+                </button>
+                <div>
+                  <button
+                    onClick={() => setLearnMoreOpen(!learnMoreOpen)}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    <span className="flex-1 text-left">Learn More</span>
+                    <ChevronRight className={classNames(
+                      "h-3.5 w-3.5 text-sand-400 transition-transform duration-200",
+                      learnMoreOpen ? "rotate-90" : ""
+                    )} />
+                  </button>
+                  {learnMoreOpen && (
+                    <div className="py-1 pl-7">
+                      <a
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                        className="flex items-center gap-2.5 w-full px-4 py-1.5 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                      >
+                        <Shield className="h-3.5 w-3.5" />
+                        Privacy Policy
+                      </a>
+                      <a
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                        className="flex items-center gap-2.5 w-full px-4 py-1.5 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        Terms of Service
+                      </a>
+                      <a
+                        href="#"
+                        onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                        className="flex items-center gap-2.5 w-full px-4 py-1.5 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        Data Disclaimer
+                      </a>
+                    </div>
+                  )}
+                </div>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                  className="flex items-center gap-3 w-full px-4 py-2 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                  Get Help
+                </a>
                 <button
                   onClick={() => {
                     logout();

@@ -458,6 +458,52 @@ export function ResearchProvider({ children }) {
     }
   }, []);
 
+  // Batch fetch multiple sections in a single request
+  // Returns { sections, report_exists } — replaces N individual fetchSection calls + checkReportStatus
+  const fetchSectionsBatch = useCallback(async (ticker, sectionIds, token = null) => {
+    try {
+      const url = `${API_BASE}/research/report/${ticker.toUpperCase()}/sections`;
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ section_ids: sectionIds }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Dispatch each section into state (no animation for batch restore)
+      if (data.sections) {
+        for (const [sectionId, section] of Object.entries(data.sections)) {
+          dispatch({
+            type: ACTIONS.SET_SECTION,
+            sectionId,
+            title: section.title,
+            content: section.content,
+            part: section.part,
+            icon: section.icon,
+            word_count: section.word_count,
+            animate: false,
+          });
+        }
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Batch fetch sections error:', error);
+      dispatch({ type: ACTIONS.SET_ERROR, error: error.message });
+      throw error;
+    }
+  }, []);
+
   // Set active section
   const setActiveSection = useCallback((sectionId) => {
     dispatch({ type: ACTIONS.SET_ACTIVE_SECTION, sectionId });
@@ -654,6 +700,7 @@ export function ResearchProvider({ children }) {
     startResearch,
     abortStream,
     fetchSection,
+    fetchSectionsBatch,
     setActiveSection,
     reset,
     loadSavedReport,  // Load report from history without streaming

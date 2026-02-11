@@ -13,6 +13,7 @@ V2 Endpoints (section-based progressive loading):
 - GET /report/{ticker}/toc                 - Get ToC + ratings (JSON)
 - GET /report/{ticker}/status              - Check report existence/expiration (JSON)
 - GET /report/{ticker}/section/{section_id} - Get specific section (JSON)
+- POST /report/{ticker}/sections           - Batch fetch multiple sections (JSON)
 - GET /report/{ticker}/executive           - Get Part 1 executive sections (JSON)
 - GET /report/{ticker}/stream              - Stream all sections as SSE events (v2)
 """
@@ -44,6 +45,7 @@ from services.report_service import (
     get_executive,
     get_report_toc,
     get_report_section,
+    get_report_sections_batch,
     get_executive_sections,
     get_all_sections,
     check_report_exists_v2,
@@ -951,6 +953,63 @@ async def get_section(
         "icon": section.get('icon'),
         "word_count": section.get('word_count'),
         "display_order": section.get('display_order'),
+        "timestamp": datetime.utcnow().isoformat() + 'Z'
+    })
+
+
+@app.post("/report/{ticker}/sections")
+async def get_sections_batch(
+    request: Request,
+    ticker: str = Path(
+        ...,
+        description="Stock ticker symbol (e.g., AAPL, MSFT)",
+        min_length=1,
+        max_length=5
+    )
+):
+    """
+    Batch fetch multiple sections in a single request.
+
+    Replaces N individual GET /section/{id} calls with one POST.
+    Also returns report_exists flag, eliminating the need for a separate status check.
+
+    Request body:
+        {"section_ids": ["01_executive_summary", "06_growth", "07_profitability"]}
+
+    Returns:
+        JSONResponse with sections dict and report_exists boolean
+    """
+    ticker = ticker.upper().strip()
+    if not validate_ticker(ticker):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid ticker format: {ticker}. Must be 1-5 letters."
+        )
+
+    body = await request.json()
+    section_ids = body.get('section_ids', [])
+
+    if not isinstance(section_ids, list) or len(section_ids) == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="section_ids must be a non-empty list"
+        )
+
+    if len(section_ids) > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="Maximum 20 sections per batch request"
+        )
+
+    logger.info(f"Batch fetching {len(section_ids)} sections for {ticker}")
+
+    result = get_report_sections_batch(ticker, section_ids)
+
+    return JSONResponse(content={
+        "success": True,
+        "ticker": ticker,
+        "sections": result['sections'],
+        "report_exists": result['report_exists'],
         "timestamp": datetime.utcnow().isoformat() + 'Z'
     })
 
