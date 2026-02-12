@@ -175,6 +175,16 @@ resource "aws_iam_role_policy" "followup_action" {
           "kms:Decrypt"
         ]
         Resource = var.kms_key_arn
+      },
+      # ECR (pull Docker image for container-based Lambda)
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages"
+        ]
+        Resource = aws_ecr_repository.followup_action.arn
       }
     ]
   })
