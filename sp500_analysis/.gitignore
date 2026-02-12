@@ -1,0 +1,9 @@
+# Raw data files (fetched from FMP API, stay local)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/

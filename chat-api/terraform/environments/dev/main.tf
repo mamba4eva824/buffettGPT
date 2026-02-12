@@ -76,6 +76,9 @@ locals {
 
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
+
+    # Waitlist Table
+    WAITLIST_TABLE = module.dynamodb.waitlist_table_name
   }
 
   # Function-specific environment variables
@@ -223,6 +226,9 @@ module "api_gateway" {
   # Subscription/Stripe API (checkout, portal, status, webhook)
   enable_subscription_routes = true
   enable_stripe_webhook      = true
+
+  # Waitlist API (signup, status, referral tracking)
+  enable_waitlist_routes = true
 
   common_tags = local.common_tags
 }

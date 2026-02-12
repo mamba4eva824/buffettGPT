@@ -1,147 +1,285 @@
-# GSD Plan: Enhanced Settings Page
+# BuffettGPT MVP Implementation Guide
 
-## Phase 1: Audit Snapshot
-
-### Knowns / Evidence
-- **Current settings** is a slide-out panel from the right (~50 lines inline in App.jsx, lines 1748-1799)
-- Contains only: User ID field, TokenUsageDisplay, SubscriptionManagement, and a short "About" blurb
-- **No routing library** — the app uses state-driven navigation (e.g., `showInvestmentResearch` toggles views)
-- Existing subscription/usage components are well-built: `TokenUsageDisplay`, `SubscriptionCard`, `SubscriptionManagement`, `UpgradeModal`
-- Design system: Tailwind CSS with custom `warm`/`sand` color palettes, `rust` accent, dark mode via `darkMode: 'class'`
-- Icons: Lucide React; Animations: Framer Motion; Font: Inter
-- Auth: Google OAuth with JWT, `useAuth` hook provides `user`, `token`, `isAuthenticated`
-- Dark mode toggle currently lives **only** in the AccountDropdown, not in settings
-- App.jsx is already **2,220 lines** — a monolithic component that needs reduction
-
-### Unknowns / Gaps
-- Whether users want notification preferences, email preferences, or data export
-- Whether keyboard shortcuts or accessibility preferences are desired
-- Privacy/data deletion requirements (GDPR, etc.)
-
-### Constraints
-- No router — settings must use the existing state-toggle pattern or remain a panel
-- Must support both authenticated and unauthenticated states
-- Dark/light mode must work across all sections
-- Mobile-responsive (Tailwind breakpoints)
-- **Must reduce** App.jsx complexity, not add to it
-
-### Risks
-1. **App.jsx complexity** — Adding more inline settings content worsens an already-large file
-2. **Feature creep** — Settings pages tend to grow unchecked; need clear boundaries
-3. **Prop drilling** — SettingsPanel needs many props from App.jsx (manageable for now)
+**Last Updated:** February 11, 2026
 
 ---
 
-## Phase 2: PRD (Product Requirements)
+## MVP Overview
 
-### Goal
-Transform the minimal settings slide-out into a professional, well-organized Settings panel that feels complete and trustworthy, while keeping the warm, approachable BuffettGPT personality.
+BuffettGPT is a Warren Buffett-themed AI financial advisor with investment research reports, follow-up Q&A, and a subscription model. The MVP targets launch with:
 
-### Acceptance Criteria
-
-**AC-1: Component Extraction**
-Given the settings panel code is currently inline in App.jsx (~50 lines), when the enhancement is complete, then all settings UI lives in a dedicated `SettingsPanel.jsx` component file with a clean prop interface.
-
-**AC-2: Section Organization**
-Given a user opens settings, when the panel renders, then content is organized into four clearly labeled sections with visual separators and icons:
-- **Profile** — User identity and account info
-- **Subscription & Usage** — Plan details, token usage, upgrade
-- **Appearance** — Dark mode toggle
-- **About** — App info, version, links
-
-**AC-3: Profile Section**
-Given an authenticated user, when they view the Profile section, then they see:
-- Profile picture (from Google via Avatar component), name, and email displayed clearly
-- Google ID shown in subtle secondary text
-- For unauthenticated: username input + "Sign in" CTA
-
-**AC-4: Appearance Section**
-Given a user views the Appearance section, when they toggle dark mode, then the toggle works immediately and persists. The dark mode toggle is available in Settings (the quick-toggle in AccountDropdown also remains as a convenience).
-
-**AC-5: Subscription & Usage Section**
-Given the existing `TokenUsageDisplay` and `SubscriptionManagement` components, when they render in the settings panel, then they maintain all current functionality, grouped under a "Subscription & Usage" heading.
-
-**AC-6: About Section**
-Given a user views the About section, then they see:
-- App description (BuffettGPT tagline)
-- Version display
-- Placeholder links: Privacy Policy, Terms of Service
-- "Powered by" credit line
-
-**AC-7: Mobile Responsive**
-Given a mobile user, when they open settings, then the panel is full-width with comfortable touch targets and proper scrolling.
-
-**AC-8: Visual Polish**
-- Section headers use Lucide icons for scannability
-- Smooth Framer Motion slide-in/out animation
-- Consistent spacing and visual hierarchy
-- Matches the warm, professional tone of the app
-
-**AC-9: Close Behavior**
-Given the settings panel is open, when user clicks backdrop, presses Escape, or clicks Close, then the panel closes.
+1. **Core Product** — AI chat + investment research reports (v5.1 prompt)
+2. **Monetization** — Stripe subscription (Free / Plus tiers) with token-based usage limits
+3. **Growth** — Waitlist landing page with referral system + content marketing blog
+4. **Content** — Batch-generated investment reports for S&P 500 and Nasdaq
 
 ---
 
-## Phase 3: Implementation Plan
+## Workstream Status
 
-### Objective
-Extract and enhance the settings panel into a standalone, well-organized component with clear sections, improved profile display, dark mode toggle, and a polished About section.
+### 1. Core Chat API & Infrastructure
+**Status: COMPLETE**
 
-### Approach Summary
-Create a new `SettingsPanel.jsx` component that replaces the inline settings panel in App.jsx. Use a vertically scrollable layout with clearly delineated sections (no tabs — vertical scroll with section headers is cleaner and more mobile-friendly for 4 sections). Add Framer Motion `AnimatePresence` for slide-in/out, Escape key handling, and an improved profile display.
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Lambda functions (7 handlers) | Done | auth, chat, conversations, subscription, webhook, analysis, search |
+| API Gateway (HTTP) | Done | All routes configured with CORS |
+| DynamoDB tables (6+) | Done | Messages, conversations, users, rate limits, usage, sessions |
+| Bedrock integration | Done | Claude Haiku + Knowledge Bases + Guardrails |
+| Google OAuth | Done | JWT-based auth flow |
+| CloudFront + S3 static site | Done | CDN for React frontend |
+| CI/CD (3 pipelines) | Done | dev (auto), staging (auto), prod (manual approval) |
 
-### Steps
+### 2. Stripe Subscription & Token Limiting
+**Status: COMPLETE**
 
-| # | Task | Dependencies | Files | Verification |
-|---|------|-------------|-------|-------------|
-| 1 | Create `SettingsPanel.jsx` with panel shell, backdrop, Escape key, Framer Motion animation | None | `components/SettingsPanel.jsx` | Renders, opens/closes |
-| 2 | Build Profile section — avatar, name, email (auth); username input (unauth) | 1 | `SettingsPanel.jsx` | Correct display for both auth states |
-| 3 | Build Subscription & Usage section — embed `TokenUsageDisplay` + `SubscriptionManagement` | 1 | `SettingsPanel.jsx` | All existing subscription features work |
-| 4 | Build Appearance section — dark mode toggle with switch UI | 1 | `SettingsPanel.jsx` | Toggle works and persists |
-| 5 | Build About section — tagline, version, placeholder links | 1 | `SettingsPanel.jsx` | Renders correctly |
-| 6 | Integrate into App.jsx — replace inline panel, pass props | 1-5 | `App.jsx` | Settings opens/closes, all features preserved |
-| 7 | Run lint + build verification gates | 6 | — | `npm run lint` + `npm run build` pass |
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Stripe product + pricing | Done | Free / Plus tiers |
+| `subscription_handler.py` | Done | Manage subscriptions via API |
+| `stripe_webhook_handler.py` | Done | Process Stripe events (checkout, invoice, cancellation) |
+| Token usage tracking | Done | DynamoDB `token-usage-dev-buffett` table, anniversary-based billing periods |
+| Rate limiting by tier | Done | Anonymous: 5/mo, Free: 500/mo, Plus: higher limits |
+| Secrets Manager integration | Done | `stripe-secret-key-{env}`, `stripe-webhook-secret-{env}`, etc. |
+| **Testing** | **Done** | Unit tests, E2E tests, integration tests, security tests on API endpoints |
 
-### Files Changed
-| File | Change |
-|------|--------|
-| `frontend/src/components/SettingsPanel.jsx` | **NEW** — Full settings panel component |
-| `frontend/src/App.jsx` | Replace ~50 lines of inline panel with `<SettingsPanel />` import |
+### 3. Investment Research Reports
+**Status: COMPLETE (generation pipeline), IN PROGRESS (batch execution)**
 
-### Files Reused As-Is (no changes)
-- `TokenUsageDisplay.jsx`, `SubscriptionManagement.jsx`, `SubscriptionCard.jsx`, `UpgradeModal.jsx`, `Avatar.jsx`
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `ReportGenerator` class | Done | 2,163 lines, Claude Code mode (no API key needed) |
+| Prompt v5.1 (latest) | Done | Revenue stickiness, margin waterfall, operating leverage, decision triggers |
+| Metrics caching to DynamoDB | Done | 7 categories x N quarters → `metrics-history-dev` |
+| Follow-up Agent (Bedrock) | Done | Q&A using cached metrics + report context |
+| Section parser + DynamoDB V2 | Done | 12 items per report (executive + 11 sections) |
+| Multi-currency support | Done | USD, EUR, etc. |
+| **Batch generation scripts** | **Done (code)** | CLI, parallel tmux/Terminal runners, verify, stale check |
+| **Batch execution (S&P 500 + Nasdaq)** | **NOT STARTED** | Need to run for full coverage — see Workstream 6 |
+
+### 4. Waitlist Landing Page & Referral System
+**Status: COMPLETE (code), IN PROGRESS (testing & security)**
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| **Backend** | | |
+| `waitlist_handler.py` | Done | 414 lines — signup, status, referral tracking |
+| Rate limiting (5/IP/hr) | Done | TTL-based cleanup |
+| Disposable email blocking | Done | 15 domains blocked |
+| Self-referral prevention | Done | |
+| `BUFF-XXXX` referral codes | Done | Branded, alphanumeric |
+| 3-tier reward system | Done | 1 ref → Early Access, 3 → 1mo Free Plus, 10 → 3mo Free Plus |
+| DynamoDB waitlist table | Done | KMS encrypted, GSI on referral_code, TTL enabled |
+| **Infrastructure** | | |
+| Terraform (table, Lambda, API GW) | Done | Feature-flagged: `enable_waitlist_routes = true` in dev |
+| Build script updated | Done | `waitlist_handler` in build list |
+| **Frontend** | | |
+| `WaitlistPage.jsx` | Done | 617 lines — signup form + dashboard + sample report preview |
+| `TierProgress.jsx` | Done | Animated progress bar with milestone markers |
+| `waitlistApi.js` | Done | signup() + getStatus() API client |
+| App.jsx integration | Done | Lazy-loaded, feature-flagged via `VITE_ENABLE_WAITLIST` |
+| Social sharing (X, LinkedIn) | Done | Pre-filled share messages |
+| localStorage persistence | Done | Returning visitors see dashboard |
+| **Documentation** | | |
+| `docs/referral/executive-summary.md` | Done | Architecture, data model, deployment checklist |
+| `buffett_elevator_pitch.md` | Done | Messaging framework for marketing |
+| **Remaining Work** | | |
+| Referral system E2E testing | Not Started | Signup → referral credit → status → sharing flow |
+| Security patching (referral) | Not Started | Abuse vectors, rate limit edge cases |
+| Backend unit tests | Not Started | `test_waitlist_handler.py` with moto |
+| `FRONTEND_URL` env var | Not Done | Defaults to `localhost:3000`, needs CloudFront URL |
+| `VITE_ENABLE_WAITLIST=true` | Not Set | Must add to frontend build env |
+
+### 5. Content Marketing — S&P 500 Blog Post
+**Status: IN PROGRESS (writing)**
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| FMP data pipeline | Done | `fetch_sp500_data.py` — 498 companies, 20 quarters, 59 MB |
+| DataFrame transform | Done | `build_dataset.py` — 4 Parquet files, derived Silverblatt columns |
+| `SP500_SILVERBLATT_REPORT.md` | Done | 6-section market analysis (buybacks, dividends, earnings, etc.) |
+| `REPORT_REFINEMENTS.md` | Done | Advance/decline breadth, 4% Rule watchlist, Dividend Aristocrats |
+| **Medium / LinkedIn blog post** | **In Progress** | Writing based on completed analysis |
+
+### 6. Batch Report Generation (S&P 500 + Nasdaq)
+**Status: NOT STARTED (scripts ready, execution pending)**
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| `prepare_batch_data.py` | Done | Pre-fetches FMP data, saves JSON, caches metrics |
+| `batch_cli.py` | Done | Unified CLI: prepare, parallel, verify, stale, status |
+| `run_parallel_reports.sh` | Done | 5 parallel tmux sessions |
+| `run_simulation.sh` | Done | Test with 1-2 tickers before scaling |
+| `open_parallel_terminals.sh` | Done | macOS Terminal.app alternative |
+| `check_stale_reports.py` | Done | Detect reports needing refresh (new earnings) |
+| `verify_reports.py` | Done | Confirm reports exist in DynamoDB |
+| Test suite | Done | 4 test files covering all batch components |
+| **Default prompt version** | **Needs Update** | Scripts default to v4.8, should be **v5.1** |
+| **S&P 500 batch execution** | **Not Started** | ~500 tickers → dev + prod DynamoDB |
+| **Nasdaq batch execution** | **Not Started** | Need ticker list + execution |
+| **Prod deployment** | **Not Started** | Reports must be uploaded to production tables too |
+
+**Batch execution workflow:**
+```
+1. Update default prompt version to 5.1 in all scripts
+2. prepare_batch_data.py → fetch FMP data for all tickers
+3. run_parallel_reports.sh → 5 tmux sessions generate reports
+4. verify_reports.py → confirm all reports saved
+5. Repeat for prod environment (--env prod)
+```
 
 ---
 
-## Phase 4: Self-Critique (Red Team)
+## Deployment Checklist
 
-### Fragile Assumptions
+### Pre-Launch (Must Have)
 
-1. **"Four sections is enough"** — Users may expect notification preferences, data export, or connected accounts. Starting lean is correct — these can be added as new sections later without restructuring.
+- [x] Stripe subscription integration (Free / Plus tiers)
+- [x] Token usage tracking and enforcement
+- [x] Unit, E2E, integration, and security tests for subscription/webhook
+- [x] Waitlist Lambda + DynamoDB + API Gateway deployed to dev
+- [x] Waitlist frontend components complete
+- [x] Referral system (signup, codes, tier rewards, sharing)
+- [x] S&P 500 market analysis data pipeline complete
+- [ ] **Referral system E2E testing** — full flow smoke test
+- [ ] **Referral security patching** — abuse prevention, edge cases
+- [ ] **Backend unit tests for waitlist** — `test_waitlist_handler.py`
+- [ ] **Set `FRONTEND_URL` env var** — update from localhost to CloudFront URL
+- [ ] **Set `VITE_ENABLE_WAITLIST=true`** — activate landing page in build
+- [ ] **Update batch scripts to v5.1** — default prompt version in 4 files
+- [ ] **Run batch generation for S&P 500** — dev + prod
+- [ ] **Run batch generation for Nasdaq** — dev + prod
 
-2. **"No routing needed"** — If settings grows to need sub-pages (billing history, detailed preferences), we'd eventually want React Router. For now, a single scrollable panel is the right call.
+### Pre-Launch (Should Have)
 
-3. **"Prop drilling is manageable"** — SettingsPanel needs ~10 props. If it grows beyond 12-15, a SettingsContext would help, but that's premature now.
+- [ ] Post-deploy smoke test script (curl-based)
+- [ ] Staging environment wiring for waitlist
+- [ ] Production environment wiring for waitlist
+- [ ] Medium blog post published (S&P 500 analysis)
+- [ ] LinkedIn blog post published
 
-### Failure Modes
+### Post-Launch (Nice to Have)
 
-1. **Animation jank** — Framer Motion slide-in with backdrop blur is standard usage, low risk.
-2. **Mobile scroll lock** — Current `fixed inset-0` pattern already prevents background scroll. Maintained.
-3. **Dark mode state source of truth** — Both AccountDropdown and SettingsPanel reference the same `darkMode` state from App.jsx. No conflict since both receive it as props.
+- [ ] Email notifications via SES (waitlist signup confirmation, tier upgrades)
+- [ ] Admin dashboard (view signups, referral leaderboard)
+- [ ] Analytics events (conversion tracking)
+- [ ] Stale report auto-detection and refresh pipeline
 
-### What's the simplest version that delivers 80% of value?
+---
 
-The **biggest wins** are:
-1. **Extracting to a component** — Reduces App.jsx by ~50 lines, improves maintainability
-2. **Section headers with icons** — Makes settings scannable and professional
-3. **Better profile display** — Avatar + name instead of raw ID string
-4. **Dark mode in settings** — Logical placement users expect to find
+## Architecture Summary
 
-The About section polish and Framer Motion are low effort with high perceived-quality impact. Include them.
+```
+                    ┌─────────────────────────────────┐
+                    │     CloudFront + S3 (React)      │
+                    │  Landing Page / Waitlist / App    │
+                    └──────────────┬──────────────────┘
+                                   │
+                    ┌──────────────▼──────────────────┐
+                    │     API Gateway (HTTP API)       │
+                    │  /chat  /auth  /conversations    │
+                    │  /subscription  /stripe/webhook  │
+                    │  /waitlist/signup  /status        │
+                    └──────────────┬──────────────────┘
+                                   │
+              ┌────────────────────┼────────────────────┐
+              │                    │                     │
+     ┌────────▼────────┐ ┌────────▼────────┐ ┌─────────▼─────────┐
+     │  Auth Lambdas   │ │  Chat Lambdas   │ │ Billing Lambdas   │
+     │  (OAuth, JWT)   │ │  (Bedrock, KB)  │ │ (Stripe, Tokens)  │
+     └────────┬────────┘ └────────┬────────┘ └─────────┬─────────┘
+              │                    │                     │
+              └────────────────────┼─────────────────────┘
+                                   │
+                    ┌──────────────▼──────────────────┐
+                    │          DynamoDB Tables          │
+                    │  messages | conversations | users │
+                    │  rate-limits | token-usage        │
+                    │  investment-reports-v2 | metrics  │
+                    │  waitlist                         │
+                    └──────────────────────────────────┘
+```
 
-### What's NOT in scope (intentionally)
-- Notification preferences (no notification system exists)
-- Data export / account deletion (needs backend API work)
-- Keyboard shortcut preferences (no shortcut system exists)
-- Theme color customization (over-engineering)
-- Settings persistence to backend (localStorage is fine for now)
+---
+
+## Key File Reference
+
+| Area | Key Files |
+|------|-----------|
+| **Handlers** | `chat-api/backend/src/handlers/*.py` (7 Lambdas) |
+| **Report Gen** | `chat-api/backend/investment_research/report_generator.py` |
+| **Batch Gen** | `chat-api/backend/investment_research/batch_generation/batch_cli.py` |
+| **Batch Scripts** | `batch_generation/run_parallel_reports.sh`, `run_simulation.sh` |
+| **Prompts** | `investment_research/prompts/investment_report_prompt_v5_1.txt` |
+| **Waitlist** | `frontend/src/components/waitlist/WaitlistPage.jsx` |
+| **Referral Docs** | `docs/referral/executive-summary.md` |
+| **S&P 500 Blog** | `sp500_analysis/SP500_SILVERBLATT_REPORT.md` |
+| **Terraform** | `chat-api/terraform/environments/dev/main.tf` |
+| **CI/CD** | `.github/workflows/deploy-{dev,staging,prod}.yml` |
+
+---
+
+## Batch Report Generation — Execution Plan
+
+### Current State
+- All batch generation scripts are **code-complete and tested**
+- Default prompt version in scripts is **v4.8** (needs update to **v5.1**)
+- Currently only DJIA 30 tickers are hardcoded in scripts
+- Need to expand to full **S&P 500** (~500 tickers) and **Nasdaq** (~100+ tickers)
+- Reports must be uploaded to both **dev** and **prod** DynamoDB tables
+
+### Execution Steps
+
+1. **Update defaults** — Change prompt version from 4.8 → 5.1 in:
+   - `batch_cli.py` (line 175)
+   - `run_parallel_reports.sh` (line 33)
+   - `run_simulation.sh` (line 26)
+   - `open_parallel_terminals.sh` (line 34)
+
+2. **Prepare ticker lists** — Create/update ticker lists for S&P 500 and Nasdaq batches
+
+3. **Run simulation** — Test with 2-3 tickers to validate v5.1 flow end-to-end:
+   ```bash
+   ./run_simulation.sh --prompt-version 5.1 --tickers AAPL,MSFT
+   ```
+
+4. **Batch prepare** — Pre-fetch FMP data + cache metrics for all tickers:
+   ```bash
+   python -m investment_research.batch_generation.batch_cli prepare --prompt-version 5.1
+   ```
+
+5. **Batch generate** — Run parallel tmux sessions:
+   ```bash
+   ./run_parallel_reports.sh --prompt-version 5.1
+   ```
+
+6. **Verify** — Confirm all reports saved:
+   ```bash
+   python -m investment_research.batch_generation.batch_cli verify
+   ```
+
+7. **Deploy to prod** — Re-run verify and any missing reports against prod:
+   ```bash
+   python -m investment_research.batch_generation.batch_cli verify --env prod
+   ```
+
+---
+
+## Content Marketing — Blog Publication Plan
+
+### S&P 500 Silverblatt-Style Analysis
+
+**Data complete.** 498 companies, 20 quarters, 59 MB raw data transformed into analysis-ready Parquet files.
+
+**Report sections written:**
+- Monthly Market Attributes (index returns, P/E, sector weights)
+- Buyback & Tax Analysis ($1T/year buybacks, Top 20 Rule, SBC dilution)
+- Share Count Reduction (4% Rule, top reducers/diluters)
+- Operating vs GAAP Earnings (margin trends, quality gap)
+- Dividend Dynamics (payout ratios, yield compression)
+- Legacy Statistics (5-year returns: +76.3% cumulative, 12.0% annualized)
+
+**Publication targets:**
+- [ ] Medium blog post (in progress)
+- [ ] LinkedIn article (in progress)
+- [ ] Cross-promote with BuffettGPT waitlist link + referral codes
