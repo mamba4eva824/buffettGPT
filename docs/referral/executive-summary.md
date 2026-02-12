@@ -1,7 +1,7 @@
 # BuffettGPT Viral Waitlist & Referral System
 
-**Status:** Implementation Complete | Deployment Pending
-**Date:** February 2026
+**Status:** Deployed to Dev | Unit Tests Complete | E2E Tests Complete
+**Date:** February 12, 2026
 **Author:** Engineering
 
 ---
@@ -66,7 +66,7 @@ When someone clicks a referral link (`?ref=BUFF-XXXX`), the landing page auto-fi
 
 ### Data Model
 
-**DynamoDB Table:** `buffett-chat-api-{env}-waitlist`
+**DynamoDB Table:** `waitlist-{env}-{project_name}` (e.g., `waitlist-dev-buffett`)
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -120,6 +120,8 @@ Both endpoints include CORS preflight (OPTIONS) routes.
 - [x] Duplicate email handling (409 with code recovery)
 - [x] Queue position calculation
 - [x] Tier progress computation (current tier, next tier, referrals needed)
+- [x] Unit tests: 41 tests, 98% coverage (`test_waitlist_handler.py`)
+- [x] Bug fix: missing `:waitlisted` expression attribute in referral credit logic
 
 ### Infrastructure (Complete)
 
@@ -131,6 +133,10 @@ Both endpoints include CORS preflight (OPTIONS) routes.
 - [x] Dev environment wired (`WAITLIST_TABLE` env var, routes enabled)
 - [x] Build script includes `waitlist_handler`
 - [x] Existing CI/CD pipeline covers deployment (no custom steps needed)
+- [x] Dev deployment verified (Lambda + API Gateway live, smoke tested 2026-02-12)
+- [x] DynamoDB table renamed to `waitlist-{env}-{project_name}` schema (deployed 2026-02-12)
+- [x] IAM policy updated with waitlist table ARNs (`core/main.tf`)
+- [x] E2E test suite: 24 tests against live dev API (`test_waitlist_e2e.py`)
 
 ### Frontend (Complete)
 
@@ -150,20 +156,20 @@ Both endpoints include CORS preflight (OPTIONS) routes.
 
 ### Must-Have Before Launch
 
-| Item | Priority | Effort | Notes |
-|------|----------|--------|-------|
-| Deploy to dev | High | 15 min | `git push origin dev` triggers CI/CD |
-| Set `VITE_ENABLE_WAITLIST=true` in env | High | 5 min | Add to `.env` files or CI/CD build args |
-| Manual E2E smoke test | High | 30 min | Verify signup, referral credit, status, sharing |
-| Update `FRONTEND_URL` in handler | High | 10 min | Currently defaults to `localhost:3000`; needs CloudFront URL via Terraform env var |
+| Item | Priority | Effort | Status |
+|------|----------|--------|--------|
+| ~~Deploy to dev~~ | High | 15 min | **Done** (2026-02-12) |
+| Set `VITE_ENABLE_WAITLIST=true` in env | High | 5 min | Pending |
+| ~~Manual E2E smoke test~~ | High | 30 min | **Done** (API verified via curl) |
+| Update `FRONTEND_URL` in handler | High | 10 min | Deferred (no domain yet, using `localhost:3000` for dev) |
 
 ### Should-Have Before Launch
 
-| Item | Priority | Effort | Notes |
-|------|----------|--------|-------|
-| Backend unit tests | Medium | 2-3 hrs | `test_waitlist_handler.py` with moto mocking |
-| Post-deploy smoke test script | Medium | 30 min | Curl-based endpoint verification |
-| Staging/prod environment wiring | Medium | 30 min | Add `WAITLIST_TABLE` + `enable_waitlist_routes` to staging/prod `main.tf` |
+| Item | Priority | Effort | Status |
+|------|----------|--------|--------|
+| ~~Backend unit tests~~ | Medium | 2-3 hrs | **Done** (41 tests, 98% coverage) |
+| ~~E2E test suite against live API~~ | Medium | 1-2 hrs | **Done** (24 tests, 2026-02-12) |
+| Staging/prod environment wiring | Medium | 30 min | Pending |
 
 ### Nice-to-Have (Post-Launch)
 
@@ -194,6 +200,8 @@ Both endpoints include CORS preflight (OPTIONS) routes.
 ```
 Backend
   chat-api/backend/src/handlers/waitlist_handler.py
+  chat-api/backend/tests/test_waitlist_handler.py
+  chat-api/backend/tests/e2e/test_waitlist_e2e.py
 
 Infrastructure
   chat-api/terraform/modules/dynamodb/waitlist.tf

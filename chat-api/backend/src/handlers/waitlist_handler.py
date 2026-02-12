@@ -27,7 +27,7 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 
 # Environment variables
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
-WAITLIST_TABLE = os.environ.get('WAITLIST_TABLE', f'buffett-chat-api-{ENVIRONMENT}-waitlist')
+WAITLIST_TABLE = os.environ.get('WAITLIST_TABLE', f'waitlist-{ENVIRONMENT}-buffett')
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 
 # Initialize DynamoDB
@@ -289,7 +289,7 @@ def _credit_referrer(referrer_email: str) -> None:
                 Key={'email': referrer_email},
                 UpdateExpression='SET #s = :status',
                 ExpressionAttributeNames={'#s': 'status'},
-                ExpressionAttributeValues={':status': 'early_access'},
+                ExpressionAttributeValues={':status': 'early_access', ':waitlisted': 'waitlisted'},
                 ConditionExpression='#s = :waitlisted',
             )
     except ClientError as e:
