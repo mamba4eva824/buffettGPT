@@ -2,7 +2,7 @@
 # Stores email signups, referral codes, and referral counts
 
 resource "aws_dynamodb_table" "waitlist" {
-  name         = "${var.project_name}-${var.environment}-waitlist"
+  name         = "waitlist-${var.environment}-${var.project_name}"
   billing_mode = var.billing_mode
 
   # Primary key
@@ -45,7 +45,7 @@ resource "aws_dynamodb_table" "waitlist" {
   tags = merge(
     var.common_tags,
     {
-      Name        = "${var.project_name}-${var.environment}-waitlist"
+      Name        = "waitlist-${var.environment}-${var.project_name}"
       Type        = "Waitlist"
       Description = "Viral waitlist with referral tracking"
     }

@@ -369,18 +369,6 @@ export default function WaitlistPage({ onEnterApp }) {
               historical discount. If you&apos;re investing for the long haul, NFLX deserves a serious look.
             </p>
 
-            {/* What Does NFLX Actually Do? */}
-            <h4 className="text-base font-bold text-sand-900 dark:text-warm-50 mb-2">
-              What Does NFLX Actually Do?
-            </h4>
-            <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed mb-6">
-              Netflix sells monthly streaming subscriptions to 300M+ households globally. You pay $7-$23/month,
-              they serve you shows, movies, and games. They make money the same way your landlord does — millions
-              of people paying a predictable monthly fee, rain or shine. The last time you couldn&apos;t sleep and ended
-              up watching three episodes of something at 1 AM, you were using their product. They recently added an
-              ad-supported tier and live events (NFL games, boxing matches) to bring in more tenants at lower price points.
-            </p>
-
             {/* Quick Health Check */}
             <h4 className="text-base font-bold text-sand-900 dark:text-warm-50 mb-3">
               Quick Health Check
@@ -442,69 +430,6 @@ export default function WaitlistPage({ onEnterApp }) {
               </table>
             </div>
 
-            {/* Investment Fit Assessment */}
-            <h4 className="text-base font-bold text-sand-900 dark:text-warm-50 mb-3">
-              Investment Fit Assessment
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30">
-                <span className="text-green-600 mt-0.5">✅</span>
-                <div>
-                  <span className="text-sm font-medium text-sand-800 dark:text-warm-100">Building first portfolio</span>
-                  <p className="text-xs text-sand-500 dark:text-warm-300 mt-0.5">Profitable, growing, dominant — a solid foundation stock</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30">
-                <span className="text-green-600 mt-0.5">✅</span>
-                <div>
-                  <span className="text-sm font-medium text-sand-800 dark:text-warm-100">Investing for 10+ years</span>
-                  <p className="text-xs text-sand-500 dark:text-warm-300 mt-0.5">Streaming leader with expanding margins — compounding machine</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200/50 dark:border-yellow-800/30">
-                <span className="text-yellow-600 mt-0.5">⚠️</span>
-                <div>
-                  <span className="text-sm font-medium text-sand-800 dark:text-warm-100">Has student debt</span>
-                  <p className="text-xs text-sand-500 dark:text-warm-300 mt-0.5">$1,000+/share — consider fractional shares</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200/50 dark:border-yellow-800/30">
-                <span className="text-yellow-600 mt-0.5">⚠️</span>
-                <div>
-                  <span className="text-sm font-medium text-sand-800 dark:text-warm-100">Needs money within 3 years</span>
-                  <p className="text-xs text-sand-500 dark:text-warm-300 mt-0.5">Tech multiples can swing 30-40% in a correction</p>
-                </div>
-              </div>
-            </div>
-
-            {/* The Verdict */}
-            <h4 className="text-base font-bold text-sand-900 dark:text-warm-50 mb-3">
-              The Verdict
-            </h4>
-            <div className="space-y-2 mb-4">
-              {[
-                { category: 'Are they growing?', rating: '⭐⭐⭐⭐', note: '17.6% growth at $45B scale — accelerating' },
-                { category: 'Are they profitable?', rating: '⭐⭐⭐⭐⭐', note: '24.3% net margin, up 10 pts in 3 years' },
-                { category: 'Is the profit real?', rating: '⭐⭐⭐', note: 'Large D&A gap is structural (content), not sketchy' },
-                { category: 'Is cash coming in?', rating: '⭐⭐⭐⭐⭐', note: '$9.5B FCF, 21% margin — cash machine' },
-                { category: 'Can they pay their debts?', rating: '⭐⭐⭐⭐', note: '$5.4B net debt, down from $12.1B — on track' },
-                { category: 'Is the stock cheap?', rating: '⭐⭐⭐⭐', note: '22% below 5-year P/E average' },
-                { category: 'Is your slice shrinking?', rating: '⭐⭐⭐⭐⭐', note: '$9.1B buybacks, only 1.1% SBC dilution' },
-              ].map((row) => (
-                <div key={row.category} className="flex items-center gap-3 text-sm">
-                  <span className="text-sand-700 dark:text-warm-100 font-medium w-40 shrink-0">{row.category}</span>
-                  <span className="w-24 shrink-0 text-xs">{row.rating}</span>
-                  <span className="text-sand-500 dark:text-warm-300">{row.note}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30">
-              <span className="text-lg font-bold text-green-700 dark:text-green-300">BUY</span>
-              <span className="text-sm text-sand-600 dark:text-warm-200">— Conviction: High</span>
-            </div>
-            <p className="mt-3 text-sm text-sand-500 dark:text-warm-300 italic">
-              &ldquo;If you&apos;re a long-term investor with $100-500/month to put to work, Netflix is a rare combination of growth, profitability, and a discount to its own history.&rdquo;
-            </p>
           </div>
 
           {/* Decision Triggers */}
