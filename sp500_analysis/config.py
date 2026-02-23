@@ -43,6 +43,9 @@ ENDPOINTS = {
     "cashflow_statement": "/stable/cash-flow-statement",
     "balance_sheet": "/stable/balance-sheet-statement",
     "dividends": "/stable/dividends",
+    # Stock price endpoints (Starter tier compatible)
+    "stock_price_change": "/stable/stock-price-change",          # Batch: up to 50 symbols
+    "historical_price_light": "/stable/historical-price-eod/light",  # 1 symbol at a time
 }
 
 # The financial statement types we fetch per company
@@ -66,7 +69,13 @@ OUTPUT_PATHS = {
     "company_financials_dir": os.path.join(DATA_DIR, "company_financials"),
     "company_profiles_dir": os.path.join(DATA_DIR, "company_profiles"),
     "company_dividends_dir": os.path.join(DATA_DIR, "company_dividends"),
+    "company_prices_dir": os.path.join(DATA_DIR, "company_prices"),
+    # Batch output files
+    "stock_price_changes": os.path.join(DATA_DIR, "stock_price_changes.json"),
 }
+
+# Batch size for stock-price-change endpoint (max 50 on Starter tier)
+PRICE_CHANGE_BATCH_SIZE = 50
 
 # ---------------------------------------------------------------------------
 # S&P 500 constituents (as of Feb 2026)

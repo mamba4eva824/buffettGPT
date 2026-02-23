@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Mail, Copy, CheckCircle, ArrowRight, BarChart3, MessageSquare, BookOpen, Users, ExternalLink, TrendingUp, AlertTriangle, Calendar, ChevronRight } from 'lucide-react';
+import { Mail, Copy, CheckCircle, ArrowRight, BarChart3, MessageSquare, BookOpen, Users, ExternalLink, TrendingUp, AlertTriangle, Calendar, ChevronRight, ChevronDown } from 'lucide-react';
 import TierProgress from './TierProgress';
 import { waitlistApi } from '../../api/waitlistApi';
 import logger from '../../utils/logger';
@@ -37,6 +37,8 @@ export default function WaitlistPage({ onEnterApp }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [honeypot, setHoneypot] = useState('');
+  const [showDecisionTriggers, setShowDecisionTriggers] = useState(false);
 
   // Dashboard state (after signup)
   const [dashboard, setDashboard] = useState(null);
@@ -74,13 +76,15 @@ export default function WaitlistPage({ onEnterApp }) {
 
   const handleSignup = async (e) => {
     e.preventDefault();
+    if (isLoading) return;
     setError('');
     setIsLoading(true);
 
     try {
       const result = await waitlistApi.signup(
         email.trim().toLowerCase(),
-        referralCodeInput || null
+        referralCodeInput || null,
+        honeypot ? { website: honeypot } : {},
       );
 
       // Save to localStorage for returning visits
@@ -137,7 +141,7 @@ export default function WaitlistPage({ onEnterApp }) {
             <h1 className="text-3xl font-bold text-sand-900 dark:text-warm-50 mb-2">
               You&apos;re on the list!
             </h1>
-            <div className="inline-flex items-center gap-2 bg-rust-500/10 text-rust-500 px-4 py-2 rounded-full text-sm font-medium">
+            <div className="inline-flex items-center gap-2 bg-indigo-600/10 text-indigo-600 px-4 py-2 rounded-full text-sm font-medium">
               <Users size={16} />
               #{dashboard.position} in line
             </div>
@@ -176,7 +180,7 @@ export default function WaitlistPage({ onEnterApp }) {
               />
               <button
                 onClick={() => copyToClipboard(dashboard.referral_link)}
-                className="px-4 py-2.5 rounded-lg bg-rust-500 hover:bg-rust-600 text-white text-sm font-medium transition-colors"
+                className="px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
               >
                 Copy
               </button>
@@ -205,8 +209,8 @@ export default function WaitlistPage({ onEnterApp }) {
             <TierProgress referralCount={dashboard.referral_count} />
 
             {dashboard.current_tier && (
-              <div className="mt-6 p-3 bg-rust-500/10 rounded-lg text-center">
-                <span className="text-sm font-medium text-rust-500">
+              <div className="mt-6 p-3 bg-indigo-600/10 rounded-lg text-center">
+                <span className="text-sm font-medium text-indigo-600">
                   Current reward: {dashboard.current_tier.reward}
                 </span>
               </div>
@@ -218,17 +222,23 @@ export default function WaitlistPage({ onEnterApp }) {
             )}
           </div>
 
-          {/* Enter App Link (for existing users) */}
-          {onEnterApp && (
-            <div className="text-center">
+          {/* Navigation Links */}
+          <div className="text-center space-y-2">
+            <button
+              onClick={() => setDashboard(null)}
+              className="block mx-auto text-sm text-sand-500 dark:text-warm-300 hover:text-indigo-600 transition-colors"
+            >
+              &larr; Back to home
+            </button>
+            {onEnterApp && (
               <button
                 onClick={onEnterApp}
-                className="text-sm text-sand-500 dark:text-warm-400 hover:text-rust-500 transition-colors"
+                className="block mx-auto text-sm text-sand-500 dark:text-warm-300 hover:text-indigo-600 transition-colors"
               >
                 Already have access? Enter the app &rarr;
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     );
@@ -245,7 +255,7 @@ export default function WaitlistPage({ onEnterApp }) {
         {onEnterApp && (
           <button
             onClick={onEnterApp}
-            className="text-sm text-sand-500 dark:text-warm-400 hover:text-rust-500 flex items-center gap-1 transition-colors"
+            className="text-sm text-sand-500 dark:text-warm-300 hover:text-indigo-600 flex items-center gap-1 transition-colors"
           >
             Enter App <ArrowRight size={14} />
           </button>
@@ -256,7 +266,7 @@ export default function WaitlistPage({ onEnterApp }) {
       <section className="max-w-3xl mx-auto px-6 pt-16 pb-12 text-center">
         <h1 className="text-4xl sm:text-5xl font-bold text-sand-900 dark:text-warm-50 mb-6">
           <span className="block">Finally Understand</span>
-          <span className="block mt-2 text-rust-500">What You&apos;re Investing In</span>
+          <span className="block mt-2 text-indigo-600">What You&apos;re Investing In</span>
         </h1>
         <p className="text-lg text-sand-600 dark:text-warm-200 max-w-xl mx-auto mb-10">
           AI-powered research reports that turn impenetrable financial data into plain English you can actually use.
@@ -274,24 +284,35 @@ export default function WaitlistPage({ onEnterApp }) {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-lg border border-sand-300 dark:border-warm-700 bg-white dark:bg-warm-900 text-sand-900 dark:text-warm-50 placeholder-sand-400 dark:placeholder-warm-400 focus:outline-none focus:ring-2 focus:ring-rust-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-3 rounded-lg border border-sand-300 dark:border-warm-700 bg-white dark:bg-warm-900 text-sand-900 dark:text-warm-50 placeholder-sand-400 dark:placeholder-warm-400 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
               />
             </div>
             <button
               type="submit"
               disabled={isLoading}
-              className="px-6 py-3 rounded-lg bg-rust-500 hover:bg-rust-600 disabled:opacity-50 text-white font-semibold transition-colors whitespace-nowrap"
+              className="px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold transition-colors whitespace-nowrap"
             >
               {isLoading ? 'Joining...' : 'Join Waitlist'}
             </button>
           </div>
+          {/* Honeypot — invisible to humans, catches bots */}
+          <input
+            type="text"
+            name="website"
+            value={honeypot}
+            onChange={(e) => setHoneypot(e.target.value)}
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0, width: 0 }}
+          />
 
           {/* Referral code toggle */}
           {!showReferralInput ? (
             <button
               type="button"
               onClick={() => setShowReferralInput(true)}
-              className="text-sm text-sand-500 dark:text-warm-400 hover:text-rust-500 transition-colors"
+              className="text-sm text-sand-500 dark:text-warm-300 hover:text-indigo-600 transition-colors"
             >
               Have a referral code?
             </button>
@@ -301,7 +322,7 @@ export default function WaitlistPage({ onEnterApp }) {
               placeholder="Enter referral code (e.g. BUFF-A3X9)"
               value={referralCodeInput}
               onChange={(e) => setReferralCodeInput(e.target.value.toUpperCase())}
-              className="w-full px-4 py-2.5 rounded-lg border border-sand-300 dark:border-warm-700 bg-white dark:bg-warm-900 text-sand-900 dark:text-warm-50 placeholder-sand-400 dark:placeholder-warm-400 focus:outline-none focus:ring-2 focus:ring-rust-500 focus:border-transparent text-sm text-center tracking-widest font-mono"
+              className="w-full px-4 py-2.5 rounded-lg border border-sand-300 dark:border-warm-700 bg-white dark:bg-warm-900 text-sand-900 dark:text-warm-50 placeholder-sand-400 dark:placeholder-warm-400 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent text-sm text-center tracking-widest font-mono"
             />
           )}
 
@@ -321,8 +342,8 @@ export default function WaitlistPage({ onEnterApp }) {
                 key={feature.title}
                 className="bg-white dark:bg-warm-900 rounded-xl border border-sand-200 dark:border-warm-800 p-6"
               >
-                <div className="w-10 h-10 rounded-lg bg-rust-500/10 flex items-center justify-center mb-4">
-                  <Icon size={20} className="text-rust-500" />
+                <div className="w-10 h-10 rounded-lg bg-indigo-600/10 flex items-center justify-center mb-4">
+                  <Icon size={20} className="text-indigo-600" />
                 </div>
                 <h3 className="text-lg font-semibold text-sand-900 dark:text-warm-50 mb-2">
                   {feature.title}
@@ -334,6 +355,70 @@ export default function WaitlistPage({ onEnterApp }) {
             );
           })}
         </div>
+      </section>
+
+      {/* Pricing Tiers */}
+      <section className="bg-sand-100/60 dark:bg-warm-900/30 py-12">
+      <div className="max-w-4xl mx-auto px-6">
+        <h2 className="text-2xl font-bold text-sand-900 dark:text-warm-50 text-center mb-3">
+          Pricing
+        </h2>
+        <p className="text-sm text-sand-500 dark:text-warm-300 text-center mb-8 max-w-lg mx-auto">
+          Start free. Upgrade when you want more.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
+          {/* Free Tier */}
+          <div className="bg-white dark:bg-warm-900 rounded-xl border border-sand-200 dark:border-warm-800 p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-bold text-sand-900 dark:text-warm-50">Free</h3>
+              <div className="mt-1">
+                <span className="text-3xl font-bold text-sand-900 dark:text-warm-50">$0</span>
+                <span className="text-sm text-sand-500 dark:text-warm-300 ml-1">/month</span>
+              </div>
+            </div>
+            <ul className="space-y-3 text-sm">
+              <li className="flex items-start gap-2 text-sand-600 dark:text-warm-200">
+                <CheckCircle size={16} className="text-green-500 mt-0.5 shrink-0" />
+                Up to 10 investment reports/month
+              </li>
+              <li className="flex items-start gap-2 text-sand-400 dark:text-warm-400">
+                <span className="w-4 h-4 mt-0.5 shrink-0 flex items-center justify-center text-xs">—</span>
+                No follow-up questions
+              </li>
+              <li className="flex items-start gap-2 text-sand-400 dark:text-warm-400">
+                <span className="w-4 h-4 mt-0.5 shrink-0 flex items-center justify-center text-xs">—</span>
+                No earnings tracker
+              </li>
+            </ul>
+          </div>
+
+          {/* Plus Tier */}
+          <div className="bg-white dark:bg-warm-900 rounded-xl border-2 border-indigo-600 p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-bold text-sand-900 dark:text-warm-50">Plus</h3>
+              <div className="mt-1">
+                <span className="text-3xl font-bold text-sand-900 dark:text-warm-50">$10</span>
+                <span className="text-sm text-sand-500 dark:text-warm-300 ml-1">/month</span>
+              </div>
+            </div>
+            <ul className="space-y-3 text-sm">
+              <li className="flex items-start gap-2 text-sand-600 dark:text-warm-200">
+                <CheckCircle size={16} className="text-green-500 mt-0.5 shrink-0" />
+                Unlimited investment reports
+              </li>
+              <li className="flex items-start gap-2 text-sand-600 dark:text-warm-200">
+                <CheckCircle size={16} className="text-green-500 mt-0.5 shrink-0" />
+                Follow-up questions on any report
+              </li>
+              <li className="flex items-start gap-2 text-sand-600 dark:text-warm-200">
+                <CheckCircle size={16} className="text-green-500 mt-0.5 shrink-0" />
+                Earnings tracker <span className="text-sand-400 dark:text-warm-400 ml-1">(coming soon)</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
       </section>
 
       {/* Sample Report Preview */}
@@ -349,7 +434,7 @@ export default function WaitlistPage({ onEnterApp }) {
           {/* Executive Summary */}
           <div className="bg-white dark:bg-warm-900 rounded-xl border border-sand-200 dark:border-warm-800 p-6 sm:p-8">
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-semibold uppercase tracking-wider text-rust-500 bg-rust-500/10 px-2.5 py-1 rounded-full">
+              <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-600/10 px-2.5 py-1 rounded-full">
                 NFLX
               </span>
               <span className="text-xs text-sand-400 dark:text-warm-400">
@@ -432,72 +517,82 @@ export default function WaitlistPage({ onEnterApp }) {
 
           </div>
 
-          {/* Decision Triggers */}
-          <div className="bg-white dark:bg-warm-900 rounded-xl border border-sand-200 dark:border-warm-800 p-6 sm:p-8">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-xs font-semibold uppercase tracking-wider text-rust-500 bg-rust-500/10 px-2.5 py-1 rounded-full">
-                NFLX
-              </span>
-              <span className="text-xs text-sand-400 dark:text-warm-400">
-                Section 17 of 17
-              </span>
+          {/* Decision Triggers Toggle */}
+          {!showDecisionTriggers ? (
+            <button
+              onClick={() => setShowDecisionTriggers(true)}
+              className="w-full flex items-center justify-center gap-2 py-4 rounded-xl border border-dashed border-sand-300 dark:border-warm-700 text-sm font-medium text-sand-500 dark:text-warm-300 hover:text-indigo-600 hover:border-indigo-600/50 transition-colors"
+            >
+              <ChevronDown size={16} />
+              See another section — Decision Triggers
+            </button>
+          ) : (
+            <div className="bg-white dark:bg-warm-900 rounded-xl border border-sand-200 dark:border-warm-800 p-6 sm:p-8">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="text-xs font-semibold uppercase tracking-wider text-indigo-600 bg-indigo-600/10 px-2.5 py-1 rounded-full">
+                  NFLX
+                </span>
+                <span className="text-xs text-sand-400 dark:text-warm-400">
+                  Section 17 of 17
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-sand-900 dark:text-warm-50 mb-4">
+                Decision Triggers: Watching NFLX&apos;s 17.6% Growth Line
+              </h3>
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30">
+                  <TrendingUp size={16} className="text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-sm font-medium text-green-700 dark:text-green-300">Bullish signal</span>
+                    <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Net margin crossing 28%</span>
+                    <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
+                      Currently 24.3% — if margins cross 28%, it would confirm operating leverage is kicking into a higher gear.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30">
+                  <TrendingUp size={16} className="text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-sm font-medium text-green-700 dark:text-green-300">Bullish signal</span>
+                    <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Ad tier revenue exceeds $5B ARR</span>
+                    <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
+                      Not yet disclosed — would suggest a new revenue engine is proven and sustainable, strengthening the growth thesis.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30">
+                  <AlertTriangle size={16} className="text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-sm font-medium text-red-600 dark:text-red-300">Caution signal</span>
+                    <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Revenue growth &lt; 10% for 2 Qs</span>
+                    <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
+                      Currently 17.6% — if growth drops below 10% for 2 consecutive quarters, it could mean the growth engine is stalling.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30">
+                  <AlertTriangle size={16} className="text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-sm font-medium text-red-600 dark:text-red-300">Caution signal</span>
+                    <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Net margin &lt; 20% for 2 Qs</span>
+                    <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
+                      Currently 24.3% — if margins reverse below 20%, it may indicate content costs or competition are pressuring the business model.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-sand-100 dark:bg-warm-800/50 border border-sand-200/50 dark:border-warm-700/30">
+                  <Calendar size={16} className="text-sand-500 dark:text-warm-300 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="text-sm font-medium text-sand-700 dark:text-warm-200">Check-in date</span>
+                    <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Q1 2026 earnings (April 2026)</span>
+                    <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
+                      New data drops — revisit this analysis after earnings. Set a calendar reminder.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
-            <h3 className="text-lg font-bold text-sand-900 dark:text-warm-50 mb-4">
-              Decision Triggers: Watching NFLX&apos;s 17.6% Growth Line
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30">
-                <TrendingUp size={16} className="text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-sm font-medium text-green-700 dark:text-green-300">Bullish signal</span>
-                  <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Net margin crossing 28%</span>
-                  <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
-                    Currently 24.3% — if margins cross 28%, it would confirm operating leverage is kicking into a higher gear.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 dark:bg-green-900/10 border border-green-200/50 dark:border-green-800/30">
-                <TrendingUp size={16} className="text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-sm font-medium text-green-700 dark:text-green-300">Bullish signal</span>
-                  <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Ad tier revenue exceeds $5B ARR</span>
-                  <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
-                    Not yet disclosed — would suggest a new revenue engine is proven and sustainable, strengthening the growth thesis.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30">
-                <AlertTriangle size={16} className="text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-sm font-medium text-red-600 dark:text-red-300">Caution signal</span>
-                  <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Revenue growth &lt; 10% for 2 Qs</span>
-                  <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
-                    Currently 17.6% — if growth drops below 10% for 2 consecutive quarters, it could mean the growth engine is stalling.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-red-50 dark:bg-red-900/10 border border-red-200/50 dark:border-red-800/30">
-                <AlertTriangle size={16} className="text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-sm font-medium text-red-600 dark:text-red-300">Caution signal</span>
-                  <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Net margin &lt; 20% for 2 Qs</span>
-                  <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
-                    Currently 24.3% — if margins reverse below 20%, it may indicate content costs or competition are pressuring the business model.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-sand-100 dark:bg-warm-800/50 border border-sand-200/50 dark:border-warm-700/30">
-                <Calendar size={16} className="text-sand-500 dark:text-warm-300 mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-sm font-medium text-sand-700 dark:text-warm-200">Check-in date</span>
-                  <span className="text-xs text-sand-400 dark:text-warm-400 ml-2">Q1 2026 earnings (April 2026)</span>
-                  <p className="text-sm text-sand-600 dark:text-warm-200 mt-0.5">
-                    New data drops — revisit this analysis after earnings. Set a calendar reminder.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Section navigation note */}
@@ -505,6 +600,51 @@ export default function WaitlistPage({ onEnterApp }) {
           <ChevronRight size={14} />
           <span>Jump to any of 17 sections — from debt health to valuation deep dives</span>
         </div>
+      </section>
+
+      {/* Second CTA */}
+      <section className="bg-sand-100/60 dark:bg-warm-900/30 py-12">
+      <div className="max-w-md mx-auto px-6 text-center">
+        <h2 className="text-2xl font-bold text-sand-900 dark:text-warm-50 mb-3">
+          Ready to get started?
+        </h2>
+        <p className="text-sm text-sand-500 dark:text-warm-300 mb-6">
+          Join the waitlist and be first in line when we launch.
+        </p>
+        <form onSubmit={handleSignup}>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Mail size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-sand-400 dark:text-warm-400" />
+              <input
+                type="email"
+                required
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-lg border border-sand-300 dark:border-warm-700 bg-white dark:bg-warm-900 text-sand-900 dark:text-warm-50 placeholder-sand-400 dark:placeholder-warm-400 focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:border-transparent"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="px-6 py-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold transition-colors whitespace-nowrap"
+            >
+              {isLoading ? 'Joining...' : 'Join Waitlist'}
+            </button>
+          </div>
+          {/* Honeypot */}
+          <input
+            type="text"
+            name="website"
+            value={honeypot}
+            onChange={(e) => setHoneypot(e.target.value)}
+            tabIndex={-1}
+            autoComplete="off"
+            aria-hidden="true"
+            style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0, width: 0 }}
+          />
+        </form>
+      </div>
       </section>
 
       {/* Referral Rewards Section */}
@@ -516,13 +656,13 @@ export default function WaitlistPage({ onEnterApp }) {
           {[
             { count: '1 referral', reward: 'Early Access', desc: 'Skip the waitlist' },
             { count: '3 referrals', reward: '1 Month Free', desc: 'Plus subscription ($10 value)' },
-            { count: '10 referrals', reward: '3 Months Free', desc: 'Plus subscription ($30 value)' },
+            { count: '5 referrals', reward: '3 Months Free', desc: 'Plus subscription ($30 value)' },
           ].map((tier) => (
             <div
               key={tier.count}
               className="text-center p-6 bg-white dark:bg-warm-900 rounded-xl border border-sand-200 dark:border-warm-800"
             >
-              <div className="text-sm font-medium text-rust-500 mb-1">{tier.count}</div>
+              <div className="text-sm font-medium text-indigo-600 mb-1">{tier.count}</div>
               <div className="text-lg font-bold text-sand-900 dark:text-warm-50">{tier.reward}</div>
               <div className="text-sm text-sand-500 dark:text-warm-300 mt-1">{tier.desc}</div>
             </div>

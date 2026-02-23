@@ -1,4 +1,4 @@
-# BuffettGPT
+# Buffett
 
 **AI-Powered Investment Research Platform Built on Warren Buffett Principles**
 
@@ -21,7 +21,7 @@ A full-stack serverless application that generates institutional-quality investm
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                            BuffettGPT                                │
+│                             Buffett                                  │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  ┌──────────┐     ┌────────────────────────────────────────────┐    │
@@ -39,22 +39,22 @@ A full-stack serverless application that generates institutional-quality investm
 │                    ▼                 ▼                  ▼            │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
 │  │   Debt Expert    │  │  Cashflow Expert  │  │  Growth Expert   │  │
-│  │  (Claude Haiku)  │  │  (Claude Haiku)   │  │  (Claude Haiku)  │  │
+│  │  (Claude Haiku 4.5)  │  │  (Claude Haiku 4.5)   │  │  (Claude Haiku 4.5)  │  │
 │  └──────────────────┘  └──────────────────┘  └──────────────────┘  │
 │                    │                 │                  │            │
 │                    └─────────────────┼──────────────────┘            │
 │                                      ▼                               │
 │                       ┌──────────────────────────┐                  │
 │                       │    Supervisor Agent       │                  │
-│                       │    (Claude Haiku)         │                  │
+│                       │    (Claude Haiku 4.5)         │                  │
 │                       │  Buffett/Graham Synthesis │                  │
 │                       └──────────────────────────┘                  │
 │                                      │                               │
 │                    ┌─────────────────┼─────────────────┐            │
 │                    ▼                 ▼                  ▼            │
 │               ┌─────────┐    ┌────────────┐    ┌────────────┐      │
-│               │DynamoDB │    │  S3 + CDN  │    │  Bedrock   │      │
-│               │ Tables  │    │ CloudFront │    │ Knowledge  │      │
+│               │DynamoDB │    │  S3 + CDN  │    │   Stripe   │      │
+│               │ Tables  │    │ CloudFront │    │  Billing   │      │
 │               └─────────┘    └────────────┘    └────────────┘      │
 │                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
@@ -98,7 +98,7 @@ DynamoDB V2 Storage (section-per-item) → Frontend Display
 |-----------|------------|
 | **Frontend** | React 18, Vite 5, Tailwind CSS |
 | **Backend** | Python 3.11, AWS Lambda |
-| **AI** | AWS Bedrock (Claude Haiku), Claude Opus 4.5 (report generation) |
+| **AI** | AWS Bedrock (Claude Haiku 4.5), Claude Opus 4 (report generation) |
 | **Database** | DynamoDB (on-demand) |
 | **Payments** | Stripe (Free/Plus tiers, webhooks) |
 | **Auth** | Google OAuth 2.0, JWT |
@@ -112,19 +112,20 @@ DynamoDB V2 Storage (section-per-item) → Frontend Display
 ## Project Structure
 
 ```
-buffettGPT/
+buffett_chat_api/
 ├── chat-api/
 │   ├── backend/
 │   │   ├── src/
 │   │   │   ├── handlers/                  # Lambda functions
+│   │   │   │   ├── action_group_handler.py # Bedrock action group handler
+│   │   │   │   ├── analysis_followup.py   # Follow-up Q&A agent
 │   │   │   │   ├── auth_callback.py       # Google OAuth callback
 │   │   │   │   ├── auth_verify.py         # JWT authorizer
 │   │   │   │   ├── conversations_handler.py # Chat history CRUD
-│   │   │   │   ├── analysis_followup.py   # Follow-up Q&A agent
-│   │   │   │   ├── subscription_handler.py # Stripe checkout/portal
+│   │   │   │   ├── search_handler.py      # AI search (experimental)
 │   │   │   │   ├── stripe_webhook_handler.py # Stripe event processing
-│   │   │   │   ├── waitlist_handler.py    # Waitlist + referral system
-│   │   │   │   └── search_handler.py      # AI search (experimental)
+│   │   │   │   ├── subscription_handler.py # Stripe checkout/portal
+│   │   │   │   └── waitlist_handler.py    # Waitlist + referral system
 │   │   │   └── utils/                     # Rate limiting, logging
 │   │   ├── investment_research/           # Report generation engine
 │   │   │   ├── report_generator.py        # Core report generation
@@ -138,21 +139,25 @@ buffettGPT/
 │   └── terraform/
 │       ├── environments/                  # dev / staging / prod
 │       └── modules/
-│           ├── core/                      # KMS, IAM, SQS
-│           ├── dynamodb/                  # 9 DynamoDB tables
+│           ├── core/                      # KMS, IAM
+│           ├── dynamodb/                  # DynamoDB tables
 │           ├── lambda/                    # Lambda deployment
 │           ├── api-gateway/               # HTTP API routes
 │           ├── auth/                      # OAuth infrastructure
-│           ├── bedrock/                   # Agents + knowledge bases
+│           ├── bedrock/                   # Agents + guardrails
 │           ├── cloudfront-static-site/    # CDN + S3 hosting
+│           ├── email/                     # Email service (Resend)
 │           ├── stripe/                    # Payment infrastructure
+│           ├── sqs/                       # SQS queues
 │           ├── rate-limiting/             # Device fingerprinting
+│           ├── training-infrastructure/   # ML training
 │           └── monitoring/                # CloudWatch dashboards
 ├── frontend/
 │   └── src/
 │       ├── components/
 │       │   ├── research/                  # Investment report UI
 │       │   └── waitlist/                  # Waitlist landing page
+│       ├── contexts/                      # React contexts
 │       ├── hooks/                         # Custom React hooks
 │       ├── api/                           # API client utilities
 │       └── App.jsx                        # Main application
@@ -316,7 +321,7 @@ Three GitHub Actions workflows:
 
 - **Auth**: Google OAuth 2.0 with JWT tokens
 - **Encryption**: KMS for all sensitive data at rest
-- **Secrets**: AWS Secrets Manager (OAuth, JWT, Stripe, Pinecone keys)
+- **Secrets**: AWS Secrets Manager (OAuth, JWT, Stripe, FMP keys)
 - **Rate Limiting**: Device fingerprinting (IP + User-Agent + CloudFront headers)
 - **Waitlist**: IP-based rate limiting, disposable email blocking, referral code validation
 

@@ -4,10 +4,12 @@ Waitlist Handler Lambda
 Provides endpoints for viral waitlist management:
 - POST /waitlist/signup - Sign up for the waitlist with optional referral code
 - GET /waitlist/status - Get waitlist position and referral dashboard
+- GET /waitlist/unsubscribe - Unsubscribe from email notifications
 
 No JWT authentication required (email-based).
 """
 
+import html as html_lib
 import json
 import logging
 import os
@@ -20,6 +22,13 @@ from typing import Dict, Any, Optional
 
 import boto3
 from botocore.exceptions import ClientError
+
+from utils.email_service import (
+    send_welcome_email,
+    send_referral_success_email,
+    send_tier_unlocked_email,
+    verify_unsubscribe_token,
+)
 
 # Configure logging
 logger = logging.getLogger()
@@ -38,7 +47,7 @@ waitlist_table = dynamodb.Table(WAITLIST_TABLE)
 REFERRAL_TIERS = [
     {"name": "Early Access", "threshold": 1, "reward": "Skip the waitlist"},
     {"name": "1 Month Free Plus", "threshold": 3, "reward": "1 month free Plus subscription"},
-    {"name": "3 Months Free Plus", "threshold": 10, "reward": "3 months free Plus subscription"},
+    {"name": "3 Months Free Plus", "threshold": 5, "reward": "3 months free Plus subscription"},
 ]
 
 # Characters for referral code generation (ambiguous chars removed)
@@ -90,6 +99,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return handle_signup(event)
     elif path.endswith('/status') and http_method == 'GET':
         return handle_status(event)
+    elif path.endswith('/unsubscribe') and http_method == 'GET':
+        return handle_unsubscribe(event)
     else:
         return _response(404, {'error': 'Not found'})
 
@@ -109,12 +120,29 @@ def handle_signup(event: Dict[str, Any]) -> Dict[str, Any]:
         except json.JSONDecodeError:
             return _response(400, {'error': 'Invalid JSON body'})
 
+    # Honeypot check — bots fill hidden fields, humans don't
+    if body.get('website'):
+        logger.warning(f"Honeypot triggered — likely bot signup from {_get_client_ip(event)}")
+        return _response(201, {
+            'email': body.get('email', ''),
+            'referral_code': 'BUFF-000000',
+            'position': 1,
+            'referral_count': 0,
+            'status': 'waitlisted',
+            'referral_link': f"{FRONTEND_URL}?ref=BUFF-000000",
+            'tiers': REFERRAL_TIERS,
+            'message': "You're on the waitlist!",
+        })
+
     email = body.get('email', '').strip().lower()
     referral_code = body.get('referral_code', '').strip().upper() if body.get('referral_code') else None
 
     # Validate email
     if not email:
         return _response(400, {'error': 'Email is required'})
+
+    if len(email) > 254:
+        return _response(400, {'error': 'Email too long'})
 
     if not EMAIL_REGEX.match(email):
         return _response(400, {'error': 'Invalid email format'})
@@ -179,7 +207,7 @@ def handle_signup(event: Dict[str, Any]) -> Dict[str, Any]:
 
     # Credit the referrer if valid
     if referral_code and referrer:
-        _credit_referrer(referrer['email'])
+        _credit_referrer(referrer['email'], referrer.get('referral_code', ''))
 
     # Record rate limit hit
     _record_rate_limit(ip_address)
@@ -187,13 +215,21 @@ def handle_signup(event: Dict[str, Any]) -> Dict[str, Any]:
     # Calculate position
     position = _get_queue_position(now)
 
+    referral_link = f"{FRONTEND_URL}?ref={new_referral_code}"
+
+    # Send welcome email (fire-and-forget — never block signup)
+    try:
+        send_welcome_email(email, new_referral_code, referral_link)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome email to {email}: {e}")
+
     return _response(201, {
         'email': email,
         'referral_code': new_referral_code,
         'position': position,
         'referral_count': 0,
         'status': 'waitlisted',
-        'referral_link': f"{FRONTEND_URL}?ref={new_referral_code}",
+        'referral_link': referral_link,
         'tiers': REFERRAL_TIERS,
         'message': "You're on the waitlist!",
     })
@@ -210,16 +246,12 @@ def handle_status(event: Dict[str, Any]) -> Dict[str, Any]:
     code = params.get('code', '').strip().upper()
 
     if not email or not code:
-        return _response(400, {'error': 'Both email and code parameters are required'})
+        return _response(400, {'error': 'Both email and code parameters are required'}, origin=FRONTEND_URL)
 
-    # Fetch entry
+    # Fetch entry and verify code (unified response prevents email enumeration)
     entry = _get_waitlist_entry(email)
-    if not entry:
-        return _response(404, {'error': 'Email not found on waitlist'})
-
-    # Verify referral code matches (lightweight auth)
-    if entry.get('referral_code') != code:
-        return _response(403, {'error': 'Invalid code for this email'})
+    if not entry or entry.get('referral_code') != code:
+        return _response(403, {'error': 'Invalid email or code'}, origin=FRONTEND_URL)
 
     referral_count = int(entry.get('referral_count', 0))
     tier_info = _get_tier_info(referral_count)
@@ -235,7 +267,39 @@ def handle_status(event: Dict[str, Any]) -> Dict[str, Any]:
         'next_tier': tier_info['next_tier'],
         'referral_link': f"{FRONTEND_URL}?ref={entry['referral_code']}",
         'tiers': REFERRAL_TIERS,
-    })
+    }, origin=FRONTEND_URL)
+
+
+def handle_unsubscribe(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Handle email unsubscribe.
+
+    Verifies HMAC token and sets email_opted_out on the user's record.
+    Returns an HTML confirmation page (this is a browser click, not an API call).
+    """
+    params = event.get('queryStringParameters') or {}
+    email = params.get('email', '').strip().lower()
+    token = params.get('token', '').strip()
+
+    if not email or not token:
+        return _html_response(400, 'Missing required parameters.')
+
+    if not verify_unsubscribe_token(email, token):
+        return _html_response(403, 'Invalid or expired unsubscribe link.')
+
+    # Set opt-out flag
+    try:
+        waitlist_table.update_item(
+            Key={'email': email},
+            UpdateExpression='SET email_opted_out = :val',
+            ExpressionAttributeValues={':val': True},
+        )
+    except ClientError as e:
+        logger.error(f"Failed to set unsubscribe for {email}: {e}")
+        return _html_response(500, 'Something went wrong. Please try again.')
+
+    logger.info(f"User unsubscribed: {email}")
+    return _html_response(200, "You've been unsubscribed. You won't receive any more emails from us.")
 
 
 # ================================================
@@ -245,14 +309,14 @@ def handle_status(event: Dict[str, Any]) -> Dict[str, Any]:
 def _generate_referral_code() -> str:
     """Generate a unique branded referral code like BUFF-A3X9."""
     for _ in range(10):  # Retry on collision
-        suffix = ''.join(secrets.choice(REFERRAL_CODE_CHARS) for _ in range(4))
+        suffix = ''.join(secrets.choice(REFERRAL_CODE_CHARS) for _ in range(6))
         code = f"BUFF-{suffix}"
         # Check uniqueness via GSI
         existing = _lookup_referrer(code)
         if not existing:
             return code
-    # Fallback: use 6 chars if 4-char space is crowded
-    suffix = ''.join(secrets.choice(REFERRAL_CODE_CHARS) for _ in range(6))
+    # Fallback: use 8 chars if 6-char space is crowded
+    suffix = ''.join(secrets.choice(REFERRAL_CODE_CHARS) for _ in range(8))
     return f"BUFF-{suffix}"
 
 
@@ -272,8 +336,8 @@ def _lookup_referrer(referral_code: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def _credit_referrer(referrer_email: str) -> None:
-    """Increment referrer's referral_count and update status if threshold met."""
+def _credit_referrer(referrer_email: str, referrer_code: str = '') -> None:
+    """Increment referrer's referral_count, update status, and send notification emails."""
     try:
         response = waitlist_table.update_item(
             Key={'email': referrer_email},
@@ -285,16 +349,56 @@ def _credit_referrer(referrer_email: str) -> None:
 
         # Update status to early_access if they hit the first tier
         if new_count >= 1:
-            waitlist_table.update_item(
-                Key={'email': referrer_email},
-                UpdateExpression='SET #s = :status',
-                ExpressionAttributeNames={'#s': 'status'},
-                ExpressionAttributeValues={':status': 'early_access', ':waitlisted': 'waitlisted'},
-                ConditionExpression='#s = :waitlisted',
-            )
+            try:
+                waitlist_table.update_item(
+                    Key={'email': referrer_email},
+                    UpdateExpression='SET #s = :status',
+                    ExpressionAttributeNames={'#s': 'status'},
+                    ExpressionAttributeValues={':status': 'early_access', ':waitlisted': 'waitlisted'},
+                    ConditionExpression='#s = :waitlisted',
+                )
+            except ClientError as e:
+                if e.response['Error']['Code'] != 'ConditionalCheckFailedException':
+                    raise
+
+        # Send referral notification emails (fire-and-forget — never block credit)
+        try:
+            # Check if referrer has opted out of emails
+            referrer_entry = _get_waitlist_entry(referrer_email)
+            if _is_opted_out(referrer_entry):
+                logger.info(f"Skipping referral email — user opted out: {referrer_email}")
+                return
+
+            tier_info = _get_tier_info(new_count)
+
+            # Check if a new tier was just unlocked
+            newly_unlocked = None
+            for tier in REFERRAL_TIERS:
+                if new_count == tier['threshold']:
+                    newly_unlocked = tier
+                    break
+
+            if newly_unlocked:
+                send_tier_unlocked_email(
+                    to=referrer_email,
+                    tier_name=newly_unlocked['name'],
+                    tier_reward=newly_unlocked['reward'],
+                    referral_count=new_count,
+                    referral_code=referrer_code,
+                )
+            else:
+                send_referral_success_email(
+                    to=referrer_email,
+                    referral_count=new_count,
+                    referral_code=referrer_code,
+                    current_tier=tier_info['current_tier'],
+                    next_tier=tier_info['next_tier'],
+                )
+        except Exception as e:
+            logger.warning(f"Failed to send referral email to {referrer_email}: {e}")
+
     except ClientError as e:
-        if e.response['Error']['Code'] != 'ConditionalCheckFailedException':
-            logger.error(f"Failed to credit referrer: {e}")
+        logger.error(f"Failed to credit referrer: {e}")
 
 
 def _get_waitlist_entry(email: str) -> Optional[Dict[str, Any]]:
@@ -399,15 +503,42 @@ def _record_rate_limit(ip_address: str) -> None:
         logger.warning(f"Failed to record rate limit: {e}")
 
 
-def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
+def _is_opted_out(entry: Optional[Dict[str, Any]]) -> bool:
+    """Check if a waitlist entry has opted out of emails."""
+    if not entry:
+        return False
+    return bool(entry.get('email_opted_out'))
+
+
+def _response(status_code: int, body: Dict[str, Any], origin: str = '*') -> Dict[str, Any]:
     """Create API Gateway response with CORS headers."""
     return {
         'statusCode': status_code,
         'headers': {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Origin': origin,
             'Access-Control-Allow-Headers': 'Content-Type',
             'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
         },
         'body': json.dumps(body, cls=DecimalEncoder),
+    }
+
+
+def _html_response(status_code: int, message: str) -> Dict[str, Any]:
+    """Create a simple HTML response for browser-facing endpoints."""
+    safe_message = html_lib.escape(message)
+    html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Buffett</title></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+max-width:480px;margin:60px auto;padding:0 20px;color:#1a1a1a;text-align:center;">
+<p style="font-size:16px;line-height:1.6;">{safe_message}</p>
+</body></html>"""
+    return {
+        'statusCode': status_code,
+        'headers': {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+        },
+        'body': html_body,
     }

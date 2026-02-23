@@ -1,20 +1,21 @@
-# BuffettGPT - AI Assistant Documentation
+# Buffett - AI Assistant Documentation
 
 ## Project Overview
 
-BuffettGPT is a full-stack serverless financial chat application built on AWS. It provides a Warren Buffett-themed AI advisor that answers investment and financial planning questions using Amazon Bedrock (Claude Haiku) with knowledge bases and guardrails.
+Buffett is a full-stack serverless financial chat application built on AWS. It provides a Warren Buffett-themed AI advisor that answers investment and financial planning questions using Amazon Bedrock (Claude Haiku 4.5) with guardrails.
 
 ---
 
 ## Repository Structure
 
 ```
-buffettGPT/
+buffett_chat_api/
 ├── chat-api/                          # Backend API and infrastructure
 │   ├── backend/                       # Lambda functions and utilities
 │   │   ├── src/
 │   │   │   ├── handlers/              # Lambda handler functions
 │   │   │   └── utils/                 # Utilities (rate limiting, logging)
+│   │   ├── investment_research/       # Report generation and financial data
 │   │   ├── layer/                     # Lambda layer dependencies
 │   │   ├── scripts/                   # Build scripts
 │   │   ├── tests/                     # Python tests
@@ -28,13 +29,13 @@ buffettGPT/
 ├── frontend/                          # React + Vite frontend
 │   ├── src/
 │   │   ├── components/                # React components
+│   │   ├── contexts/                  # React contexts (e.g., ResearchContext)
 │   │   ├── hooks/                     # Custom hooks
 │   │   ├── api/                       # API client utilities
 │   │   └── utils/                     # Logger and helpers
 │   └── public/                        # Static assets
-├── search-api/                        # Experimental search APIs
-│   ├── search.py                      # Perplexity API integration
-│   └── model_comparison.py            # Model comparison tools
+├── sp500_analysis/                    # S&P 500 analysis scripts and reports
+├── docs/                              # Documentation (MkDocs)
 └── .github/workflows/                 # CI/CD pipelines
 ```
 
@@ -45,7 +46,7 @@ buffettGPT/
 ### Backend
 - **Runtime**: Python 3.11
 - **Cloud**: AWS Lambda, API Gateway (HTTP), DynamoDB
-- **AI**: Amazon Bedrock (Claude Haiku), Knowledge Bases, Guardrails
+- **AI**: Amazon Bedrock (Claude Haiku 4.5), Guardrails
 - **Auth**: Google OAuth, JWT tokens
 - **IaC**: Terraform 1.9.1+
 
@@ -68,13 +69,15 @@ Located in `chat-api/backend/src/handlers/`:
 
 | Handler | Purpose |
 |---------|---------|
+| `action_group_handler.py` | Bedrock action group handler for expert agents |
+| `analysis_followup.py` | Follow-up Agent for research report Q&A |
 | `auth_callback.py` | Google OAuth callback, issues JWT tokens |
 | `auth_verify.py` | JWT verification authorizer |
 | `conversations_handler.py` | Chat history management (GET /conversations) |
-| `subscription_handler.py` | Stripe subscription management |
-| `stripe_webhook_handler.py` | Stripe webhook processing |
-| `analysis_followup.py` | Follow-up Agent for research report Q&A |
 | `search_handler.py` | Experimental search functionality |
+| `stripe_webhook_handler.py` | Stripe webhook processing |
+| `subscription_handler.py` | Stripe subscription management |
+| `waitlist_handler.py` | Waitlist and referral system |
 
 ---
 
@@ -84,28 +87,35 @@ Located in `chat-api/terraform/modules/`:
 
 | Module | Purpose |
 |--------|---------|
-| `core` | KMS encryption, IAM roles, SQS queues |
-| `dynamodb` | DynamoDB tables (messages, conversations, users, etc.) |
-| `lambda` | Lambda function deployment with layers |
 | `api-gateway` | HTTP API configuration |
 | `auth` | OAuth authentication infrastructure |
-| `bedrock` | AI agent, knowledge base, guardrails |
+| `bedrock` | AI agent, guardrails |
 | `cloudfront-static-site` | CDN and S3 static hosting |
-| `rate-limiting` | Device fingerprinting and quotas |
+| `core` | KMS encryption, IAM roles |
+| `dynamodb` | DynamoDB tables |
+| `email` | Email service (Resend) infrastructure |
+| `lambda` | Lambda function deployment with layers |
 | `monitoring` | CloudWatch dashboards and alerts |
+| `rate-limiting` | Device fingerprinting and quotas |
+| `sqs` | SQS queues |
+| `stripe` | Stripe subscription infrastructure |
+| `training-infrastructure` | ML training infrastructure |
 
 ---
 
 ## DynamoDB Tables
 
-| Table | Purpose |
-|-------|---------|
-| `chat-messages` | Message history |
-| `conversations` | Conversation details |
-| `enhanced-rate-limits` | Device fingerprint rate limiting |
-| `usage-tracking` | Monthly usage tracking |
-| `anonymous-sessions` | Anonymous user sessions |
-| `users` | User profile data |
+| Table (dev name) | Purpose |
+|-------------------|---------|
+| `buffett-dev-chat-messages` | Message history |
+| `buffett-dev-conversations` | Conversation details |
+| `investment-reports-v2-dev` | Investment research report sections |
+| `metrics-history-dev` | Financial metrics cache for follow-up agent |
+| `token-usage-dev-buffett` | Token usage tracking (PK: user_id, SK: billing_period) |
+| `buffett-dev-financial-data-cache` | FMP financial data cache |
+| `buffett-dev-ticker-lookup` | Ticker lookup cache |
+| `buffett-dev-forex-cache` | Forex rate cache |
+| `waitlist-dev-buffett` | Waitlist and referral system |
 
 ---
 
@@ -174,6 +184,13 @@ Key variables set by Terraform and CI/CD:
 - `VITE_REST_API_URL` - HTTP API endpoint
 - `VITE_GOOGLE_CLIENT_ID` - OAuth client ID
 - `VITE_ENVIRONMENT` - Current environment
+- `VITE_RESEARCH_API_URL` - Research API endpoint
+- `VITE_ANALYSIS_FOLLOWUP_URL` - Analysis follow-up API endpoint
+- `VITE_RESEARCH_LAMBDA_URL` - Research Lambda endpoint
+- `VITE_APP_NAME` - Application display name
+- `VITE_ENABLE_DEBUG_LOGS` - Enable debug logging
+- `VITE_ENABLE_DEMO_MODE` - Enable demo mode
+- `VITE_ENABLE_WAITLIST` - Enable waitlist feature
 
 ---
 
@@ -198,8 +215,8 @@ Same structure with production secrets and GitHub environment approval.
 ## Code Conventions
 
 ### Naming
-- **AWS Resources**: `{project-name}-{environment}-{resource-type}`
-  - Example: `buffett-chat-api-dev-chat-sessions`
+- **AWS Resources**: `{project_name}-{environment}-{resource-type}`
+  - Example: `buffett-dev-chat-messages`
 - **Terraform Variables**: `snake_case`
 - **Environment Variables**: `UPPER_CASE`
 - **Python/JS**: Standard language conventions
@@ -232,13 +249,14 @@ npm run lint         # ESLint with 0 warnings policy
 ## Secrets Management
 
 Secrets are stored in AWS Secrets Manager:
-- `buffett-{env}-google-oauth` - OAuth credentials
-- `buffett-{env}-jwt-secret` - JWT signing secret
-- `buffett-{env}-pinecone-api-key` - Vector DB API key
+- `buffett-{env}-google-oauth-v2` - OAuth credentials
+- `buffett-{env}-jwt-secret-v2` - JWT signing secret
+- `buffett-{env}-fmp` - FMP financial data API key
 - `stripe-secret-key-{env}` - Stripe API secret key (sk_test_xxx or sk_live_xxx)
 - `stripe-publishable-key-{env}` - Stripe publishable key (pk_test_xxx or pk_live_xxx)
 - `stripe-plus-price-id-{env}` - Stripe Plus plan price ID (price_xxx)
 - `stripe-webhook-secret-{env}` - Stripe webhook signing secret (whsec_xxx)
+- `resend_dev_key` - Resend email service API key
 
 Never commit secrets to the repository. Use `.env.example` files as templates.
 
@@ -370,7 +388,8 @@ chat-api/backend/build/
 ├── subscription_handler.zip
 ├── stripe_webhook_handler.zip
 ├── analysis_followup.zip
-└── search_handler.zip
+├── search_handler.zip
+└── waitlist_handler.zip
 ```
 
 ---
@@ -405,7 +424,7 @@ chat-api/backend/build/
 
 ### Update Bedrock Follow-up Agent
 1. Modify `chat-api/terraform/modules/bedrock/`
-2. Update agent instructions in `followup_agent_v1.txt`
+2. Update agent instructions in `chat-api/terraform/modules/bedrock/prompts/followup_agent_v2.txt`
 3. Deploy via Terraform
 
 ---
