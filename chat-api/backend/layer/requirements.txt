@@ -17,3 +17,6 @@ python-dotenv>=1.1.1
 
 # Stripe payments
 stripe>=8.0.0
+
+# Email (Resend)
+resend>=2.0.0

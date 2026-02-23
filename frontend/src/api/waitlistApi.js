@@ -63,10 +63,10 @@ export const waitlistApi = {
    * @param {string|null} referralCode - Optional referral code from referrer
    * @returns {Promise<{email, referral_code, position, referral_count, status, tiers}>}
    */
-  signup: async (email, referralCode = null) => {
+  signup: async (email, referralCode = null, extraFields = {}) => {
     logger.info('Signing up for waitlist');
 
-    const body = { email };
+    const body = { email, ...extraFields };
     if (referralCode) body.referral_code = referralCode;
 
     const result = await apiCall(WAITLIST_ENDPOINTS.SIGNUP, {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense, lazy } from "react";
+import { Routes, Route, useParams, useNavigate } from "react-router-dom";
 import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown } from "lucide-react";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import ReactMarkdown from 'react-markdown';
@@ -133,6 +134,10 @@ function deriveTitle(msgs) {
  * Main UI component  *
  *********************/
 function ChatApp() {
+  // URL routing
+  const { conversationId: urlConversationId } = useParams();
+  const navigate = useNavigate();
+
   // Get authentication state
   const { user, isAuthenticated, token } = useAuth();
 
@@ -151,6 +156,10 @@ function ChatApp() {
 
   // Cache for loaded conversation API responses: { [conversationId]: { conversation, messages, timestamp } }
   const conversationCacheRef = useRef({});
+
+  // Staleness guard: tracks the most recently requested conversation to prevent race conditions
+  // when the user rapidly switches between conversations (async responses arriving out of order)
+  const latestRequestedConversationRef = useRef(null);
 
   // Log environment config only once on component mount
   useEffect(() => {
@@ -681,6 +690,7 @@ function ChatApp() {
       const newConv = await createConversation(title);
       if (newConv) {
         setSelectedConversation(newConv);
+        navigate(`/c/${newConv.conversation_id}`, { replace: true });
         newConversationId = newConv.conversation_id;
       }
     }
@@ -776,7 +786,7 @@ function ChatApp() {
         setShowRateLimitBanner(false);
       }, 8000);
     }
-  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, startResearch, token, showInvestmentResearch, reportMeta, researchTicker, sendFollowUp, clearFollowUp, logSectionInteraction]);
+  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, navigate, startResearch, token, showInvestmentResearch, reportMeta, researchTicker, sendFollowUp, clearFollowUp, logSectionInteraction]);
 
   const newChat = useCallback(() => {
     setMessages([]);
@@ -803,6 +813,9 @@ function ChatApp() {
   // Load conversation messages when switching conversations
   const loadConversationMessages = useCallback(async (conversationId, conversationTitle = null) => {
     if (!token || !conversationId) return;
+
+    // Mark this as the latest requested conversation (staleness guard)
+    latestRequestedConversationRef.current = conversationId;
 
     try {
       // Check cache for previously loaded conversation data
@@ -833,6 +846,9 @@ function ChatApp() {
           conversation, messages, timestamp: Date.now()
         };
       }
+
+      // Staleness check #1: bail out if user has already clicked a different conversation
+      if (latestRequestedConversationRef.current !== conversationId) return;
 
       // DEBUG: Log raw API response to trace visible_sections persistence issue
       console.log('[ToC Load DEBUG] loadConversationHistory response:', {
@@ -1091,6 +1107,9 @@ function ChatApp() {
             try {
               const batchResult = await fetchSectionsBatch(ticker, savedVisibleSections, token);
 
+              // Staleness check #2: bail out if user switched conversations during batch fetch
+              if (latestRequestedConversationRef.current !== conversationId) return;
+
               if (!batchResult.report_exists) {
                 // Report expired or doesn't exist — metadata is still shown, sections will be empty
                 logger.warn(`Report for ${ticker} not found or expired`);
@@ -1205,7 +1224,32 @@ function ChatApp() {
     }
   }, [token, setMessages, startResearch, loadSavedReport, fetchSection, fetchSectionsBatch, setInteractionLog, resetResearch]);
 
+  // Sync URL → conversation state
+  // Fires on: initial mount with /c/:id, browser back/forward, navigate() calls
+  // Sparse dep array is intentional — adding selectedConversation/conversations would cause infinite loops
+  useEffect(() => {
+    if (!urlConversationId) {
+      // URL is "/" — new chat mode
+      if (selectedConversation) {
+        newChat();
+      }
+      return;
+    }
 
+    // URL has a conversation ID — load if different from current
+    if (urlConversationId !== selectedConversation?.conversation_id) {
+      const conv = conversations.find(c => c.conversation_id === urlConversationId);
+      if (conv) {
+        setSelectedConversation(conv);
+        loadConversationMessages(urlConversationId, conv.title);
+      } else if (token) {
+        // Deep link or conversation not yet in sidebar list
+        setSelectedConversation({ conversation_id: urlConversationId, title: '' });
+        loadConversationMessages(urlConversationId);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlConversationId, token]);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-sand-50 dark:bg-warm-950 text-sand-800 dark:text-warm-50">
@@ -1237,7 +1281,7 @@ function ChatApp() {
               <>
                 <div className="mb-8 md:mb-6 flex items-center justify-between">
                   <button
-                    onClick={newChat}
+                    onClick={() => navigate('/')}
                     className="text-xs tracking-[0.35em] text-sand-600 dark:text-warm-200 font-semibold hover:text-indigo-600 transition-colors cursor-pointer"
                     title="Start new chat"
                   >
@@ -1264,7 +1308,7 @@ function ChatApp() {
                     <Menu className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={newChat}
+                    onClick={() => navigate('/')}
                     className="rounded-md p-2 bg-indigo-600 text-white hover:bg-indigo-700"
                     title="New Analysis"
                   >
@@ -1307,7 +1351,7 @@ function ChatApp() {
             {sidebarOpen && (
               <div className="flex flex-col h-full pb-4">
             <div className="flex items-center justify-center gap-2">
-              <button onClick={newChat} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg hover:bg-indigo-700 hover:shadow-indigo-200 dark:hover:shadow-warm-900/30 transition-all">
+              <button onClick={() => navigate('/')} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg hover:bg-indigo-700 hover:shadow-indigo-200 dark:hover:shadow-warm-900/30 transition-all">
                 <Plus className="h-4 w-4"/> New Analysis
               </button>
             </div>
@@ -1346,18 +1390,20 @@ function ChatApp() {
                     c.title?.toLowerCase().includes(search.toLowerCase())
                   )}
                   selectedConversation={selectedConversation}
-                  onSelectConversation={async (conv) => {
-                    // Set selection immediately for sidebar highlight
-                    setSelectedConversation(conv);
-                    // Let loadConversationMessages handle layout transitions
-                    // to avoid intermediate empty/landing layout flash
-                    if (conv.conversation_id) {
-                      await loadConversationMessages(conv.conversation_id, conv.title);
-                    }
+                  onSelectConversation={(conv) => {
+                    navigate(`/c/${conv.conversation_id}`);
                   }}
                   onUpdateConversation={updateConversation}
-                  onArchiveConversation={archiveConversation}
-                  onDeleteConversation={deleteConversation}
+                  onArchiveConversation={async (convId) => {
+                    const wasSelected = selectedConversation?.conversation_id === convId;
+                    await archiveConversation(convId);
+                    if (wasSelected) navigate('/', { replace: true });
+                  }}
+                  onDeleteConversation={async (convId) => {
+                    const wasSelected = selectedConversation?.conversation_id === convId;
+                    await deleteConversation(convId);
+                    if (wasSelected) navigate('/', { replace: true });
+                  }}
                   showArchived={showArchived}
                   loading={conversationsLoading}
                   onLoadMore={loadMoreConversations}
@@ -2245,7 +2291,10 @@ export default function App() {
   return (
     <AuthProvider>
       <ResearchProvider>
-        <ChatApp />
+        <Routes>
+          <Route path="/c/:conversationId" element={<ChatApp />} />
+          <Route path="*" element={<ChatApp />} />
+        </Routes>
       </ResearchProvider>
     </AuthProvider>
   );

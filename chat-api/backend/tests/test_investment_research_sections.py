@@ -366,7 +366,7 @@ class TestGetReportSection:
 
             assert result is not None
             assert result['section_id'] == '06_growth'
-            assert result['title'] == 'Growth Analysis'
+            assert result['title'] == 'Growth: 3% to 4% — The Slow Climb'
             assert 'content' in result
 
     def test_returns_none_when_not_found(self):

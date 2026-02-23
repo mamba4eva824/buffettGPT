@@ -48,6 +48,7 @@ from config import (
     DATA_DIR,
     OUTPUT_PATHS,
     SP500_SYMBOLS,
+    PRICE_CHANGE_BATCH_SIZE,
 )
 
 # ---------------------------------------------------------------------------
@@ -196,7 +197,7 @@ def fetch_spy_prices(client: httpx.Client, api_key: str, resume: bool = False):
         client, api_key,
         name="SPY Historical Prices (S&P 500 proxy)",
         endpoint=ENDPOINTS["spy_historical_prices"],
-        params={"symbol": "SPY"},
+        params={"symbol": "SPY", "from": "2021-01-01", "to": "2026-02-28"},
         output_path=output_path,
     )
 
@@ -328,6 +329,110 @@ def fetch_all_company_data(
 
 
 # ---------------------------------------------------------------------------
+# Phase 3: Stock price data
+# ---------------------------------------------------------------------------
+def fetch_stock_price_changes(
+    client: httpx.Client,
+    api_key: str,
+    symbols: list[str],
+    resume: bool = False,
+):
+    """
+    Fetch stock price percentage changes for all symbols using batch endpoint.
+    /stable/stock-price-change supports up to 50 symbols per call on Starter tier.
+    Returns 1D/5D/1M/3M/6M/YTD/1Y/3Y/5Y/10Y percentage returns.
+    """
+    output_path = OUTPUT_PATHS["stock_price_changes"]
+
+    if resume and os.path.exists(output_path) and os.path.getsize(output_path) > 100:
+        log.info("  Stock price changes: skipping (already exists)")
+        record("stock_price_changes", "", "skipped", output_path, "resume")
+        return
+
+    log.info(f"\n--- Fetching stock price changes ({len(symbols)} symbols in batches of {PRICE_CHANGE_BATCH_SIZE}) ---")
+
+    all_results = []
+    for i in range(0, len(symbols), PRICE_CHANGE_BATCH_SIZE):
+        batch = symbols[i:i + PRICE_CHANGE_BATCH_SIZE]
+        batch_str = ",".join(batch)
+
+        result = fetch_json(
+            client, api_key,
+            name=f"price-change batch {i // PRICE_CHANGE_BATCH_SIZE + 1}",
+            endpoint=ENDPOINTS["stock_price_change"],
+            params={"symbol": batch_str},
+        )
+
+        if result and isinstance(result, list):
+            all_results.extend(result)
+            log.info(f"  Batch {i // PRICE_CHANGE_BATCH_SIZE + 1}: {len(result)} symbols")
+
+    # Save combined results
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w") as f:
+        json.dump(all_results, f)
+
+    log.info(f"  Saved {len(all_results)} stock price changes to {output_path}")
+    record("stock_price_changes", ENDPOINTS["stock_price_change"], 200, output_path,
+           f"{len(all_results)} symbols")
+
+
+def fetch_company_prices(
+    client: httpx.Client,
+    api_key: str,
+    symbols: list[str],
+    resume: bool = False,
+):
+    """
+    Fetch 5-year daily price history for each company.
+    /stable/historical-price-eod/light — 1 symbol per call, returns date+price+volume.
+    """
+    prices_dir = OUTPUT_PATHS["company_prices_dir"]
+    os.makedirs(prices_dir, exist_ok=True)
+
+    total = len(symbols)
+    log.info(f"\n--- Fetching daily price history ({total} companies) ---")
+
+    stats = {"ok": 0, "skipped": 0, "failed": 0}
+    start_time = time.monotonic()
+
+    for i, symbol in enumerate(symbols):
+        price_path = os.path.join(prices_dir, f"{symbol}.json")
+
+        if resume and os.path.exists(price_path) and os.path.getsize(price_path) > 50:
+            stats["skipped"] += 1
+            continue
+
+        result = fetch_json(
+            client, api_key,
+            name=f"{symbol} prices",
+            endpoint=ENDPOINTS["historical_price_light"],
+            params={"symbol": symbol, "from": "2021-01-01", "to": "2026-02-28"},
+            output_path=price_path,
+            quiet=True,
+        )
+
+        if result is not None:
+            stats["ok"] += 1
+        else:
+            stats["failed"] += 1
+
+        # Progress every 50 companies
+        if (i + 1) % 50 == 0 or i == total - 1:
+            elapsed = time.monotonic() - start_time
+            rate = call_count / (elapsed / 60) if elapsed > 0 else 0
+            remaining = total - (i + 1) - stats["skipped"]
+            eta_min = (remaining / rate) if rate > 0 else 0
+            log.info(
+                f"  [{i+1}/{total}] "
+                f"{stats['ok']} OK, {stats['skipped']} skip, {stats['failed']} fail | "
+                f"ETA: {eta_min:.1f}min"
+            )
+
+    log.info(f"\nPrices done: {stats['ok']} OK, {stats['skipped']} skipped, {stats['failed']} failed")
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
 def save_manifest():
@@ -367,6 +472,11 @@ def run_test(client: httpx.Client, api_key: str):
     test_symbols = SP500_SYMBOLS[:5]
     log.info(f"\nTest companies: {test_symbols}")
     fetch_all_company_data(client, api_key, test_symbols, resume=False)
+
+    # Stock price data
+    log.info("\n--- Phase 3: Stock price data (test) ---")
+    fetch_stock_price_changes(client, api_key, test_symbols)
+    fetch_company_prices(client, api_key, test_symbols)
 
     # Print sample field names
     sample_path = os.path.join(OUTPUT_PATHS["company_financials_dir"], f"{test_symbols[0]}.json")
@@ -412,9 +522,14 @@ def run_all(client: httpx.Client, api_key: str, resume: bool = False):
     save_constituents_file()
     fetch_spy_prices(client, api_key, resume=resume)
 
-    # Phase 2: Per-company
+    # Phase 2: Per-company financials
     log.info("\n--- Phase 2: Company data ---")
     fetch_all_company_data(client, api_key, SP500_SYMBOLS, resume=resume)
+
+    # Phase 3: Stock price data
+    log.info("\n--- Phase 3: Stock price data ---")
+    fetch_stock_price_changes(client, api_key, SP500_SYMBOLS, resume=resume)
+    fetch_company_prices(client, api_key, SP500_SYMBOLS, resume=resume)
 
     save_manifest()
     _print_summary()
@@ -446,10 +561,24 @@ def _print_summary():
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def run_prices_only(client: httpx.Client, api_key: str, resume: bool = False):
+    """Fetch only stock price data (price changes + daily history)."""
+    log.info("=" * 60)
+    log.info(f"PRICES ONLY — {len(SP500_SYMBOLS)} S&P 500 companies")
+    log.info("=" * 60)
+
+    fetch_stock_price_changes(client, api_key, SP500_SYMBOLS, resume=resume)
+    fetch_company_prices(client, api_key, SP500_SYMBOLS, resume=resume)
+
+    save_manifest()
+    _print_summary()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fetch S&P 500 data from FMP API")
     parser.add_argument("--test", action="store_true", help="Test mode: verify endpoints + 5 sample companies")
     parser.add_argument("--resume", action="store_true", help="Resume: skip already-fetched files")
+    parser.add_argument("--prices-only", action="store_true", help="Fetch only stock price data (new endpoints)")
     args = parser.parse_args()
 
     # Ensure output directories
@@ -463,6 +592,8 @@ def main():
     try:
         if args.test:
             run_test(client, api_key)
+        elif args.prices_only:
+            run_prices_only(client, api_key, resume=args.resume)
         else:
             run_all(client, api_key, resume=args.resume)
     finally:

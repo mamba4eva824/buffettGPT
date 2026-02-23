@@ -2,11 +2,13 @@
 """
 Build S&P 500 Silverblatt-style analysis dataset from raw FMP API JSON files.
 
-Produces 4 Parquet files in sp500_analysis/data/:
-  - sp500_quarterly.parquet   (~10,000 rows × ~80 cols)
-  - sp500_profiles.parquet    (~498 rows)
-  - sp500_dividends.parquet   (~30,000 rows)
-  - sp500_spy_daily.parquet   (~1,255 rows)
+Produces 6 Parquet files in sp500_analysis/data/:
+  - sp500_quarterly.parquet      (~10,000 rows × ~80 cols)
+  - sp500_profiles.parquet       (~498 rows)
+  - sp500_dividends.parquet      (~30,000 rows)
+  - sp500_spy_daily.parquet      (~1,255 rows)
+  - sp500_price_changes.parquet  (~496 rows — period returns per company)
+  - sp500_daily_prices.parquet   (~600,000 rows — daily prices per company)
 """
 
 import json
@@ -19,7 +21,9 @@ DATA_DIR = Path(__file__).parent / "data"
 FINANCIALS_DIR = DATA_DIR / "company_financials"
 PROFILES_DIR = DATA_DIR / "company_profiles"
 DIVIDENDS_DIR = DATA_DIR / "company_dividends"
+PRICES_DIR = DATA_DIR / "company_prices"
 SPY_FILE = DATA_DIR / "spy_historical_prices.json"
+PRICE_CHANGES_FILE = DATA_DIR / "stock_price_changes.json"
 
 # Metadata columns duplicated across income/cashflow/balance that should be
 # dropped from cashflow and balance before merging (income's version is kept).
@@ -234,10 +238,78 @@ def load_spy_prices() -> pd.DataFrame:
     return df
 
 
-# ── Step 8: Save & verify ────────────────────────────────────────────────────
+# ── Step 8: Load stock price changes ──────────────────────────────────────
+
+def load_price_changes() -> pd.DataFrame:
+    """Load the batch stock-price-change JSON into a DataFrame.
+    One row per company with 1D/5D/1M/3M/6M/YTD/1Y/3Y/5Y/10Y percentage returns.
+    """
+    if not PRICE_CHANGES_FILE.exists():
+        print("  WARNING: stock_price_changes.json not found — skipping")
+        return pd.DataFrame()
+
+    with open(PRICE_CHANGES_FILE) as f:
+        data = json.load(f)
+
+    df = pd.DataFrame(data)
+    # Rename columns for clarity
+    rename_map = {
+        "1D": "return_1d", "5D": "return_5d", "1M": "return_1m",
+        "3M": "return_3m", "6M": "return_6m", "ytd": "return_ytd",
+        "1Y": "return_1y", "3Y": "return_3y", "5Y": "return_5y",
+        "10Y": "return_10y", "max": "return_max",
+    }
+    df = df.rename(columns=rename_map)
+    print(f"  Loaded price changes: {len(df)} companies")
+    return df
+
+
+# ── Step 9: Load per-company daily prices ────────────────────────────────
+
+def load_daily_prices() -> pd.DataFrame:
+    """Load all company_prices JSONs into a single long-format DataFrame.
+    Columns: symbol, date, price, volume, plus derived quarter and returns.
+    """
+    if not PRICES_DIR.exists():
+        print("  WARNING: company_prices/ not found — skipping")
+        return pd.DataFrame()
+
+    rows = []
+    for fp in sorted(PRICES_DIR.glob("*.json")):
+        with open(fp) as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            for rec in data:
+                rec["symbol"] = fp.stem
+                rows.append(rec)
+
+    if not rows:
+        print("  WARNING: No daily price data found")
+        return pd.DataFrame()
+
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values(["symbol", "date"]).reset_index(drop=True)
+
+    # Add quarter column
+    df["quarter"] = df["date"].dt.year.astype(str) + "-Q" + df["date"].dt.quarter.astype(str)
+
+    # Add year column
+    df["year"] = df["date"].dt.year
+
+    # Daily return per company
+    df["daily_return"] = df.groupby("symbol")["price"].pct_change()
+
+    print(f"  Loaded daily prices: {len(df):,} records, {df['symbol'].nunique()} companies")
+    return df
+
+
+# ── Step 10: Save & verify ───────────────────────────────────────────────────
 
 def print_summary(quarterly: pd.DataFrame, profiles: pd.DataFrame,
-                  dividends: pd.DataFrame, spy: pd.DataFrame) -> None:
+                  dividends: pd.DataFrame, spy: pd.DataFrame,
+                  price_changes: pd.DataFrame = None,
+                  daily_prices: pd.DataFrame = None) -> None:
     """Print verification summary."""
     print("\n" + "=" * 70)
     print("DATASET SUMMARY")
@@ -250,6 +322,10 @@ def print_summary(quarterly: pd.DataFrame, profiles: pd.DataFrame,
     print(f"{'sp500_profiles.parquet':<35} {len(profiles):>8,} {len(profiles.columns):>6}")
     print(f"{'sp500_dividends.parquet':<35} {len(dividends):>8,} {len(dividends.columns):>6}")
     print(f"{'sp500_spy_daily.parquet':<35} {len(spy):>8,} {len(spy.columns):>6}")
+    if price_changes is not None and len(price_changes) > 0:
+        print(f"{'sp500_price_changes.parquet':<35} {len(price_changes):>8,} {len(price_changes.columns):>6}")
+    if daily_prices is not None and len(daily_prices) > 0:
+        print(f"{'sp500_daily_prices.parquet':<35} {len(daily_prices):>8,} {len(daily_prices.columns):>6}")
 
     # Date range
     if "date" in quarterly.columns:
@@ -305,45 +381,61 @@ def main():
     print("Building S&P 500 Silverblatt dataset...\n")
 
     # Step 1: Load financials
-    print("[1/8] Loading company financials...")
+    print("[1/10] Loading company financials...")
     income_df, cashflow_df, balance_df = load_financials()
 
     # Step 2: Add calendar quarters
-    print("[2/8] Standardizing calendar quarters...")
+    print("[2/10] Standardizing calendar quarters...")
     income_df = add_calendar_quarter(income_df)
     cashflow_df = add_calendar_quarter(cashflow_df)
     balance_df = add_calendar_quarter(balance_df)
 
     # Step 3: Merge
-    print("[3/8] Merging financial statements...")
+    print("[3/10] Merging financial statements...")
     quarterly = merge_statements(income_df, cashflow_df, balance_df)
 
     # Step 4: Derived columns
-    print("[4/8] Adding derived columns...")
+    print("[4/10] Adding derived columns...")
     quarterly = add_derived_columns(quarterly)
 
     # Step 5: Profiles
-    print("[5/8] Loading company profiles...")
+    print("[5/10] Loading company profiles...")
     profiles = load_profiles()
 
     # Step 6: Dividends
-    print("[6/8] Loading company dividends...")
+    print("[6/10] Loading company dividends...")
     dividends = load_dividends()
 
     # Step 7: SPY prices
-    print("[7/8] Loading SPY daily prices...")
+    print("[7/10] Loading SPY daily prices...")
     spy = load_spy_prices()
 
-    # Step 8: Save
-    print("[8/8] Saving Parquet files...")
+    # Step 8: Stock price changes
+    print("[8/10] Loading stock price changes...")
+    price_changes = load_price_changes()
+
+    # Step 9: Daily prices
+    print("[9/10] Loading per-company daily prices...")
+    daily_prices = load_daily_prices()
+
+    # Step 10: Save
+    print("[10/10] Saving Parquet files...")
     quarterly.to_parquet(DATA_DIR / "sp500_quarterly.parquet", index=False)
     profiles.to_parquet(DATA_DIR / "sp500_profiles.parquet", index=False)
     dividends.to_parquet(DATA_DIR / "sp500_dividends.parquet", index=False)
     spy.to_parquet(DATA_DIR / "sp500_spy_daily.parquet", index=False)
-    print("  Saved 4 Parquet files to sp500_analysis/data/")
+
+    file_count = 4
+    if len(price_changes) > 0:
+        price_changes.to_parquet(DATA_DIR / "sp500_price_changes.parquet", index=False)
+        file_count += 1
+    if len(daily_prices) > 0:
+        daily_prices.to_parquet(DATA_DIR / "sp500_daily_prices.parquet", index=False)
+        file_count += 1
+    print(f"  Saved {file_count} Parquet files to sp500_analysis/data/")
 
     # Summary
-    print_summary(quarterly, profiles, dividends, spy)
+    print_summary(quarterly, profiles, dividends, spy, price_changes, daily_prices)
 
 
 if __name__ == "__main__":

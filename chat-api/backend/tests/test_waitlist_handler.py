@@ -14,7 +14,7 @@ import os
 import sys
 import time
 from decimal import Decimal
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 
 import boto3
 import pytest
@@ -60,12 +60,44 @@ def handler(dynamodb_mock):
     Import the handler module AFTER moto is active.
 
     Reassigns the module-level waitlist_table to the mocked table
-    to avoid stale boto3 references.
+    to avoid stale boto3 references. Mocks email_service to avoid
+    Secrets Manager calls during tests.
     """
     # Clear cached module to force re-import under moto
     mod_key = 'handlers.waitlist_handler'
     if mod_key in sys.modules:
         del sys.modules[mod_key]
+
+    # Pre-mock email_service so handler import doesn't hit Secrets Manager
+    # We need real crypto functions but mock the email-sending functions
+    email_mock = MagicMock()
+    email_mock.send_welcome_email = MagicMock(return_value=None)
+    email_mock.send_referral_success_email = MagicMock(return_value=None)
+    email_mock.send_tier_unlocked_email = MagicMock(return_value=None)
+
+    # Provide real implementations for non-email functions
+    import hashlib
+    import hmac as hmac_mod
+    import html as html_mod
+    from urllib.parse import quote as url_quote
+
+    unsub_secret = os.environ.get('UNSUBSCRIBE_SECRET', os.environ.get('JWT_SECRET', 'dev-fallback-secret'))
+
+    def _generate_unsubscribe_token(email_addr):
+        return hmac_mod.new(unsub_secret.encode(), email_addr.lower().encode(), hashlib.sha256).hexdigest()
+
+    def _verify_unsubscribe_token(email_addr, token):
+        expected = _generate_unsubscribe_token(email_addr)
+        return hmac_mod.compare_digest(expected, token)
+
+    def _escape(value):
+        return html_mod.escape(str(value))
+
+    email_mock.generate_unsubscribe_token = _generate_unsubscribe_token
+    email_mock.verify_unsubscribe_token = _verify_unsubscribe_token
+    email_mock._escape = _escape
+
+    sys.modules['utils.email_service'] = email_mock
 
     from handlers import waitlist_handler
 
@@ -275,6 +307,17 @@ class TestSignupValidation:
             resp = handler.lambda_handler(event, None)
             assert resp['statusCode'] == 400, f"Expected 400 for '{bad_email}'"
 
+    def test_email_too_long_returns_400(self, handler):
+        long_email = 'a' * 245 + '@example.com'  # 257 chars
+        event = {
+            'requestContext': {'http': {'method': 'POST', 'sourceIp': '1.2.3.4'}},
+            'rawPath': '/dev/waitlist/signup',
+            'body': json.dumps({'email': long_email}),
+        }
+        resp = handler.lambda_handler(event, None)
+        assert resp['statusCode'] == 400
+        assert 'too long' in _parse(resp)['error'].lower()
+
     def test_disposable_email_returns_400(self, handler):
         event = {
             'requestContext': {'http': {'method': 'POST', 'sourceIp': '1.2.3.4'}},
@@ -354,11 +397,11 @@ class TestDuplicateHandling:
 class TestReferralSystem:
     """Test referral code generation, validation, and credit logic."""
 
-    def test_referral_code_format_is_buff_plus_4_chars(self, handler, signup_event):
+    def test_referral_code_format_is_buff_plus_6_chars(self, handler, signup_event):
         resp = handler.lambda_handler(signup_event, None)
         code = _parse(resp)['referral_code']
         assert code.startswith('BUFF-')
-        assert len(code) == 9  # BUFF- + 4 chars
+        assert len(code) == 11  # BUFF- + 6 chars
 
     def test_invalid_referral_code_ignored_signup_succeeds(self, handler, signup_event):
         signup_event['body'] = json.dumps({
@@ -396,11 +439,11 @@ class TestReferralSystem:
             code = handler._generate_referral_code()
 
         assert code.startswith('BUFF-')
-        assert len(code) == 9  # 4-char code succeeded after retries
+        assert len(code) == 11  # 6-char code succeeded after retries
         assert call_count[0] == 4  # 3 collisions + 1 success
 
-    def test_referral_code_fallback_to_6_chars(self, handler):
-        """When all 10 retries collide, fall back to 6-char code."""
+    def test_referral_code_fallback_to_8_chars(self, handler):
+        """When all 10 retries collide, fall back to 8-char code."""
         def always_collide(code):
             return {'email': 'x@y.com', 'referral_code': code}
 
@@ -408,7 +451,7 @@ class TestReferralSystem:
             code = handler._generate_referral_code()
 
         assert code.startswith('BUFF-')
-        assert len(code) == 11  # BUFF- + 6 chars
+        assert len(code) == 13  # BUFF- + 8 chars
 
 
 class TestStatusEndpoint:
@@ -454,16 +497,20 @@ class TestStatusEndpoint:
         resp = handler.lambda_handler(event, None)
         assert resp['statusCode'] == 400
 
-    def test_status_email_not_found_returns_404(self, handler):
+    def test_status_email_not_found_returns_403(self, handler):
+        """Unknown email returns 403 (same as wrong code) to prevent email enumeration."""
         event = {
             'requestContext': {'http': {'method': 'GET'}},
             'rawPath': '/dev/waitlist/status',
             'queryStringParameters': {'email': 'nobody@example.com', 'code': 'BUFF-XXXX'},
         }
         resp = handler.lambda_handler(event, None)
-        assert resp['statusCode'] == 404
+        assert resp['statusCode'] == 403
+        body = _parse(resp)
+        assert body['error'] == 'Invalid email or code'
 
     def test_status_code_mismatch_returns_403(self, handler, seeded_user):
+        """Wrong code returns same 403 as unknown email to prevent email enumeration."""
         event = {
             'requestContext': {'http': {'method': 'GET'}},
             'rawPath': '/dev/waitlist/status',
@@ -474,6 +521,8 @@ class TestStatusEndpoint:
         }
         resp = handler.lambda_handler(event, None)
         assert resp['statusCode'] == 403
+        body = _parse(resp)
+        assert body['error'] == 'Invalid email or code'
 
 
 class TestTierCalculation:
@@ -489,13 +538,18 @@ class TestTierCalculation:
         info = handler._get_tier_info(3)
         assert info['current_tier']['name'] == '1 Month Free Plus'
         assert info['next_tier']['name'] == '3 Months Free Plus'
-        assert info['next_tier']['referrals_needed'] == 7
+        assert info['next_tier']['referrals_needed'] == 2
+
+    def test_count_at_max_tier_shows_no_next(self, handler):
+        info = handler._get_tier_info(5)
+        assert info['current_tier']['name'] == '3 Months Free Plus'
+        assert info['next_tier'] is None
 
     def test_count_between_tiers_shows_referrals_needed(self, handler):
-        info = handler._get_tier_info(5)
+        info = handler._get_tier_info(4)
         assert info['current_tier']['name'] == '1 Month Free Plus'
         assert info['next_tier']['name'] == '3 Months Free Plus'
-        assert info['next_tier']['referrals_needed'] == 5
+        assert info['next_tier']['referrals_needed'] == 1
 
 
 class TestEdgeCases:
@@ -633,3 +687,297 @@ class TestEdgeCases:
         # Should not raise
         handler._record_rate_limit('1.2.3.4')
         dynamodb_mock.update_item = original
+
+
+class TestEmailIntegration:
+    """Test email sending is triggered correctly during signup and referral flows."""
+
+    def test_welcome_email_sent_on_signup(self, handler, signup_event):
+        with patch.object(handler, 'send_welcome_email') as mock_welcome:
+            resp = handler.lambda_handler(signup_event, None)
+            assert resp['statusCode'] == 201
+            body = _parse(resp)
+
+            mock_welcome.assert_called_once_with(
+                'user@example.com',
+                body['referral_code'],
+                body['referral_link'],
+            )
+
+    def test_welcome_email_not_sent_on_duplicate(self, handler, seeded_user, signup_event):
+        signup_event['body'] = json.dumps({'email': seeded_user['email']})
+        with patch.object(handler, 'send_welcome_email') as mock_welcome:
+            resp = handler.lambda_handler(signup_event, None)
+            assert resp['statusCode'] == 409
+            mock_welcome.assert_not_called()
+
+    def test_welcome_email_not_sent_on_validation_error(self, handler):
+        event = {
+            'requestContext': {'http': {'method': 'POST', 'sourceIp': '1.2.3.4'}},
+            'rawPath': '/dev/waitlist/signup',
+            'body': json.dumps({'email': ''}),
+        }
+        with patch.object(handler, 'send_welcome_email') as mock_welcome:
+            resp = handler.lambda_handler(event, None)
+            assert resp['statusCode'] == 400
+            mock_welcome.assert_not_called()
+
+    def test_referral_email_sent_to_referrer(self, handler, seeded_user, signup_event):
+        signup_event['body'] = json.dumps({
+            'email': 'referred@example.com',
+            'referral_code': seeded_user['referral_code'],
+        })
+        with patch.object(handler, 'send_tier_unlocked_email') as mock_tier:
+            resp = handler.lambda_handler(signup_event, None)
+            assert resp['statusCode'] == 201
+
+            # First referral → tier threshold 1 → tier unlocked email
+            mock_tier.assert_called_once()
+            call_kwargs = mock_tier.call_args
+            assert call_kwargs[1]['to'] == seeded_user['email']
+            assert call_kwargs[1]['tier_name'] == 'Early Access'
+            assert call_kwargs[1]['referral_count'] == 1
+
+    def test_referral_success_email_when_no_tier_unlocked(self, handler, dynamodb_mock, signup_event):
+        """When referral_count goes from 1 to 2, no tier unlocked — sends referral success email."""
+        # Seed referrer with 1 referral (already at Early Access tier)
+        dynamodb_mock.put_item(Item={
+            'email': 'referrer2@example.com',
+            'referral_code': 'BUFF-BBBB',
+            'referral_count': 1,
+            'status': 'early_access',
+            'created_at': '2026-02-12T10:00:00+00:00',
+            'ip_address': '10.0.0.2',
+        })
+        signup_event['body'] = json.dumps({
+            'email': 'friend2@example.com',
+            'referral_code': 'BUFF-BBBB',
+        })
+        with patch.object(handler, 'send_referral_success_email') as mock_ref, \
+             patch.object(handler, 'send_tier_unlocked_email') as mock_tier:
+            resp = handler.lambda_handler(signup_event, None)
+            assert resp['statusCode'] == 201
+
+            # Count goes to 2 — no tier at 2, so referral success email
+            mock_ref.assert_called_once()
+            assert mock_ref.call_args[1]['to'] == 'referrer2@example.com'
+            assert mock_ref.call_args[1]['referral_count'] == 2
+            mock_tier.assert_not_called()
+
+    def test_email_failure_does_not_block_signup(self, handler, signup_event):
+        """Even if email sending raises, signup still returns 201."""
+        with patch.object(handler, 'send_welcome_email', side_effect=Exception("SMTP down")):
+            resp = handler.lambda_handler(signup_event, None)
+            assert resp['statusCode'] == 201
+
+    def test_referral_email_failure_does_not_block_credit(self, handler, seeded_user, signup_event, dynamodb_mock):
+        """Even if referral email fails, referral credit is still applied."""
+        signup_event['body'] = json.dumps({
+            'email': 'friend3@example.com',
+            'referral_code': seeded_user['referral_code'],
+        })
+        with patch.object(handler, 'send_tier_unlocked_email', side_effect=Exception("Email down")):
+            resp = handler.lambda_handler(signup_event, None)
+            assert resp['statusCode'] == 201
+
+        # Verify referrer was still credited despite email failure
+        referrer = dynamodb_mock.get_item(Key={'email': seeded_user['email']})['Item']
+        assert int(referrer['referral_count']) == 1
+
+
+class TestHoneypot:
+    """Test honeypot bot protection."""
+
+    def test_honeypot_filled_returns_fake_201(self, handler):
+        """Bot filling the honeypot field gets a fake success response."""
+        event = {
+            'requestContext': {'http': {'method': 'POST', 'sourceIp': '1.2.3.4'}},
+            'rawPath': '/dev/waitlist/signup',
+            'body': json.dumps({
+                'email': 'bot@example.com',
+                'website': 'http://spam.com',
+            }),
+        }
+        resp = handler.lambda_handler(event, None)
+        body = _parse(resp)
+
+        assert resp['statusCode'] == 201
+        assert body['referral_code'] == 'BUFF-000000'
+        assert body['message'] == "You're on the waitlist!"
+
+    def test_honeypot_filled_does_not_write_to_db(self, handler, dynamodb_mock):
+        """Bot signup must NOT create a real DynamoDB entry."""
+        event = {
+            'requestContext': {'http': {'method': 'POST', 'sourceIp': '1.2.3.4'}},
+            'rawPath': '/dev/waitlist/signup',
+            'body': json.dumps({
+                'email': 'sneakybot@example.com',
+                'website': 'x',
+            }),
+        }
+        handler.lambda_handler(event, None)
+
+        # Verify no item was written
+        item = dynamodb_mock.get_item(Key={'email': 'sneakybot@example.com'}).get('Item')
+        assert item is None
+
+    def test_honeypot_empty_proceeds_normally(self, handler):
+        """Empty honeypot field (normal user) proceeds with real signup."""
+        event = {
+            'requestContext': {'http': {'method': 'POST', 'sourceIp': '10.0.0.99'}},
+            'rawPath': '/dev/waitlist/signup',
+            'body': json.dumps({
+                'email': 'realuser@example.com',
+                'website': '',
+            }),
+        }
+        resp = handler.lambda_handler(event, None)
+        body = _parse(resp)
+
+        assert resp['statusCode'] == 201
+        assert body['referral_code'] != 'BUFF-000000'
+
+    def test_honeypot_absent_proceeds_normally(self, handler):
+        """No honeypot field at all (normal user) proceeds with real signup."""
+        event = {
+            'requestContext': {'http': {'method': 'POST', 'sourceIp': '10.0.0.98'}},
+            'rawPath': '/dev/waitlist/signup',
+            'body': json.dumps({'email': 'normaluser@example.com'}),
+        }
+        resp = handler.lambda_handler(event, None)
+        assert resp['statusCode'] == 201
+        assert _parse(resp)['referral_code'] != 'BUFF-000000'
+
+
+class TestUnsubscribe:
+    """Test GET /waitlist/unsubscribe endpoint."""
+
+    def test_unsubscribe_valid_token_sets_opt_out(self, handler, dynamodb_mock, seeded_user):
+        """Valid unsubscribe link sets email_opted_out on the record."""
+        from utils.email_service import generate_unsubscribe_token
+        token = generate_unsubscribe_token(seeded_user['email'])
+
+        event = {
+            'requestContext': {'http': {'method': 'GET'}},
+            'rawPath': '/dev/waitlist/unsubscribe',
+            'queryStringParameters': {
+                'email': seeded_user['email'],
+                'token': token,
+            },
+        }
+        resp = handler.lambda_handler(event, None)
+        assert resp['statusCode'] == 200
+        assert 'text/html' in resp['headers']['Content-Type']
+        assert 'unsubscribed' in resp['body'].lower()
+
+        # Verify DynamoDB flag was set
+        item = dynamodb_mock.get_item(Key={'email': seeded_user['email']})['Item']
+        assert item.get('email_opted_out') is True
+
+    def test_unsubscribe_invalid_token_returns_403(self, handler, seeded_user):
+        """Invalid HMAC token is rejected."""
+        event = {
+            'requestContext': {'http': {'method': 'GET'}},
+            'rawPath': '/dev/waitlist/unsubscribe',
+            'queryStringParameters': {
+                'email': seeded_user['email'],
+                'token': 'definitely-not-valid',
+            },
+        }
+        resp = handler.lambda_handler(event, None)
+        assert resp['statusCode'] == 403
+
+    def test_unsubscribe_missing_params_returns_400(self, handler):
+        """Missing email or token returns 400."""
+        event = {
+            'requestContext': {'http': {'method': 'GET'}},
+            'rawPath': '/dev/waitlist/unsubscribe',
+            'queryStringParameters': {'email': 'x@y.com'},
+        }
+        resp = handler.lambda_handler(event, None)
+        assert resp['statusCode'] == 400
+
+    def test_unsubscribe_route_in_lambda_handler(self, handler, seeded_user):
+        """Unsubscribe route is correctly wired in the router."""
+        from utils.email_service import generate_unsubscribe_token
+        token = generate_unsubscribe_token(seeded_user['email'])
+
+        event = {
+            'requestContext': {'http': {'method': 'GET'}},
+            'rawPath': '/dev/waitlist/unsubscribe',
+            'queryStringParameters': {
+                'email': seeded_user['email'],
+                'token': token,
+            },
+        }
+        resp = handler.lambda_handler(event, None)
+        assert resp['statusCode'] == 200
+
+
+class TestEmailOptOut:
+    """Test that opted-out users don't receive emails."""
+
+    def test_opted_out_referrer_gets_no_email(self, handler, dynamodb_mock, signup_event):
+        """When referrer has email_opted_out=True, no referral email is sent."""
+        dynamodb_mock.put_item(Item={
+            'email': 'optout-referrer@example.com',
+            'referral_code': 'BUFF-OPTOUT',
+            'referral_count': 0,
+            'status': 'waitlisted',
+            'created_at': '2026-02-12T10:00:00+00:00',
+            'ip_address': '10.0.0.1',
+            'email_opted_out': True,
+        })
+
+        signup_event['body'] = json.dumps({
+            'email': 'newperson@example.com',
+            'referral_code': 'BUFF-OPTOUT',
+        })
+
+        with patch.object(handler, 'send_tier_unlocked_email') as mock_tier, \
+             patch.object(handler, 'send_referral_success_email') as mock_ref:
+            resp = handler.lambda_handler(signup_event, None)
+            assert resp['statusCode'] == 201
+
+            # Neither email type should be sent
+            mock_tier.assert_not_called()
+            mock_ref.assert_not_called()
+
+        # But referral credit should still be applied
+        referrer = dynamodb_mock.get_item(Key={'email': 'optout-referrer@example.com'})['Item']
+        assert int(referrer['referral_count']) == 1
+
+    def test_is_opted_out_returns_false_for_normal_user(self, handler):
+        assert handler._is_opted_out({'email': 'x@y.com'}) is False
+        assert handler._is_opted_out(None) is False
+
+    def test_is_opted_out_returns_true_when_flagged(self, handler):
+        assert handler._is_opted_out({'email': 'x@y.com', 'email_opted_out': True}) is True
+
+
+class TestHtmlEscaping:
+    """Test that email templates escape HTML special characters."""
+
+    def test_escape_function_escapes_html(self):
+        """_escape properly escapes HTML special characters."""
+        from utils.email_service import _escape
+        assert _escape('<script>alert("xss")</script>') == '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+        assert _escape('normal text') == 'normal text'
+        assert _escape(42) == '42'
+        assert _escape("Tom & Jerry") == 'Tom &amp; Jerry'
+
+    def test_unsubscribe_token_round_trip(self):
+        """generate_unsubscribe_token and verify_unsubscribe_token work together."""
+        from utils.email_service import generate_unsubscribe_token, verify_unsubscribe_token
+        email = 'test@example.com'
+        token = generate_unsubscribe_token(email)
+
+        assert verify_unsubscribe_token(email, token) is True
+        assert verify_unsubscribe_token(email, 'wrong-token') is False
+        assert verify_unsubscribe_token('other@example.com', token) is False
+
+    def test_unsubscribe_token_case_insensitive_email(self):
+        """Token verification is case-insensitive for email."""
+        from utils.email_service import generate_unsubscribe_token, verify_unsubscribe_token
+        token = generate_unsubscribe_token('User@Example.COM')
+        assert verify_unsubscribe_token('user@example.com', token) is True

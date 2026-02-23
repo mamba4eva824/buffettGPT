@@ -61,6 +61,12 @@ locals {
     # Token Usage Tracking (monthly limits for follow-up agent)
     TOKEN_USAGE_TABLE   = try(module.dynamodb.token_usage_table_name, "")
     DEFAULT_TOKEN_LIMIT = "2000000"  # 2M tokens for production
+
+    # Waitlist Table
+    WAITLIST_TABLE = module.dynamodb.waitlist_table_name
+
+    # Frontend URL (for referral links)
+    FRONTEND_URL = module.cloudfront.cloudfront_url
   }
 
   # Function-specific environment variables
@@ -150,6 +156,9 @@ module "api_gateway" {
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
   auth_callback_function_arn      = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
   cloudfront_url                  = module.cloudfront.cloudfront_url
+
+  # Waitlist API (signup, status, referral tracking)
+  enable_waitlist_routes = true
 
   common_tags = local.common_tags
 }

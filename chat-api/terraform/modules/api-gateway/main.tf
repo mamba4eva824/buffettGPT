@@ -643,6 +643,16 @@ resource "aws_apigatewayv2_route" "waitlist_status_options" {
   authorization_type = "NONE"
 }
 
+# GET /waitlist/unsubscribe - Email unsubscribe (NO AUTH - token-verified)
+resource "aws_apigatewayv2_route" "waitlist_unsubscribe" {
+  count     = var.enable_waitlist_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /waitlist/unsubscribe"
+  target    = "integrations/${aws_apigatewayv2_integration.waitlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
 # Waitlist Handler Lambda Permission
 resource "aws_lambda_permission" "waitlist_api_permission" {
   count         = var.enable_waitlist_routes ? 1 : 0
