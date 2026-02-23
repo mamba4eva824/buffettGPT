@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useReducer, useRef, useCallback } from 'react';
+import logger from '../utils/logger';
 
 // API base URL from environment - Investment Research uses API Gateway
-const API_BASE = import.meta.env.VITE_RESEARCH_API_URL || 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
+const API_BASE = import.meta.env.VITE_RESEARCH_API_URL || '';
 
 // Follow-up uses Lambda Function URL directly (bypasses API Gateway for SSE streaming)
 const FOLLOWUP_URL = import.meta.env.VITE_ANALYSIS_FOLLOWUP_URL || '';
@@ -61,7 +62,7 @@ const ACTIONS = {
 function researchReducer(state, action) {
   switch (action.type) {
     case ACTIONS.START_RESEARCH:
-      console.log('[Reducer DEBUG] START_RESEARCH - resetting interactionLog to []');
+      logger.log('[Reducer DEBUG] START_RESEARCH - resetting interactionLog to []');
       return {
         ...initialState,
         selectedTicker: action.ticker,
@@ -274,17 +275,17 @@ function researchReducer(state, action) {
     // Interaction timeline actions
     case ACTIONS.LOG_SECTION_INTERACTION:
       // DEBUG: Log when this action is received
-      console.log('[Reducer DEBUG] LOG_SECTION_INTERACTION:', {
+      logger.log('[Reducer DEBUG] LOG_SECTION_INTERACTION:', {
         sectionId: action.sectionId,
         currentInteractionLog: state.interactionLog.map(e => e.id),
         isDuplicate: state.interactionLog.some(entry => entry.type === 'section' && entry.id === action.sectionId),
       });
       // Don't log duplicate section interactions
       if (state.interactionLog.some(entry => entry.type === 'section' && entry.id === action.sectionId)) {
-        console.log('[Reducer DEBUG] Skipping duplicate');
+        logger.log('[Reducer DEBUG] Skipping duplicate');
         return state;
       }
-      console.log('[Reducer DEBUG] Adding to interactionLog');
+      logger.log('[Reducer DEBUG] Adding to interactionLog');
       return {
         ...state,
         interactionLog: [
@@ -327,6 +328,8 @@ export function ResearchProvider({ children }) {
   const [state, dispatch] = useReducer(researchReducer, initialState);
   const abortControllerRef = useRef(null);
   const followUpAbortRef = useRef(null);
+  const researchIdRef = useRef(0);
+  const clearAnimTimeoutRef = useRef(null);
 
   // Abort current stream
   const abortStream = useCallback(() => {
@@ -348,6 +351,10 @@ export function ResearchProvider({ children }) {
   const startResearch = useCallback(async (ticker, token = null) => {
     // Abort any existing stream
     abortStream();
+
+    // Track request ID to prevent stale streams from corrupting state
+    researchIdRef.current += 1;
+    const requestId = researchIdRef.current;
 
     // Reset state and start new research
     dispatch({ type: ACTIONS.START_RESEARCH, ticker: ticker.toUpperCase() });
@@ -378,6 +385,9 @@ export function ResearchProvider({ children }) {
         const { done, value } = await reader.read();
         if (done) break;
 
+        // Bail if a newer research request has started
+        if (requestId !== researchIdRef.current) return;
+
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
@@ -394,14 +404,14 @@ export function ResearchProvider({ children }) {
               }
               handleSSEEvent(currentEvent, data, dispatch);
             } catch (e) {
-              console.warn('Failed to parse SSE data:', e);
+              logger.warn('Failed to parse SSE data:', e);
             }
           }
         }
       }
 
-      // Only dispatch complete if no error occurred during stream
-      if (!hasError) {
+      // Only dispatch complete if no error occurred and this is still the current request
+      if (!hasError && requestId === researchIdRef.current) {
         dispatch({ type: ACTIONS.SET_STATUS, status: 'complete' });
       }
     } catch (error) {
@@ -409,7 +419,9 @@ export function ResearchProvider({ children }) {
         // Stream was intentionally aborted, not an error
         return;
       }
-      console.error('Research stream error:', error);
+      // Only dispatch error if this is still the current request
+      if (requestId !== researchIdRef.current) return;
+      logger.error('Research stream error:', error);
       dispatch({ type: ACTIONS.SET_ERROR, error: error.message });
     }
   }, [abortStream]);
@@ -445,14 +457,15 @@ export function ResearchProvider({ children }) {
 
       // Clear streaming state after animation has time to start
       if (animate) {
-        setTimeout(() => {
+        if (clearAnimTimeoutRef.current) clearTimeout(clearAnimTimeoutRef.current);
+        clearAnimTimeoutRef.current = setTimeout(() => {
           dispatch({ type: ACTIONS.CLEAR_STREAMING_SECTION });
         }, 100);
       }
 
       return data;
     } catch (error) {
-      console.error('Fetch section error:', error);
+      logger.error('Fetch section error:', error);
       dispatch({ type: ACTIONS.SET_ERROR, error: error.message });
       throw error;
     }
@@ -498,7 +511,7 @@ export function ResearchProvider({ children }) {
 
       return data;
     } catch (error) {
-      console.error('Batch fetch sections error:', error);
+      logger.error('Batch fetch sections error:', error);
       dispatch({ type: ACTIONS.SET_ERROR, error: error.message });
       throw error;
     }
@@ -571,7 +584,7 @@ export function ResearchProvider({ children }) {
   // conversationId is required for backend to save messages to DynamoDB
   const sendFollowUp = useCallback(async (question, token = null, conversationId = null) => {
     // DEBUG: Log state before validation
-    console.log('[FollowUp DEBUG] State before request:', {
+    logger.log('[FollowUp DEBUG] State before request:', {
       selectedTicker: state.selectedTicker,
       activeSectionId: state.activeSectionId,
       isFollowUpStreaming: state.isFollowUpStreaming,
@@ -582,7 +595,7 @@ export function ResearchProvider({ children }) {
     });
 
     if (!state.selectedTicker || state.isFollowUpStreaming) {
-      console.warn('[FollowUp DEBUG] Early return - validation failed:', {
+      logger.warn('[FollowUp DEBUG] Early return - validation failed:', {
         selectedTicker: state.selectedTicker,
         isFollowUpStreaming: state.isFollowUpStreaming,
       });
@@ -622,8 +635,14 @@ export function ResearchProvider({ children }) {
     // Falls back to API Gateway route if VITE_ANALYSIS_FOLLOWUP_URL is not set
     const followUpUrl = FOLLOWUP_URL || `${API_BASE}/research/followup`;
 
+    // Guard: if both env vars are empty, the URL is invalid — show user-facing error
+    if (!followUpUrl || followUpUrl === '/research/followup') {
+      dispatch({ type: ACTIONS.FOLLOWUP_ERROR, error: 'Follow-up is temporarily unavailable. Please try again later.' });
+      return;
+    }
+
     // DEBUG: Log the exact request being sent
-    console.log('[FollowUp DEBUG] Request details:', {
+    logger.log('[FollowUp DEBUG] Request details:', {
       url: followUpUrl,
       streaming: !!FOLLOWUP_URL,
       method: 'POST',
@@ -643,7 +662,7 @@ export function ResearchProvider({ children }) {
       });
 
       // DEBUG: Log response status
-      console.log('[FollowUp DEBUG] Response received:', {
+      logger.log('[FollowUp DEBUG] Response received:', {
         status: response.status,
         statusText: response.statusText,
         ok: response.ok,
@@ -655,9 +674,9 @@ export function ResearchProvider({ children }) {
         let errorBody = null;
         try {
           errorBody = await response.clone().text();
-          console.error('[FollowUp DEBUG] Error response body:', errorBody);
+          logger.error('[FollowUp DEBUG] Error response body:', errorBody);
         } catch (e) {
-          console.error('[FollowUp DEBUG] Could not read error body:', e);
+          logger.error('[FollowUp DEBUG] Could not read error body:', e);
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
       }
@@ -683,14 +702,14 @@ export function ResearchProvider({ children }) {
               const data = JSON.parse(line.slice(6));
               handleSSEEvent(currentEvent, data, dispatch);
             } catch (e) {
-              console.warn('Failed to parse follow-up SSE data:', e);
+              logger.warn('Failed to parse follow-up SSE data:', e);
             }
           }
         }
       }
     } catch (error) {
       if (error.name === 'AbortError') return;
-      console.error('Follow-up error:', error);
+      logger.error('Follow-up error:', error);
       dispatch({ type: ACTIONS.FOLLOWUP_ERROR, error: error.message });
     }
   }, [state.selectedTicker, state.activeSectionId, state.isFollowUpStreaming, abortFollowUp]);
@@ -735,7 +754,7 @@ export function useResearch() {
 function handleSSEEvent(eventType, data, dispatch) {
   // Guard against null/undefined data to prevent crashes from malformed SSE events
   if (!data) {
-    console.warn('SSE event received with null/undefined data:', eventType);
+    logger.warn('SSE event received with null/undefined data:', eventType);
     return;
   }
 
@@ -824,7 +843,7 @@ function handleSSEEvent(eventType, data, dispatch) {
       break;
 
     case 'followup_end':
-      console.log('[ResearchContext] Received followup_end event:', data.message_id);
+      logger.log('[ResearchContext] Received followup_end event:', data.message_id);
       dispatch({
         type: ACTIONS.FOLLOWUP_END,
         messageId: data.message_id,
@@ -832,7 +851,7 @@ function handleSSEEvent(eventType, data, dispatch) {
       break;
 
     default:
-      console.warn('Unknown SSE event:', eventType, data);
+      logger.warn('Unknown SSE event:', eventType, data);
   }
 }
 
