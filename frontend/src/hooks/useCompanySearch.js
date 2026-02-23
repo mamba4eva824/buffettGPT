@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
+import logger from '../utils/logger';
 
 const RESEARCH_LAMBDA_URL = import.meta.env.VITE_RESEARCH_LAMBDA_URL || '';
 
@@ -60,7 +61,7 @@ export function useCompanySearch(debounceMs = 300) {
         setError(null);
       } catch (err) {
         if (err.name === 'AbortError') return;
-        console.error('Company search error:', err);
+        logger.error('Company search error:', err);
         setError(err.message);
         setResults([]);
       } finally {

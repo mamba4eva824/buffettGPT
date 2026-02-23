@@ -12,7 +12,8 @@ import { server } from '../mocks/server';
 import { errorHandlers } from '../mocks/handlers';
 import { http, HttpResponse } from 'msw';
 
-const API_BASE = 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
+// Must match VITE_RESEARCH_API_URL in vite.config.js test.env
+const API_BASE = 'https://test-api.example.com/dev';
 
 // Wrapper component for testing hooks
 const wrapper = ({ children }) => (

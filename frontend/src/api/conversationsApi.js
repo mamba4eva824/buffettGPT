@@ -108,8 +108,7 @@ export const conversationsApi = {
    * PUT /conversations/:id
    */
   updateResearchState: async (conversationId, researchState, token) => {
-    // DEBUG: Log what we're sending to the API
-    console.log('[API DEBUG] updateResearchState - sending to API:', {
+    logger.log('[API DEBUG] updateResearchState - sending to API:', {
       conversationId,
       visible_sections: researchState?.visible_sections,
       active_section_id: researchState?.active_section_id,
@@ -125,8 +124,7 @@ export const conversationsApi = {
       })
     }, token);
 
-    // DEBUG: Log API response
-    console.log('[API DEBUG] updateResearchState - API response:', result);
+    logger.log('[API DEBUG] updateResearchState - API response:', result);
     return result;
   },
 
@@ -173,8 +171,7 @@ export async function loadConversationHistory(conversationId, token) {
       conversationsApi.getMessages(conversationId, token)
     ]);
 
-    // DEBUG: Log raw conversation response to trace visible_sections persistence
-    console.log('[API DEBUG] conversationsApi.get raw response:', {
+    logger.log('[API DEBUG] conversationsApi.get raw response:', {
       conversationId,
       full_response: conversation,
       metadata: conversation?.metadata,

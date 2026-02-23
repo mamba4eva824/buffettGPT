@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense, lazy } from "react";
 import { Routes, Route, useParams, useNavigate } from "react-router-dom";
-import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown } from "lucide-react";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown, ExternalLink } from "lucide-react";
 import SettingsPanel from "./components/SettingsPanel.jsx";
+import UpgradeModal from "./components/UpgradeModal.jsx";
+import { stripeApi } from "./api/stripeApi.js";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
@@ -194,6 +196,8 @@ function ChatApp() {
   const [remainingQueries, setRemainingQueries] = useState(() => getRemainingQueries());
   const [hasStartedQuerying, setHasStartedQuerying] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState(null);
   const [settingsTokenUsage, setSettingsTokenUsage] = useState(null);
 
   // Research mode state - for unified research view
@@ -269,7 +273,7 @@ function ChatApp() {
   // Other sections appear only when user clicks ToC items
   useEffect(() => {
     // DEBUG: Log every time this effect runs
-    console.log('[ExecSummary Effect DEBUG] Effect triggered:', {
+    logger.log('[ExecSummary Effect DEBUG] Effect triggered:', {
       currentStreamingSection,
       isResearchStreaming,
       condition1: !!currentStreamingSection,
@@ -280,7 +284,7 @@ function ChatApp() {
     if (currentStreamingSection && isResearchStreaming) {
       // Only auto-add executive summary - other sections require ToC click
       if (currentStreamingSection === '01_executive_summary') {
-        console.log('[ExecSummary Effect DEBUG] Adding exec summary to all arrays');
+        logger.log('[ExecSummary Effect DEBUG] Adding exec summary to all arrays');
         setVisibleSections(prev => {
           if (prev.includes(currentStreamingSection)) return prev;
           return [...prev, currentStreamingSection];
@@ -295,7 +299,7 @@ function ChatApp() {
         // Use logSectionInteraction (not setInteractionLog) because setInteractionLog doesn't support
         // functional updates - it dispatches the value directly. logSectionInteraction properly uses
         // the reducer which has built-in duplicate detection.
-        console.log('[ExecSummary Effect DEBUG] Calling logSectionInteraction for exec summary');
+        logger.log('[ExecSummary Effect DEBUG] Calling logSectionInteraction for exec summary');
         logSectionInteraction(currentStreamingSection);
       }
     }
@@ -355,7 +359,7 @@ function ChatApp() {
           }
         }, 100);
       } catch (err) {
-        console.error('Failed to fetch section:', err);
+        logger.error('Failed to fetch section:', err);
       }
     }
   }, [setActiveSection, streamedContent, isResearchStreaming, fetchSection, researchTicker, token, logSectionInteraction]);
@@ -381,7 +385,7 @@ function ChatApp() {
   // Build interleaved timeline from interaction log (sections and follow-ups in chronological order)
   const interactionTimeline = useMemo(() => {
     // DEBUG: Log interactionLog state
-    console.log('[interactionTimeline DEBUG] Computing timeline:', {
+    logger.log('[interactionTimeline DEBUG] Computing timeline:', {
       interactionLogLength: interactionLog?.length,
       interactionLogEntries: interactionLog?.map(e => e.id),
       hasExecSummary: interactionLog?.some(e => e.id === '01_executive_summary'),
@@ -391,14 +395,14 @@ function ChatApp() {
 
     // If no interaction log, fall back to old behavior (sections first, then follow-ups)
     if (!interactionLog || interactionLog.length === 0) {
-      console.log('[interactionTimeline DEBUG] Using fallback (orderedSections)');
+      logger.log('[interactionTimeline DEBUG] Using fallback (orderedSections)');
       return [
         ...orderedSections.map(section => ({ type: 'section', data: section })),
         ...followUpMessages.map(msg => ({ type: 'followup', data: msg })),
       ];
     }
 
-    console.log('[interactionTimeline DEBUG] Using interactionLog path');
+    logger.log('[interactionTimeline DEBUG] Using interactionLog path');
     // Build timeline: sections from interactionLog, then all follow-ups
     // Note: We don't match follow-ups by ID since backend generates different IDs than frontend.
     // Follow-ups are fetched directly from messages table and already sorted by timestamp.
@@ -484,7 +488,7 @@ function ChatApp() {
     const isResearchStateForCurrentConversation = researchStateConversationRef.current === selectedConversation?.conversation_id;
 
     // DEBUG: Log state for ToC persistence debugging
-    console.log('[ToC Save DEBUG]', {
+    logger.log('[ToC Save DEBUG]', {
       streamStatus,
       activeSectionId,
       lastSavedActiveSectionRef: lastSavedActiveSectionRef.current,
@@ -544,7 +548,7 @@ function ChatApp() {
         total_word_count: reportMeta?.total_word_count,
         last_updated: new Date().toISOString(),
       };
-      console.log('[ToC Save DEBUG] Saving research state to API:', {
+      logger.log('[ToC Save DEBUG] Saving research state to API:', {
         conversationId: selectedConversation.conversation_id,
         visible_sections: researchStateToSave.visible_sections,
         visible_sections_length: researchStateToSave.visible_sections?.length,
@@ -559,10 +563,10 @@ function ChatApp() {
         researchStateToSave,
         token
       ).then(() => {
-        console.log('[ToC Save DEBUG] Save successful for visible_sections:', researchStateToSave.visible_sections);
+        logger.log('[ToC Save DEBUG] Save successful for visible_sections:', researchStateToSave.visible_sections);
       }).catch(err => {
         logger.error('Failed to save research state to conversation metadata:', err);
-        console.error('[ToC Save DEBUG] Save FAILED:', err);
+        logger.error('[ToC Save DEBUG] Save FAILED:', err);
         // Reset saved ref so it can retry
         savedResearchRef.current = null;
       });
@@ -590,6 +594,23 @@ function ChatApp() {
       return newValue;
     });
   }, []);
+
+  // Handle upgrade checkout (used by top-level UpgradeModal)
+  const handleUpgradeCheckout = useCallback(async () => {
+    if (!token) return;
+    setIsCheckoutLoading(true);
+    setCheckoutError(null);
+    try {
+      await stripeApi.redirectToCheckout(token, {
+        successUrl: `${window.location.origin}?subscription=success`,
+        cancelUrl: `${window.location.origin}?subscription=canceled`
+      });
+    } catch (err) {
+      logger.error('Checkout failed:', err);
+      setCheckoutError(err.message || 'Failed to start checkout');
+      setIsCheckoutLoading(false);
+    }
+  }, [token]);
 
   // Apply dark mode class to document
   useEffect(() => {
@@ -851,7 +872,7 @@ function ChatApp() {
       if (latestRequestedConversationRef.current !== conversationId) return;
 
       // DEBUG: Log raw API response to trace visible_sections persistence issue
-      console.log('[ToC Load DEBUG] loadConversationHistory response:', {
+      logger.log('[ToC Load DEBUG] loadConversationHistory response:', {
         conversationId,
         conversation_metadata: conversation?.metadata,
         research_state: conversation?.metadata?.research_state,
@@ -917,7 +938,7 @@ function ChatApp() {
         let savedResearchData = null;
 
         // DEBUG: Log raw conversation object to see what's coming from API
-        console.log('[ToC Load DEBUG] Raw conversation from API:', {
+        logger.log('[ToC Load DEBUG] Raw conversation from API:', {
           conversation_id: conversation?.conversation_id,
           metadata: conversation?.metadata,
           metadata_research_state: conversation?.metadata?.research_state,
@@ -926,7 +947,7 @@ function ChatApp() {
 
         if (researchState) {
           // Found research state in conversation metadata (new format)
-          console.log('[ToC Load DEBUG] Found research state in metadata:', {
+          logger.log('[ToC Load DEBUG] Found research state in metadata:', {
             ticker: researchState.ticker,
             active_section_id: researchState.active_section_id,
             visible_sections: researchState.visible_sections,
@@ -961,7 +982,7 @@ function ChatApp() {
                 const data = JSON.parse(msg.content);
                 if (data._type === 'research_report' || data._type === 'research_report_ref') {
                   foundCount++;
-                  console.log('[ToC Load DEBUG] Found saved research message (legacy)', foundCount, 'activeSectionId:', data.activeSectionId, 'savedAt:', data.savedAt);
+                  logger.log('[ToC Load DEBUG] Found saved research message (legacy)', foundCount, 'activeSectionId:', data.activeSectionId, 'savedAt:', data.savedAt);
                   savedResearchData = data;
                   // Don't break - continue to find the most recent message
                 }
@@ -972,7 +993,7 @@ function ChatApp() {
           }
         }
 
-        console.log('[ToC Load DEBUG] Final savedResearchData activeSectionId:', savedResearchData?.activeSectionId);
+        logger.log('[ToC Load DEBUG] Final savedResearchData activeSectionId:', savedResearchData?.activeSectionId);
 
         // Parse follow-up messages from conversation history
         // Detect follow-ups by: (1) JSON content with _type field (legacy), or
@@ -1057,7 +1078,7 @@ function ChatApp() {
           if (isReferenceFormat) {
             // NEW FORMAT: Reference-only - fetch sections on-demand from investment_reports_v2
             // Use length check instead of || to handle empty array (which is truthy but should default)
-            console.log('[ToC Load DEBUG] isReferenceFormat - computing savedVisibleSections:', {
+            logger.log('[ToC Load DEBUG] isReferenceFormat - computing savedVisibleSections:', {
               'savedResearchData.visibleSections': savedResearchData.visibleSections,
               'type': typeof savedResearchData.visibleSections,
               'isArray': Array.isArray(savedResearchData.visibleSections),
@@ -1073,7 +1094,7 @@ function ChatApp() {
             if (!savedVisibleSections.includes('01_executive_summary')) {
               savedVisibleSections = ['01_executive_summary', ...savedVisibleSections];
             }
-            console.log('[ToC Load DEBUG] Computed savedVisibleSections:', savedVisibleSections);
+            logger.log('[ToC Load DEBUG] Computed savedVisibleSections:', savedVisibleSections);
             const savedActiveSectionId = savedResearchData.activeSectionId || savedVisibleSections[0] || '01_executive_summary';
             // Load interaction log and ensure exec summary is included for rendering
             let savedInteractionLog = savedResearchData.interactionLog || [];
@@ -1448,9 +1469,10 @@ function ChatApp() {
                 subscriptionTier={effectiveTokenUsage?.subscription_tier || 'free'}
                 onPlanClick={() => {
                   const tier = effectiveTokenUsage?.subscription_tier || 'free';
-                  setSettingsOpen(true);
                   if (tier !== 'plus') {
-                    setTimeout(() => setShowUpgradeModal(true), 300);
+                    setShowUpgradeModal(true);
+                  } else {
+                    setSettingsOpen(true);
                   }
                 }}
               />
@@ -1488,9 +1510,10 @@ function ChatApp() {
                     subscriptionTier={effectiveTokenUsage?.subscription_tier || 'free'}
                     onPlanClick={() => {
                       const tier = effectiveTokenUsage?.subscription_tier || 'free';
-                      setSettingsOpen(true);
                       if (tier !== 'plus') {
-                        setTimeout(() => setShowUpgradeModal(true), 300);
+                        setShowUpgradeModal(true);
+                      } else {
+                        setSettingsOpen(true);
                       }
                     }}
                   />
@@ -1799,6 +1822,19 @@ function ChatApp() {
         showUpgradeModal={showUpgradeModal}
         onShowUpgradeModalChange={setShowUpgradeModal}
         onTokenUsageUpdate={setSettingsTokenUsage}
+      />
+
+      {/* Top-level Upgrade Modal (shown directly from Upgrade Plan button) */}
+      <UpgradeModal
+        isOpen={showUpgradeModal && !settingsOpen}
+        onClose={() => {
+          setShowUpgradeModal(false);
+          setCheckoutError(null);
+          setIsCheckoutLoading(false);
+        }}
+        onUpgrade={handleUpgradeCheckout}
+        isLoading={isCheckoutLoading}
+        error={checkoutError}
       />
     </div>
   );
@@ -2195,7 +2231,7 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
                   <Crown className="h-4 w-4" />
                   {subscriptionTier === 'plus' ? 'Manage Plan' : 'Upgrade Plan'}
                 </button>
-                <div>
+                <div className="relative">
                   <button
                     onClick={() => setLearnMoreOpen(!learnMoreOpen)}
                     className="flex items-center gap-3 w-full px-4 py-2 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
@@ -2208,30 +2244,39 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
                     )} />
                   </button>
                   {learnMoreOpen && (
-                    <div className="py-1 pl-7">
+                    <div className="absolute left-full top-0 ml-1 w-48 bg-sand-50 dark:bg-warm-950 border border-sand-200 dark:border-warm-800 rounded-lg shadow-lg py-1 z-50">
                       <a
                         href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         onClick={(e) => { e.preventDefault(); onToggle(false); }}
-                        className="flex items-center gap-2.5 w-full px-4 py-1.5 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-800 transition-colors"
                       >
                         <Shield className="h-3.5 w-3.5" />
-                        Privacy Policy
+                        <span className="flex-1">Privacy Policy</span>
+                        <ExternalLink className="h-3 w-3 text-sand-400 dark:text-warm-500" />
                       </a>
                       <a
                         href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         onClick={(e) => { e.preventDefault(); onToggle(false); }}
-                        className="flex items-center gap-2.5 w-full px-4 py-1.5 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-800 transition-colors"
                       >
                         <FileText className="h-3.5 w-3.5" />
-                        Terms of Service
+                        <span className="flex-1">Terms of Service</span>
+                        <ExternalLink className="h-3 w-3 text-sand-400 dark:text-warm-500" />
                       </a>
                       <a
                         href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         onClick={(e) => { e.preventDefault(); onToggle(false); }}
-                        className="flex items-center gap-2.5 w-full px-4 py-1.5 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-800 transition-colors"
                       >
                         <FileText className="h-3.5 w-3.5" />
-                        Data Disclaimer
+                        <span className="flex-1">Data Disclaimer</span>
+                        <ExternalLink className="h-3 w-3 text-sand-400 dark:text-warm-500" />
                       </a>
                     </div>
                   )}

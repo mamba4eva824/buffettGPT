@@ -8,7 +8,7 @@ const AuthContext = createContext();
 // Environment configuration
 const AUTH_CONFIG = {
   GOOGLE_CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-  API_BASE_URL: import.meta.env.VITE_REST_API_URL || "https://4onfe7pbpc.execute-api.us-east-1.amazonaws.com/dev",
+  API_BASE_URL: import.meta.env.VITE_REST_API_URL || '',
   // Development mode - allow manual token input for testing
   ENABLE_DEV_MODE: import.meta.env.VITE_ENVIRONMENT === 'development'
 };
@@ -91,11 +91,11 @@ export function AuthProvider({ children }) {
       localStorage.setItem(LS_AUTH_KEYS.token, jwtToken);
       localStorage.setItem(LS_AUTH_KEYS.expiresAt, expiresAt);
 
-      console.log('Authentication successful:', userData);
+      logger.log('Authentication successful:', userData);
       return { success: true };
       
     } catch (error) {
-      console.error('Authentication error:', error);
+      logger.error('Authentication error:', error);
       return { success: false, error: error.message };
     } finally {
       setLoading(false);
@@ -151,12 +151,12 @@ export function GoogleLoginButton({ className = "" }) {
         setIsGoogleLoaded(true);
         
         // Initialize Google Sign-In
-        console.log('Initializing Google Sign-In with client ID:', AUTH_CONFIG.GOOGLE_CLIENT_ID);
+        logger.log('Initializing Google Sign-In with client ID:', AUTH_CONFIG.GOOGLE_CLIENT_ID);
         try {
           window.google.accounts.id.initialize({
             client_id: AUTH_CONFIG.GOOGLE_CLIENT_ID,
             callback: async (response) => {
-              console.log('Google Sign-In callback received:', response);
+              logger.log('Google Sign-In callback received:', response);
               const result = await handleGoogleCallback(response.credential);
               if (!result.success) {
                 alert(`Login failed: ${result.error}`);
@@ -166,7 +166,7 @@ export function GoogleLoginButton({ className = "" }) {
             cancel_on_tap_outside: true,
             use_fedcm_for_prompt: true
           });
-          console.log('Google Sign-In initialized successfully');
+          logger.log('Google Sign-In initialized successfully');
 
           // Render the official Google Sign-In button once
           if (!buttonRenderedRef.current) {
@@ -182,7 +182,7 @@ export function GoogleLoginButton({ className = "" }) {
             }
           }
         } catch (error) {
-          console.error('Error initializing Google Sign-In:', error);
+          logger.error('Error initializing Google Sign-In:', error);
         }
       } else {
         // Retry after a short delay
