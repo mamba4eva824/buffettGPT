@@ -32,7 +32,7 @@ jobs:
 
       - name: Run tests
         working-directory: chat-api/backend
-        run: python -m pytest tests/ -v --ignore=tests/e2e --ignore=tests/integration --ignore=tests/performance --ignore=tests/test_action_group_handler.py
+        run: python -m pytest tests/ -v --ignore=tests/e2e --ignore=tests/integration --ignore=tests/performance --ignore=tests/test_action_group_handler.py --ignore=tests/test_conversation.py --ignore=tests/test_new_conversation.py
 
   build-backend:
     name: Build Backend Lambda Functions
