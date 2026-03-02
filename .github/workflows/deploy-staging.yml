@@ -13,35 +13,26 @@ env:
   PYTHON_VERSION: '3.11'
 
 jobs:
-  test-frontend:
-    name: Frontend Tests (Placeholder)
+  test-backend:
+    name: Backend Tests
     runs-on: ubuntu-latest
-    # NOTE: Frontend tests are temporarily disabled while test infrastructure is being set up.
-    # Tests exist in frontend/src/__tests__/ but are not yet integrated into CI/CD.
-    if: false  # Disabled - tests are placeholders
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
+        working-directory: chat-api/backend
+        run: pip install -r requirements-dev.txt
 
-      # TODO: Enable when frontend tests are ready
-      # - name: Run tests
-      #   working-directory: frontend
-      #   run: npm run test:run
-
-      - name: Placeholder - Tests Disabled
-        run: echo "Frontend tests are placeholders - see frontend/src/__tests__/"
+      - name: Run tests
+        working-directory: chat-api/backend
+        run: python -m pytest tests/ -v --ignore=tests/e2e --ignore=tests/integration --ignore=tests/performance --ignore=tests/test_action_group_handler.py
 
   build-backend:
     name: Build Backend Lambda Functions
@@ -78,7 +69,7 @@ jobs:
   deploy-infrastructure:
     name: Deploy Infrastructure with Terraform
     runs-on: ubuntu-latest
-    needs: [build-backend]
+    needs: [test-backend, build-backend]
 
     outputs:
       http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
@@ -196,7 +187,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: npm ci
 
       - name: Create staging environment file
         working-directory: frontend
@@ -204,8 +195,9 @@ jobs:
           cat > .env.staging << EOF
           VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
           VITE_ENVIRONMENT=staging
-          VITE_ENABLE_DEBUG_LOGS=true
+          VITE_ENABLE_DEBUG_LOGS=false
           VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          VITE_ENABLE_WAITLIST=true
           EOF
 
           echo "✅ Created .env.staging with API endpoints"

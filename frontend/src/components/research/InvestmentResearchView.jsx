@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { X, RefreshCw, AlertCircle, GripVertical } from 'lucide-react';
 import { useResearch, ResearchProvider } from '../../contexts/ResearchContext';
+import logger from '../../utils/logger';
 import RatingsHeader from './RatingsHeader';
 import ReportDisplay from './ReportDisplay';
 import TableOfContents from './TableOfContents';
@@ -100,7 +101,7 @@ function InvestmentResearchContent({ ticker, onClose, token = null }) {
       try {
         await fetchSection(ticker, sectionId, token);
       } catch (err) {
-        console.error('Failed to fetch section:', err);
+        logger.error('Failed to fetch section:', err);
       }
     }
   }, [setActiveSection, streamedContent, isStreaming, fetchSection, ticker, token]);

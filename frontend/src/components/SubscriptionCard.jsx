@@ -1,4 +1,4 @@
-import { Crown, Check, Zap, Calendar, AlertCircle } from 'lucide-react';
+import { Crown, Check, Calendar, AlertCircle } from 'lucide-react';
 
 /**
  * SubscriptionCard - Displays current subscription plan and status
@@ -59,18 +59,12 @@ export default function SubscriptionCard({
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          {isPlusActive ? (
-            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/20 rounded-lg">
-              <Crown className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-            </div>
-          ) : (
-            <div className="p-2 bg-sand-100 dark:bg-warm-900 rounded-lg">
-              <Zap className="h-5 w-5 text-sand-600 dark:text-warm-300" />
-            </div>
-          )}
+          <div className={`p-2 rounded-lg ${isPlusActive ? 'bg-indigo-100 dark:bg-indigo-900/20' : 'bg-sand-100 dark:bg-warm-900'}`}>
+            <Crown className={`h-5 w-5 ${isPlusActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-sand-500 dark:text-warm-300'}`} />
+          </div>
           <div>
             <h3 className="font-semibold text-sand-900 dark:text-warm-50">
-              {isPlusActive ? 'Buffett Plus' : 'Free Plan'}
+              {isPlusActive ? 'Buffett Plus' : 'Free Tier'}
             </h3>
             <p className="text-sm text-sand-500 dark:text-warm-300">
               {isPlusActive ? '$10/month' : 'No cost'}
@@ -128,54 +122,50 @@ export default function SubscriptionCard({
         </div>
       )}
 
-      {/* Benefits list */}
-      <div className="space-y-2 mb-5">
-        {isPlusActive ? (
-          <>
+      {isPlusActive ? (
+        <>
+          {/* Benefits list */}
+          <div className="space-y-2 mb-5">
             <BenefitItem active>
-              {formatTokens(tokenLimit)} tokens/month for follow-up questions
+              AI-powered Q&A on any investment report
             </BenefitItem>
             <BenefitItem active>
               Unlimited investment reports
             </BenefitItem>
-            <BenefitItem active>
-              Priority response times
-            </BenefitItem>
-            <BenefitItem active>
-              Full conversation history
-            </BenefitItem>
-          </>
-        ) : (
-          <>
-            <BenefitItem>
-              Investment reports only
-            </BenefitItem>
-            <BenefitItem inactive>
-              No follow-up questions
-            </BenefitItem>
-            <BenefitItem inactive>
-              Limited history
-            </BenefitItem>
-          </>
-        )}
-      </div>
+          </div>
 
-      {/* Action button */}
-      {isPlusActive ? (
-        <button
-          onClick={onManage}
-          className="w-full py-2.5 px-4 text-sm font-medium text-sand-700 dark:text-warm-200 bg-sand-100 dark:bg-warm-900 hover:bg-sand-200 dark:hover:bg-warm-700 rounded-lg transition-colors"
-        >
-          Manage Subscription
-        </button>
+          <button
+            onClick={onManage}
+            className="w-full py-2.5 px-4 text-sm font-medium text-sand-700 dark:text-warm-200 bg-sand-100 dark:bg-warm-900 hover:bg-sand-200 dark:hover:bg-warm-700 rounded-lg transition-colors"
+          >
+            Manage Subscription
+          </button>
+        </>
       ) : (
-        <button
-          onClick={onUpgrade}
-          className="w-full py-2.5 px-4 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
-        >
-          <Crown className="h-4 w-4" />
-          Upgrade to Plus
-        </button>
+        <>
+          {/* Upgrade pitch */}
+          <div className="mb-4 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800">
+            <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300 mb-2">
+              Upgrade to Plus for $10/month
+            </p>
+            <div className="space-y-1.5">
+              <BenefitItem active>
+                AI-powered Q&A on any investment report
+              </BenefitItem>
+              <BenefitItem active>
+                Unlimited investment reports
+              </BenefitItem>
+            </div>
+          </div>
+
+          <button
+            onClick={onUpgrade}
+            className="w-full py-2.5 px-4 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center justify-center gap-2"
+          >
+            <Crown className="h-4 w-4" />
+            Upgrade to Plus
+          </button>
+        </>
       )}
     </div>
   );

@@ -288,7 +288,9 @@ def get_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         response = conversations_table.get_item(
-            Key={'conversation_id': conversation_id}
+            Key={'conversation_id': conversation_id},
+            ProjectionExpression='conversation_id, user_id, title, created_at, updated_at, #metadata, is_archived, message_count',
+            ExpressionAttributeNames={'#metadata': 'metadata'}
         )
 
         conversation = response.get('Item')
@@ -296,21 +298,12 @@ def get_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
         if not conversation:
             return create_response(404, {'error': 'Conversation not found'})
 
-        # DEBUG: Log metadata for visible_sections persistence issue
-        metadata = conversation.get('metadata', {})
-        research_state = metadata.get('research_state', {}) if metadata else {}
-        logger.info(f"[ToC DEBUG] get_conversation - metadata present: {bool(metadata)}, research_state present: {bool(research_state)}")
-        if research_state:
-            logger.info(f"[ToC DEBUG] get_conversation - visible_sections: {research_state.get('visible_sections')}, active_section_id: {research_state.get('active_section_id')}")
-
         # Verify ownership
         conv_user_id = str(conversation.get('user_id', ''))
         request_user_id = str(user_id)
 
-        logger.info(f"Ownership check - Conversation owner: '{conv_user_id}', Request user: '{request_user_id}', Match: {conv_user_id == request_user_id}")
-
         if conv_user_id != request_user_id:
-            logger.warning(f"Access denied - user_id mismatch. Conversation owner: '{conv_user_id}', Request user: '{request_user_id}'")
+            logger.warning(f"Access denied - user_id mismatch for conversation {conversation_id}")
             return create_response(403, {'error': 'Access denied'})
 
         # Migrate any existing Unix timestamps to ISO format
@@ -358,12 +351,31 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
         if not conversation or str(conversation.get('user_id', '')) != str(user_id):
             return create_response(403, {'error': 'Access denied'})
 
+        # Parse pagination parameters from query string
+        query_params = event.get('queryStringParameters', {}) or {}
+        limit = int(query_params.get('limit', '200'))
+        limit = max(1, min(limit, 500))  # Clamp between 1 and 500
+        cursor = query_params.get('cursor')
+
+        # Build query kwargs
+        query_kwargs = {
+            'KeyConditionExpression': 'conversation_id = :conversation_id',
+            'ExpressionAttributeValues': {':conversation_id': conversation_id},
+            'ScanIndexForward': True,  # Oldest first (chronological order)
+            'Limit': limit
+        }
+
+        # Resume from cursor if provided
+        if cursor:
+            import base64
+            try:
+                decoded = json.loads(base64.b64decode(cursor).decode('utf-8'))
+                query_kwargs['ExclusiveStartKey'] = decoded
+            except (ValueError, json.JSONDecodeError):
+                return create_response(400, {'error': 'Invalid cursor'})
+
         # Get messages for this conversation
-        response = messages_table.query(
-            KeyConditionExpression='conversation_id = :conversation_id',
-            ExpressionAttributeValues={':conversation_id': conversation_id},
-            ScanIndexForward=True  # Oldest first (chronological order)
-        )
+        response = messages_table.query(**query_kwargs)
 
         messages = response.get('Items', [])
 
@@ -378,11 +390,22 @@ def get_conversation_messages(event: Dict[str, Any]) -> Dict[str, Any]:
                     ts = ts / 1000
                 msg['timestamp_iso'] = datetime.utcfromtimestamp(ts).isoformat() + 'Z'
 
-        return create_response(200, {
+        # Build response with optional pagination cursor
+        result = {
             'conversation_id': conversation_id,
             'messages': messages,
             'count': len(messages)
-        })
+        }
+
+        # If DynamoDB has more results, encode the cursor for the next page
+        if 'LastEvaluatedKey' in response:
+            import base64
+            next_cursor = base64.b64encode(
+                json.dumps(response['LastEvaluatedKey'], default=str).encode('utf-8')
+            ).decode('utf-8')
+            result['next_cursor'] = next_cursor
+
+        return create_response(200, result)
 
     except Exception as e:
         logger.error(f"Error getting conversation messages for {conversation_id}: {str(e)}", exc_info=True)
@@ -418,16 +441,6 @@ def save_conversation_message(event: Dict[str, Any]) -> Dict[str, Any]:
         if not content:
             return create_response(400, {'error': 'Message content required'})
 
-        # Verify the user owns this conversation
-        conv_response = conversations_table.get_item(
-            Key={'conversation_id': conversation_id}
-        )
-
-        conversation = conv_response.get('Item')
-        # Cast to string to handle potential type mismatches
-        if not conversation or str(conversation.get('user_id', '')) != str(user_id):
-            return create_response(403, {'error': 'Access denied'})
-
         # Create message record
         # Use milliseconds for timestamp to prevent key collisions when saving
         # multiple messages in quick succession
@@ -451,15 +464,18 @@ def save_conversation_message(event: Dict[str, Any]) -> Dict[str, Any]:
         # Save message to DynamoDB
         messages_table.put_item(Item=message_record)
 
-        # Update conversation timestamp
+        # Update conversation timestamp with ownership check via ConditionExpression
+        # This replaces the separate GetItem + UpdateItem pattern, saving one DynamoDB round-trip
         conversations_table.update_item(
             Key={'conversation_id': conversation_id},
             UpdateExpression='SET updated_at = :updated_at, message_count = if_not_exists(message_count, :zero) + :inc',
             ExpressionAttributeValues={
                 ':updated_at': timestamp_unix,
                 ':zero': 0,
-                ':inc': 1
-            }
+                ':inc': 1,
+                ':user': user_id
+            },
+            ConditionExpression='user_id = :user'
         )
 
         logger.info(f"Saved message {message_id} to conversation {conversation_id}")
@@ -473,6 +489,19 @@ def save_conversation_message(event: Dict[str, Any]) -> Dict[str, Any]:
 
     except json.JSONDecodeError:
         return create_response(400, {'error': 'Invalid JSON in request body'})
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            logger.warning(f"Access denied saving message - user doesn't own conversation", extra={
+                'conversation_id': conversation_id,
+                'user_id': user_id
+            })
+            return create_response(403, {'error': 'Access denied'})
+        else:
+            logger.error(f"Error saving message to conversation", extra={
+                'conversation_id': conversation_id,
+                'error': str(e)
+            })
+            return create_response(500, {'error': 'Failed to save message'})
     except Exception as e:
         logger.error(f"Error saving message to conversation", extra={
             'conversation_id': conversation_id,
@@ -552,9 +581,11 @@ def update_conversation(event: Dict[str, Any]) -> Dict[str, Any]:
     body = json.loads(event.get('body', '{}'))
 
     try:
-        # Verify ownership
+        # Verify ownership - only fetch fields needed for auth check and metadata merge
         response = conversations_table.get_item(
-            Key={'conversation_id': conversation_id}
+            Key={'conversation_id': conversation_id},
+            ProjectionExpression='user_id, #metadata',
+            ExpressionAttributeNames={'#metadata': 'metadata'}
         )
 
         conversation = response.get('Item')

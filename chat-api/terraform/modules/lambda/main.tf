@@ -36,6 +36,12 @@ locals {
       memory_size = 256
       description = "Subscription checkout, portal, and status API"
     }
+    waitlist_handler = {
+      handler     = "waitlist_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Waitlist signup and referral tracking API"
+    }
   }
 }
 

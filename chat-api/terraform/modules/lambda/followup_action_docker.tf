@@ -28,6 +28,28 @@ resource "aws_ecr_repository" "followup_action" {
   })
 }
 
+# ECR Repository Policy - Allow Lambda service to pull images
+resource "aws_ecr_repository_policy" "followup_action" {
+  repository = aws_ecr_repository.followup_action.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowLambdaPull"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+      }
+    ]
+  })
+}
+
 # Lifecycle policy to keep only the latest version
 resource "aws_ecr_lifecycle_policy" "followup_action" {
   repository = aws_ecr_repository.followup_action.name
@@ -175,6 +197,16 @@ resource "aws_iam_role_policy" "followup_action" {
           "kms:Decrypt"
         ]
         Resource = var.kms_key_arn
+      },
+      # ECR (pull Docker image for container-based Lambda)
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages"
+        ]
+        Resource = aws_ecr_repository.followup_action.arn
       }
     ]
   })

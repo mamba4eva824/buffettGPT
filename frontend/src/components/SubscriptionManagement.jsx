@@ -3,6 +3,7 @@ import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { stripeApi } from '../api/stripeApi';
 import SubscriptionCard from './SubscriptionCard';
 import UpgradeModal from './UpgradeModal';
+import logger from '../utils/logger';
 
 /**
  * SubscriptionManagement - Full subscription management section
@@ -54,7 +55,7 @@ export default function SubscriptionManagement({
         onTokenUsageUpdate(data.token_usage);
       }
     } catch (err) {
-      console.error('Failed to fetch subscription status:', err);
+      logger.error('Failed to fetch subscription status:', err);
       setError('Failed to load subscription status');
     } finally {
       setIsLoading(false);
@@ -97,7 +98,7 @@ export default function SubscriptionManagement({
         cancelUrl: `${window.location.origin}?subscription=canceled`
       });
     } catch (err) {
-      console.error('Checkout failed:', err);
+      logger.error('Checkout failed:', err);
       setCheckoutError(err.message || 'Failed to start checkout');
       setIsCheckoutLoading(false);
     }
@@ -114,7 +115,7 @@ export default function SubscriptionManagement({
     try {
       await stripeApi.redirectToPortal(token);
     } catch (err) {
-      console.error('Portal redirect failed:', err);
+      logger.error('Portal redirect failed:', err);
       setError(err.message || 'Failed to open subscription management');
       setIsPortalLoading(false);
     }

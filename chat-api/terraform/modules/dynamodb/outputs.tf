@@ -103,6 +103,19 @@ output "token_usage_table_arn" {
 }
 
 # ================================================
+# Waitlist Table (ACTIVE)
+# ================================================
+output "waitlist_table_name" {
+  description = "Name of the waitlist table"
+  value       = aws_dynamodb_table.waitlist.name
+}
+
+output "waitlist_table_arn" {
+  description = "ARN of the waitlist table"
+  value       = aws_dynamodb_table.waitlist.arn
+}
+
+# ================================================
 # Summary Output
 # ================================================
 output "table_summary" {
@@ -124,6 +137,9 @@ output "table_summary" {
     }
     token_tracking = {
       token_usage = aws_dynamodb_table.token_usage.name
+    }
+    waitlist = {
+      waitlist = aws_dynamodb_table.waitlist.name
     }
   }
 }

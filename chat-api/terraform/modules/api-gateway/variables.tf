@@ -148,3 +148,13 @@ variable "enable_stripe_webhook" {
   type        = bool
   default     = false
 }
+
+# ============================================================================
+# Waitlist API Variables
+# ============================================================================
+
+variable "enable_waitlist_routes" {
+  description = "Enable waitlist signup and status routes"
+  type        = bool
+  default     = false
+}

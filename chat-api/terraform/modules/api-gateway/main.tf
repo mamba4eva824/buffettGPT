@@ -582,3 +582,83 @@ resource "aws_lambda_permission" "stripe_webhook_api_permission" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
+
+# ================================================
+# Waitlist API Routes and Integration
+# ================================================
+
+# Waitlist Handler Integration
+resource "aws_apigatewayv2_integration" "waitlist_handler_integration" {
+  count            = var.enable_waitlist_routes ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["waitlist_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# POST /waitlist/signup - Sign up for waitlist (NO AUTH - public)
+resource "aws_apigatewayv2_route" "waitlist_signup" {
+  count     = var.enable_waitlist_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "POST /waitlist/signup"
+  target    = "integrations/${aws_apigatewayv2_integration.waitlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# GET /waitlist/status - Get waitlist position and referral dashboard (NO AUTH - email+code based)
+resource "aws_apigatewayv2_route" "waitlist_status" {
+  count     = var.enable_waitlist_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /waitlist/status"
+  target    = "integrations/${aws_apigatewayv2_integration.waitlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /waitlist/signup - CORS preflight
+resource "aws_apigatewayv2_route" "waitlist_signup_options" {
+  count     = var.enable_waitlist_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /waitlist/signup"
+  target    = "integrations/${aws_apigatewayv2_integration.waitlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /waitlist/status - CORS preflight
+resource "aws_apigatewayv2_route" "waitlist_status_options" {
+  count     = var.enable_waitlist_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /waitlist/status"
+  target    = "integrations/${aws_apigatewayv2_integration.waitlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# GET /waitlist/unsubscribe - Email unsubscribe (NO AUTH - token-verified)
+resource "aws_apigatewayv2_route" "waitlist_unsubscribe" {
+  count     = var.enable_waitlist_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /waitlist/unsubscribe"
+  target    = "integrations/${aws_apigatewayv2_integration.waitlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# Waitlist Handler Lambda Permission
+resource "aws_lambda_permission" "waitlist_api_permission" {
+  count         = var.enable_waitlist_routes ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPIWaitlist"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["waitlist_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}

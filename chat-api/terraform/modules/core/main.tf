@@ -85,7 +85,10 @@ resource "aws_iam_policy" "lambda_policy" {
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/metrics-history-${var.environment}/index/*",
           # Token Usage table (new naming: resource-env-project)
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/token-usage-${var.environment}-${var.project_name}",
-          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/token-usage-${var.environment}-${var.project_name}/index/*"
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/token-usage-${var.environment}-${var.project_name}/index/*",
+          # Waitlist table (resource-env-project naming)
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/waitlist-${var.environment}-${var.project_name}",
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/waitlist-${var.environment}-${var.project_name}/index/*"
         ]
       },
       # SQS Access - REMOVED (2026-02) - chat processing queue deprecated
@@ -140,6 +143,18 @@ resource "aws_iam_policy" "lambda_policy" {
         Resource = [
           "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-${var.environment}-fmp*",
           "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-${var.environment}-jwt-secret*"
+        ]
+      },
+      # ECR Access (pull Docker images for container-based Lambdas)
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:DescribeImages"
+        ]
+        Resource = [
+          "arn:aws:ecr:${var.aws_region}:${data.aws_caller_identity.current.account_id}:repository/${var.project_name}/*"
         ]
       }
     ]

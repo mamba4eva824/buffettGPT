@@ -1,4 +1,4 @@
-import { Zap, Calendar, AlertTriangle, TrendingUp, Crown } from 'lucide-react';
+import { Zap, Calendar, AlertTriangle, TrendingUp } from 'lucide-react';
 
 /**
  * TokenUsageDisplay - Shows monthly token usage in settings
@@ -71,35 +71,16 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
   // Always show usage tracking regardless of tier (for development)
   return (
     <div className="space-y-4">
-      {/* Header with tier badge */}
-      <div className="flex items-center justify-between">
-        <label className="flex items-center gap-2 text-xs font-medium text-sand-500 dark:text-warm-300">
-          <Zap className="h-3.5 w-3.5" />
-          Monthly Token Usage
-        </label>
-        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${tierInfo.badge} ${tierInfo.color}`}>
-          {tierInfo.name}
-        </span>
-      </div>
-
       {/* Main usage card */}
       <div className={`rounded-lg border ${showWarning ? 'border-yellow-200 dark:border-yellow-800' : 'border-sand-200 dark:border-warm-800'} ${statusColor.bg} p-4`}>
         {/* Progress section */}
         <div className="mb-3">
           {/* Stats row */}
-          <div className="flex items-baseline justify-between mb-2">
-            <div className="flex items-baseline gap-1">
-              <span className={`text-2xl font-bold ${statusColor.text}`}>
-                {percent_used.toFixed(0)}%
-              </span>
-              <span className="text-xs text-sand-500 dark:text-warm-300">used</span>
-            </div>
-            <div className="text-right">
-              <span className="text-sm font-medium text-sand-700 dark:text-warm-200">
-                {formatNumber(remaining_tokens)}
-              </span>
-              <span className="text-xs text-sand-400 dark:text-warm-400"> / {formatNumber(token_limit)}</span>
-            </div>
+          <div className="flex items-baseline gap-1 mb-2">
+            <span className={`text-2xl font-bold ${statusColor.text}`}>
+              {percent_used.toFixed(0)}%
+            </span>
+            <span className="text-xs text-sand-500 dark:text-warm-300">used</span>
           </div>
 
           {/* Progress bar */}
@@ -147,37 +128,6 @@ export default function TokenUsageDisplay({ tokenUsage, isAuthenticated, onUpgra
         )}
       </div>
 
-      {/* Upgrade prompt for free users */}
-      {subscription_tier === 'free' && isAuthenticated && onUpgrade && (
-        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-lg border border-indigo-200 dark:border-indigo-800 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg">
-                <Crown className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-              </div>
-              <div>
-                <p className="text-sm font-medium text-sand-700 dark:text-warm-100">
-                  Need more tokens?
-                </p>
-                <p className="text-xs text-sand-500 dark:text-warm-300">
-                  Get 2M tokens/month with Buffett Plus
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={onUpgrade}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors"
-            >
-              Upgrade
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Helper text */}
-      <p className="text-[11px] text-sand-400 dark:text-warm-400">
-        Tokens measure AI usage. Each follow-up question uses approximately 2,000-5,000 tokens depending on complexity.
-      </p>
     </div>
   );
 }

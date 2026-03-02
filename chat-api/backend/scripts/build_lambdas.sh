@@ -34,6 +34,7 @@ FUNCTIONS=(
     "analysis_followup"
     "stripe_webhook_handler"
     "subscription_handler"
+    "waitlist_handler"
 )
 
 # Build each function

@@ -1,132 +1,93 @@
-# Deep Value Insights
+# Buffett
 
-**AI-Powered Investment Research Engine Built on Warren Buffett Principles**
+**AI-Powered Investment Research Platform Built on Warren Buffett Principles**
 
-An intelligent investment analysis platform that combines multi-agent AI orchestration with machine learning to evaluate stocks through the lens of value investing. The system employs a team of specialized expert agents—each focused on debt health, cash flow quality, and growth sustainability—coordinated by a supervisor agent that synthesizes their insights using Buffett and Graham investment principles.
+A full-stack serverless application that generates institutional-quality investment research reports using multi-agent AI orchestration. Specialized expert agents analyze debt health, cash flow quality, and growth sustainability, then a supervisor synthesizes their insights through a Buffett/Graham value investing lens.
 
 ---
 
 ## Key Features
 
-- **Multi-Agent Ensemble**: Three specialized expert agents (Debt, Cashflow, Growth) analyze different dimensions of a company's fundamentals, orchestrated by a Supervisor agent
-- **ML-Driven Predictions**: XGBoost models trained on financial metrics provide BUY/HOLD/SELL signals with confidence intervals
-- **Real-Time Streaming**: Server-Sent Events (SSE) deliver analysis as it's generated, providing immediate feedback
-- **Value Investing Framework**: Analysis grounded in Buffett/Graham principles—margin of safety, economic moat, management quality
-- **5-Year Quarterly Analysis**: 20 quarters of financial data with trend velocity and acceleration metrics
-- **Confidence Calibration**: Predictions include uncertainty quantification (STRONG/MODERATE/WEAK confidence levels)
+- **Multi-Agent Research**: Three specialized expert agents (Debt, Cashflow, Growth) analyze different dimensions of a company's fundamentals, coordinated by a Supervisor agent
+- **Comprehensive Reports**: 16-section investment research reports with executive summaries, valuation deep-dives, and actionable ratings
+- **Follow-Up Q&A**: Conversational follow-up on any report section powered by Bedrock session memory
+- **Subscription Tiers**: Free and Plus tiers with Stripe billing, token usage tracking, and anniversary-based billing periods
+- **Viral Waitlist**: Referral-based waitlist with 3-tier rewards (Early Access, 1 month free, 3 months free)
+- **5-Year Financial Analysis**: 20 quarters of data with trend velocity and acceleration metrics sourced from FMP API
 
 ---
 
 ## Architecture
 
-### High-Level Overview
-
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              DEEP VALUE INSIGHTS                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────┐    ┌──────────────────────────────────────────────────┐   │
-│  │   Frontend  │───▶│              API Gateway (HTTP/WebSocket)         │   │
-│  │   (React)   │    └──────────────────────────────────────────────────┘   │
-│  └─────────────┘                           │                               │
-│                                            ▼                               │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    PREDICTION ENSEMBLE (FastAPI/Docker)              │   │
-│  │  ┌─────────────────────────────────────────────────────────────────┐│   │
-│  │  │                      ORCHESTRATOR SERVICE                       ││   │
-│  │  │  1. Fetch Financial Data (FMP API + DynamoDB Cache)            ││   │
-│  │  │  2. Extract Features (80+ metrics)                             ││   │
-│  │  │  3. Run ML Inference (XGBoost)                                 ││   │
-│  │  │  4. Invoke Expert Agents in Parallel                           ││   │
-│  │  │  5. Stream Supervisor Synthesis                                ││   │
-│  │  └─────────────────────────────────────────────────────────────────┘│   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                            │                               │
-│                    ┌───────────────────────┼───────────────────────┐       │
-│                    ▼                       ▼                       ▼       │
-│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐ │
-│  │    DEBT EXPERT      │  │   CASHFLOW EXPERT   │  │   GROWTH EXPERT     │ │
-│  │  (Claude Haiku 4.5) │  │  (Claude Haiku 4.5) │  │  (Claude Haiku 4.5) │ │
-│  ├─────────────────────┤  ├─────────────────────┤  ├─────────────────────┤ │
-│  │ • Debt-to-Equity    │  │ • Free Cash Flow    │  │ • Revenue Growth    │ │
-│  │ • Interest Coverage │  │ • FCF Margin        │  │ • EPS Growth        │ │
-│  │ • Current Ratio     │  │ • FCF/Net Income    │  │ • Operating Margin  │ │
-│  │ • Net Debt/EBITDA   │  │ • CapEx Efficiency  │  │ • ROE / ROIC        │ │
-│  │ • Deleveraging Pace │  │ • Dividend Safety   │  │ • Margin Expansion  │ │
-│  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘ │
-│                    │                       │                       │       │
-│                    └───────────────────────┼───────────────────────┘       │
-│                                            ▼                               │
-│                      ┌─────────────────────────────────────────────┐       │
-│                      │           SUPERVISOR AGENT                   │       │
-│                      │          (Claude Haiku 4.5)                  │       │
-│                      ├─────────────────────────────────────────────┤       │
-│                      │ • Synthesizes Expert Analyses               │       │
-│                      │ • Applies Buffett/Graham Principles         │       │
-│                      │ • Weighs Disagreements by Business Type     │       │
-│                      │ • Produces Final Verdict: BUY/HOLD/SELL     │       │
-│                      │ • Provides Confidence-Calibrated Reasoning  │       │
-│                      └─────────────────────────────────────────────┘       │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                             Buffett                                  │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────┐     ┌────────────────────────────────────────────┐    │
+│  │ Frontend  │────▶│         API Gateway (HTTP API v2)          │    │
+│  │ (React)   │     └────────────────────────────────────────────┘    │
+│  └──────────┘                        │                               │
+│                         ┌────────────┼────────────┐                  │
+│                         ▼            ▼            ▼                  │
+│                   ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│                   │   Auth   │ │   Chat   │ │ Billing  │           │
+│                   │ Lambdas  │ │ Lambdas  │ │ Lambdas  │           │
+│                   └──────────┘ └──────────┘ └──────────┘           │
+│                                      │                               │
+│                    ┌─────────────────┼─────────────────┐            │
+│                    ▼                 ▼                  ▼            │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
+│  │   Debt Expert    │  │  Cashflow Expert  │  │  Growth Expert   │  │
+│  │  (Claude Haiku 4.5)  │  │  (Claude Haiku 4.5)   │  │  (Claude Haiku 4.5)  │  │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘  │
+│                    │                 │                  │            │
+│                    └─────────────────┼──────────────────┘            │
+│                                      ▼                               │
+│                       ┌──────────────────────────┐                  │
+│                       │    Supervisor Agent       │                  │
+│                       │    (Claude Haiku 4.5)         │                  │
+│                       │  Buffett/Graham Synthesis │                  │
+│                       └──────────────────────────┘                  │
+│                                      │                               │
+│                    ┌─────────────────┼─────────────────┐            │
+│                    ▼                 ▼                  ▼            │
+│               ┌─────────┐    ┌────────────┐    ┌────────────┐      │
+│               │DynamoDB │    │  S3 + CDN  │    │   Stripe   │      │
+│               │ Tables  │    │ CloudFront │    │  Billing   │      │
+│               └─────────┘    └────────────┘    └────────────┘      │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Agent Ensemble
 
-The system uses a **hierarchical multi-agent architecture** powered by AWS Bedrock:
-
 | Agent | Role | Key Metrics |
 |-------|------|-------------|
-| **Debt Expert** | Analyzes balance sheet health and leverage | Debt/Equity, Interest Coverage, Current Ratio, Net Debt/EBITDA |
-| **Cashflow Expert** | Evaluates cash generation quality | FCF, FCF Margin, FCF/Net Income, CapEx Efficiency |
-| **Growth Expert** | Assesses earnings quality and sustainability | Revenue Growth, EPS Growth, ROE, ROIC, Margins |
-| **Supervisor** | Synthesizes analyses with Buffett principles | Weighs expert opinions, considers business type, produces final verdict |
+| **Debt Expert** | Balance sheet health and leverage | Debt/Equity, Interest Coverage, Current Ratio, Net Debt/EBITDA |
+| **Cashflow Expert** | Cash generation quality | FCF, FCF Margin, FCF/Net Income, CapEx Efficiency |
+| **Growth Expert** | Earnings quality and sustainability | Revenue Growth, EPS Growth, ROE, ROIC, Margins |
+| **Supervisor** | Synthesis with Buffett principles | Weighs expert opinions, considers business type, produces final verdict |
 
-### Data Flow
+### Data Pipeline
 
 ```
-User Query (e.g., "Analyze AAPL")
-         │
-         ▼
-┌─────────────────────────────────────┐
-│      1. FINANCIAL DATA FETCH        │
-│  FMP API → DynamoDB Cache           │
-│  (20 quarters / 5 years)            │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│      2. FEATURE EXTRACTION          │
-│  80+ metrics per company            │
-│  + Velocity (trend direction)       │
-│  + Acceleration (trend momentum)    │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│      3. ML INFERENCE                │
-│  XGBoost Models (Debt/Cash/Growth)  │
-│  → Prediction + Confidence Interval │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│      4. EXPERT ANALYSIS             │
-│  3 Agents analyze in parallel       │
-│  Each receives ML signal + metrics  │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────┐
-│      5. SUPERVISOR SYNTHESIS        │
-│  Combines expert views              │
-│  Applies value investing framework  │
-│  → Final BUY/HOLD/SELL + Reasoning  │
-└─────────────────────────────────────┘
-         │
-         ▼
-    Streaming Response (SSE)
+FMP API (Financial Data)
+    │
+    ▼
+Feature Extraction (80+ metrics, velocity, acceleration)
+    │
+    ▼
+Metrics Cache (DynamoDB, 7 categories × N quarters)
+    │
+    ▼
+Expert Agent Analysis (3 agents in parallel)
+    │
+    ▼
+Supervisor Synthesis → 16-Section Report
+    │
+    ▼
+DynamoDB V2 Storage (section-per-item) → Frontend Display
 ```
 
 ---
@@ -135,14 +96,126 @@ User Query (e.g., "Analyze AAPL")
 
 | Component | Technology |
 |-----------|------------|
-| **AI/ML** | AWS Bedrock (Claude Haiku 4.5), XGBoost |
-| **Backend** | AWS Lambda (Python 3.11), FastAPI, Docker |
-| **Streaming** | Server-Sent Events (SSE), Lambda Web Adapter |
-| **Database** | DynamoDB (caching, sessions, rate limits) |
+| **Frontend** | React 18, Vite 5, Tailwind CSS |
+| **Backend** | Python 3.11, AWS Lambda |
+| **AI** | AWS Bedrock (Claude Haiku 4.5), Claude Opus 4 (report generation) |
+| **Database** | DynamoDB (on-demand) |
+| **Payments** | Stripe (Free/Plus tiers, webhooks) |
+| **Auth** | Google OAuth 2.0, JWT |
 | **Data Source** | Financial Modeling Prep (FMP) API |
-| **Infrastructure** | Terraform, API Gateway, S3, CloudWatch |
-| **Frontend** | React 18, Vite, Tailwind CSS |
-| **Auth** | JWT, Cognito |
+| **CDN** | CloudFront + S3 |
+| **Infrastructure** | Terraform 1.9.1+ |
+| **CI/CD** | GitHub Actions |
+
+---
+
+## Project Structure
+
+```
+buffett_chat_api/
+├── chat-api/
+│   ├── backend/
+│   │   ├── src/
+│   │   │   ├── handlers/                  # Lambda functions
+│   │   │   │   ├── action_group_handler.py # Bedrock action group handler
+│   │   │   │   ├── analysis_followup.py   # Follow-up Q&A agent
+│   │   │   │   ├── auth_callback.py       # Google OAuth callback
+│   │   │   │   ├── auth_verify.py         # JWT authorizer
+│   │   │   │   ├── conversations_handler.py # Chat history CRUD
+│   │   │   │   ├── search_handler.py      # AI search (experimental)
+│   │   │   │   ├── stripe_webhook_handler.py # Stripe event processing
+│   │   │   │   ├── subscription_handler.py # Stripe checkout/portal
+│   │   │   │   └── waitlist_handler.py    # Waitlist + referral system
+│   │   │   └── utils/                     # Rate limiting, logging
+│   │   ├── investment_research/           # Report generation engine
+│   │   │   ├── report_generator.py        # Core report generation
+│   │   │   ├── section_parser.py          # Markdown → sections
+│   │   │   ├── prompts/                   # Prompt templates (v5.1)
+│   │   │   └── batch_generation/          # Parallel batch CLI
+│   │   ├── layer/                         # Lambda layer dependencies
+│   │   ├── build/                         # Lambda .zip packages
+│   │   ├── scripts/                       # Build scripts
+│   │   └── tests/                         # pytest + moto
+│   └── terraform/
+│       ├── environments/                  # dev / staging / prod
+│       └── modules/
+│           ├── core/                      # KMS, IAM
+│           ├── dynamodb/                  # DynamoDB tables
+│           ├── lambda/                    # Lambda deployment
+│           ├── api-gateway/               # HTTP API routes
+│           ├── auth/                      # OAuth infrastructure
+│           ├── bedrock/                   # Agents + guardrails
+│           ├── cloudfront-static-site/    # CDN + S3 hosting
+│           ├── email/                     # Email service (Resend)
+│           ├── stripe/                    # Payment infrastructure
+│           ├── sqs/                       # SQS queues
+│           ├── rate-limiting/             # Device fingerprinting
+│           ├── training-infrastructure/   # ML training
+│           └── monitoring/                # CloudWatch dashboards
+├── frontend/
+│   └── src/
+│       ├── components/
+│       │   ├── research/                  # Investment report UI
+│       │   └── waitlist/                  # Waitlist landing page
+│       ├── contexts/                      # React contexts
+│       ├── hooks/                         # Custom React hooks
+│       ├── api/                           # API client utilities
+│       └── App.jsx                        # Main application
+├── docs/
+│   └── referral/                          # Referral system documentation
+├── CLAUDE.md                              # Development rules & procedures
+└── MVP_IMPLEMENTATION_GUIDE.md            # Implementation status tracker
+```
+
+---
+
+## API Endpoints
+
+### Authentication
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| POST | `/auth/callback` | None | Google OAuth callback, issues JWT |
+
+### Conversations
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| GET | `/conversations` | JWT | List conversations |
+| POST | `/conversations` | JWT | Create conversation |
+| GET | `/conversations/{id}` | JWT | Get conversation |
+| PUT | `/conversations/{id}` | JWT | Update conversation |
+| DELETE | `/conversations/{id}` | JWT | Delete conversation |
+| GET | `/conversations/{id}/messages` | JWT | Get messages |
+| POST | `/conversations/{id}/messages` | JWT | Save message |
+
+### Subscriptions
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| POST | `/subscription/checkout` | JWT | Create Stripe checkout session |
+| POST | `/subscription/portal` | JWT | Open Stripe customer portal |
+| GET | `/subscription/status` | JWT | Get subscription status |
+| POST | `/stripe/webhook` | Stripe Signature | Stripe event webhook |
+
+### Waitlist
+| Method | Route | Auth | Description |
+|--------|-------|------|-------------|
+| POST | `/waitlist/signup` | None (rate-limited) | Sign up with referral support |
+| GET | `/waitlist/status` | Email + Code | Get queue position and referral stats |
+
+---
+
+## DynamoDB Tables
+
+| Table | Purpose |
+|-------|---------|
+| `conversations` | Conversation metadata |
+| `chat-messages` | Message history |
+| `investment-reports-v2` | Section-per-item report storage |
+| `metrics-history` | Cached financial metrics (7 categories) |
+| `token-usage` | Anniversary-based billing period tracking |
+| `financial-data-cache` | FMP API response cache |
+| `ticker-lookup-cache` | Ticker symbol lookups |
+| `forex-rate-cache` | Currency conversion rates |
+| `waitlist` | Waitlist entries + referral codes |
 
 ---
 
@@ -153,133 +226,112 @@ User Query (e.g., "Analyze AAPL")
 - Python 3.11+
 - Node.js 18+
 - AWS CLI configured
-- Terraform 1.0+
-- Docker (for prediction ensemble)
+- Terraform 1.9.1+
 
-### Deployment
+### Backend
 
-All infrastructure changes use Terraform. See [CLAUDE.md](CLAUDE.md) for detailed deployment instructions.
+```bash
+cd chat-api/backend
+make venv && make dev-install
+make test
+
+# Build Lambda packages
+./scripts/build_layer.sh
+./scripts/build_lambdas.sh
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev       # Dev server on port 3000
+npm run build     # Production build
+npm run lint      # ESLint (0 warnings policy)
+```
+
+### Infrastructure
 
 ```bash
 cd chat-api/terraform/environments/dev
 terraform init
-terraform plan
-terraform apply
+terraform validate
+terraform plan -out=tfplan
+terraform apply tfplan
 ```
 
 ---
 
-## Project Structure
+## Investment Report Generation
 
+Reports are generated using Claude Code (not the Anthropic API) with the v5.1 prompt template. Each report contains 16 sections covering executive summary, valuation, growth, debt, cash flow, competitive position, and more.
+
+### Batch Generation
+
+```bash
+cd chat-api/backend/investment_research/batch_generation
+
+# Prepare data (fetch FMP + cache metrics)
+python batch_cli.py prepare --tickers AAPL,MSFT,GOOGL
+
+# Generate reports (5 parallel Claude sessions)
+./run_parallel_reports.sh
+
+# Verify reports saved to DynamoDB
+python batch_cli.py verify --tickers AAPL,MSFT,GOOGL
 ```
-deep-value-insights/
-├── chat-api/
-│   ├── backend/
-│   │   ├── lambda/
-│   │   │   └── prediction_ensemble/    # Docker-based FastAPI service
-│   │   │       ├── app.py              # Main application & routes
-│   │   │       ├── services/
-│   │   │       │   ├── orchestrator.py # Multi-agent coordination
-│   │   │       │   ├── bedrock.py      # Agent invocation
-│   │   │       │   └── inference.py    # XGBoost model loading
-│   │   │       └── utils/
-│   │   │           ├── fmp_client.py   # Financial data fetching
-│   │   │           └── feature_extractor.py
-│   │   ├── src/handlers/
-│   │   │   ├── action_group_handler.py # Bedrock action group
-│   │   │   ├── chat_http_handler.py    # HTTP API endpoint
-│   │   │   └── websocket_message.py    # WebSocket handler
-│   │   ├── layer/                      # Lambda layer dependencies
-│   │   ├── build/                      # Lambda deployment packages
-│   │   └── scripts/                    # Build scripts
-│   └── terraform/
-│       ├── environments/dev/           # Dev environment config
-│       └── modules/
-│           ├── bedrock/                # Agent definitions & prompts
-│           │   ├── main.tf
-│           │   ├── prompts/            # Agent instruction files
-│           │   └── schemas/            # Action group OpenAPI specs
-│           ├── lambda/                 # Lambda function configs
-│           ├── api-gateway/            # HTTP & WebSocket APIs
-│           ├── dynamodb/               # Table definitions
-│           └── s3/                     # Bucket configs
-├── frontend/
-│   └── src/
-│       ├── components/analysis/        # Analysis UI components
-│       └── App.jsx
-├── CLAUDE.md                           # Deployment rules & procedures
-└── README.md
-```
+
+### Ticker Coverage
+
+| Index | Tickers | Est. Generation Time (5 parallel) |
+|-------|---------|-----------------------------------|
+| DJIA | 30 | ~2-3 hours |
+| Nasdaq 100 | 100 | ~6-10 hours |
+| S&P 500 | 500 | ~30-50 hours |
 
 ---
 
-## API Overview
+## Waitlist & Referral System
 
-### Analysis Endpoint
+A viral waitlist with a 3-tier referral reward ladder:
 
-```
-POST /analysis/{agent_type}
-```
+| Referrals | Reward |
+|-----------|--------|
+| 1 | Early Access (skip the waitlist) |
+| 3 | 1 month free Plus |
+| 10 | 3 months free Plus |
 
-Streams investment analysis for a given ticker.
-
-**Parameters:**
-- `agent_type`: `supervisor` | `debt` | `cashflow` | `growth`
-- Body: `{ "ticker": "AAPL" }`
-
-**Response (SSE Stream):**
-```
-event: status
-data: {"status": "fetching_data", "message": "Fetching financial data..."}
-
-event: prediction
-data: {"agent": "debt", "prediction": "HOLD", "confidence": "MODERATE"}
-
-event: content
-data: {"text": "## Debt Analysis\n\nApple maintains..."}
-
-event: complete
-data: {"usage": {"input_tokens": 1234, "output_tokens": 567}}
-```
-
-### Action Group (Bedrock Agent)
-
-The agents use an action group to fetch financial data:
-
-```yaml
-operationId: getFinancialAnalysis
-parameters:
-  - ticker: "AAPL"        # Stock symbol
-  - analysis_type: "debt" # debt | cashflow | growth | all
-```
-
-Returns: ML predictions + top 10-24 value metrics with 5-year quarterly history.
+Features: unique referral codes (BUFF-XXXX), disposable email blocking, rate limiting, self-referral prevention, social sharing UI.
 
 ---
 
-## Security & Monitoring
+## CI/CD
 
-### Rate Limiting
-- **Anonymous**: 5 analyses/month
-- **Authenticated**: 500 analyses/month
-- Device fingerprinting for cross-device tracking
+Three GitHub Actions workflows:
 
-### Authentication
-- JWT tokens via Authorization header
-- AWS Cognito user pools
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| `deploy-dev.yml` | Push to `dev` | Build Lambdas, Terraform apply, build + deploy frontend |
+| `deploy-staging.yml` | Push to `staging` | Same with staging config |
+| `deploy-prod.yml` | Manual | Same with production secrets + approval gate |
 
-### Monitoring
-- CloudWatch logs and metrics
-- Dead-letter queues for error handling
-- X-Ray tracing for request debugging
+---
+
+## Security
+
+- **Auth**: Google OAuth 2.0 with JWT tokens
+- **Encryption**: KMS for all sensitive data at rest
+- **Secrets**: AWS Secrets Manager (OAuth, JWT, Stripe, FMP keys)
+- **Rate Limiting**: Device fingerprinting (IP + User-Agent + CloudFront headers)
+- **Waitlist**: IP-based rate limiting, disposable email blocking, referral code validation
 
 ---
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make changes following [CLAUDE.md](CLAUDE.md) deployment rules
+2. Create a feature branch from `dev`
+3. Follow [CLAUDE.md](CLAUDE.md) deployment rules
 4. Submit a pull request
 
 ---
@@ -287,57 +339,3 @@ Returns: ML predictions + top 10-24 value metrics with 5-year quarterly history.
 ## License
 
 MIT License
-
----
-
-## Support
-
-For issues and questions, please open a GitHub issue with detailed information about your use case.
-
----
-
-## Recent Updates
-
-### Completed (January 2026)
-
-#### Section Selection Persistence Fix
-- **Issue**: Report ToC section selections (Valuation, Growth, Debt, etc.) were not persisting when users refreshed the page and returned to conversation history
-- **Root Cause**: DynamoDB nested attribute path updates (`#metadata.#meta_research_state`) were failing silently when the parent path existed but didn't contain the nested key
-- **Solution**: Changed from nested attribute paths to a merge + replace approach for metadata updates
-- **Files Modified**: [conversations_handler.py](chat-api/backend/src/handlers/conversations_handler.py)
-- **Documentation**: [SECTION_SELECTION_PERSISTENCE_FIX.md](chat-api/backend/investment_research/docs/SECTION_SELECTION_PERSISTENCE_FIX.md)
-
-#### DynamoDB Integration Tests
-- Created 54 unit tests for DynamoDB read/write operations
-- **Conversation research_state persistence** (20 tests): PUT/GET operations for saving and retrieving ToC section selections
-- **Investment research section endpoints** (34 tests): V2 section-based report retrieval including TTL expiration, Decimal conversion, and ticker validation
-- **Test Files**:
-  - `test_conversations_research_state.py`
-  - `test_investment_research_sections.py`
-- **Documentation**: [DYNAMODB_INTEGRATION_TESTS.md](chat-api/backend/investment_research/changelog/DYNAMODB_INTEGRATION_TESTS.md)
-
-#### Infrastructure Cleanup
-- Removed deprecated Knowledge Base, Pinecone, and Guardrails resources from staging and production Terraform configurations
-- Cleaned up stale bedrock module variables
-
----
-
-## In Progress
-
-### Multi-Agent Investment Research v6
-- Enhanced expert agent prompts with improved value investing analysis
-- New supervisor instruction prompts for better synthesis
-- Files in progress: `supervisor_instruction_v6.txt`, `value_investor_*_v6.txt`
-
-### Prediction Ensemble Enhancements
-- Local testing infrastructure for prediction ensemble
-- Integration tests for ensemble Lambda
-
-### Frontend Improvements
-- Expired report banner component
-- Research layout refinements
-- Section card enhancements
-
-### Follow-up Agent
-- AI-powered follow-up question generation based on research context
-- Documentation: [FOLLOWUP_AGENT.md](chat-api/backend/investment_research/docs/FOLLOWUP_AGENT.md)

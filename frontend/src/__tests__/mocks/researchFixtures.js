@@ -2,24 +2,24 @@
  * Research Test Fixtures
  *
  * Mock data for testing the investment research system.
+ * Section IDs and icons match section_parser.py v5.1 SECTION_DEFINITIONS.
  */
 
-// Mock Table of Contents
-// Note: Part 1 header is labeled "Executive Summary" in the component, so use different section title
+// Mock Table of Contents (v5.1 format — merged executive + Part 2/3 sections)
+// In production, the merged TOC has 1 executive_summary entry + individual Part 2/3 sections.
 export const MOCK_TOC = [
-  { section_id: '01_executive_summary', title: 'TL;DR Overview', part: 1, icon: 'file-text', word_count: 600, display_order: 1 },
-  { section_id: '02_business', title: 'Business Overview', part: 1, icon: 'building', word_count: 400, display_order: 2 },
-  { section_id: '03_health', title: 'Quick Health Check', part: 1, icon: 'heart-pulse', word_count: 300, display_order: 3 },
-  { section_id: '04_fit', title: 'Investment Fit', part: 1, icon: 'target', word_count: 350, display_order: 4 },
-  { section_id: '05_verdict', title: 'The Verdict', part: 1, icon: 'gavel', word_count: 250, display_order: 5 },
-  { section_id: '06_growth', title: 'Growth Analysis', part: 2, icon: 'trending-up', word_count: 800, display_order: 6 },
-  { section_id: '07_profit', title: 'Profitability', part: 2, icon: 'dollar-sign', word_count: 750, display_order: 7 },
-  { section_id: '08_valuation', title: 'Valuation', part: 2, icon: 'calculator', word_count: 700, display_order: 8 },
-  { section_id: '09_earnings', title: 'Earnings Quality', part: 2, icon: 'bar-chart', word_count: 650, display_order: 9 },
-  { section_id: '10_cashflow', title: 'Cash Flow', part: 2, icon: 'banknote', word_count: 600, display_order: 10 },
-  { section_id: '11_debt', title: 'Debt Analysis', part: 2, icon: 'credit-card', word_count: 550, display_order: 11 },
-  { section_id: '12_dilution', title: 'Dilution Risk', part: 2, icon: 'pie-chart', word_count: 400, display_order: 12 },
-  { section_id: '17_realtalk', title: 'Competitive Position', part: 3, icon: 'message-circle', word_count: 500, display_order: 17 }
+  { section_id: '01_executive_summary', title: 'Executive Summary', part: 1, icon: 'lightning', word_count: 1900, display_order: 1 },
+  { section_id: '06_growth', title: 'Growth: 3% to 4% — The Slow Climb', part: 2, icon: 'chart-up', word_count: 800, display_order: 2 },
+  { section_id: '07_profit', title: 'Profitability: 77% Margins — The Profit Machine', part: 2, icon: 'piggy-bank', word_count: 750, display_order: 3 },
+  { section_id: '08_valuation', title: 'Valuation: 30% Off — Historic Discount', part: 2, icon: 'calculator', word_count: 700, display_order: 4 },
+  { section_id: '09_earnings', title: 'Earnings Quality: Clean Books', part: 2, icon: 'eye', word_count: 650, display_order: 5 },
+  { section_id: '10_cashflow', title: 'Cash Flow: The $94B Cash Machine', part: 2, icon: 'cash', word_count: 600, display_order: 6 },
+  { section_id: '11_debt', title: 'Debt: The $50B War Chest', part: 2, icon: 'bank', word_count: 550, display_order: 7 },
+  { section_id: '12_dilution', title: 'Dilution: Buying Back 3% — Shrinking the Pie', part: 2, icon: 'pie-chart', word_count: 400, display_order: 8 },
+  { section_id: '13_bull', title: 'Bull Case', part: 2, icon: 'trending-up', word_count: 350, display_order: 9 },
+  { section_id: '14_bear', title: 'Bear Case', part: 2, icon: 'trending-down', word_count: 350, display_order: 10 },
+  { section_id: '15_realtalk', title: 'Real Talk', part: 3, icon: 'message-circle', word_count: 500, display_order: 11 },
+  { section_id: '16_triggers', title: 'Decision Triggers: Key Numbers to Track', part: 3, icon: 'crosshair', word_count: 400, display_order: 12 },
 ];
 
 // Mock Ratings
@@ -91,7 +91,7 @@ export const MOCK_SAVED_REPORT = {
       content: MOCK_SECTION_DATA['01_executive_summary'].content,
       isComplete: true,
       part: 1,
-      icon: 'file-text',
+      icon: 'lightning',
       word_count: 600
     }
   },

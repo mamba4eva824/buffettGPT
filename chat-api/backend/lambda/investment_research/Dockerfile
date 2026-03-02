@@ -52,6 +52,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application files
 COPY app.py .
 COPY handler.py .
+COPY company_names.py .
 COPY config/ ./config/
 COPY services/ ./services/
 COPY models/ ./models/

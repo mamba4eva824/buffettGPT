@@ -298,3 +298,91 @@ resource "aws_cloudwatch_dashboard" "enhanced_rate_limiting" {
     ]
   })
 }
+
+# ================================================
+# Waitlist Monitoring
+# ================================================
+
+resource "aws_cloudwatch_metric_alarm" "waitlist_lambda_errors" {
+  count               = contains(keys(var.lambda_function_names), "waitlist_handler") ? 1 : 0
+  alarm_name          = "${local.resource_prefix}-waitlist-lambda-errors"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "5"
+  alarm_description   = "Waitlist Lambda error rate is elevated"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = var.lambda_function_names["waitlist_handler"]
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name    = "${local.resource_prefix}-waitlist-lambda-errors"
+      Purpose = "Monitor waitlist Lambda errors"
+      Service = "CloudWatch"
+    }
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "waitlist_lambda_throttles" {
+  count               = contains(keys(var.lambda_function_names), "waitlist_handler") ? 1 : 0
+  alarm_name          = "${local.resource_prefix}-waitlist-lambda-throttles"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "Throttles"
+  namespace           = "AWS/Lambda"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "0"
+  alarm_description   = "Waitlist Lambda is being throttled"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = var.lambda_function_names["waitlist_handler"]
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name    = "${local.resource_prefix}-waitlist-lambda-throttles"
+      Purpose = "Monitor waitlist Lambda throttling"
+      Service = "CloudWatch"
+    }
+  )
+}
+
+resource "aws_cloudwatch_metric_alarm" "waitlist_signup_spike" {
+  count               = contains(keys(var.lambda_function_names), "waitlist_handler") ? 1 : 0
+  alarm_name          = "${local.resource_prefix}-waitlist-signup-spike"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "Invocations"
+  namespace           = "AWS/Lambda"
+  period              = "300"
+  statistic           = "Sum"
+  threshold           = "100"
+  alarm_description   = "Waitlist signup volume spike detected - possible abuse"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    FunctionName = var.lambda_function_names["waitlist_handler"]
+  }
+
+  tags = merge(
+    var.common_tags,
+    {
+      Name    = "${local.resource_prefix}-waitlist-signup-spike"
+      Purpose = "Monitor waitlist signup abuse"
+      Service = "CloudWatch"
+    }
+  )
+}

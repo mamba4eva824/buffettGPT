@@ -26,6 +26,28 @@ resource "aws_ecr_repository" "investment_research" {
   })
 }
 
+# ECR Repository Policy - Allow Lambda service to pull images
+resource "aws_ecr_repository_policy" "investment_research" {
+  repository = aws_ecr_repository.investment_research.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AllowLambdaPull"
+        Effect = "Allow"
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        }
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+      }
+    ]
+  })
+}
+
 # Lifecycle policy to keep only the latest version
 resource "aws_ecr_lifecycle_policy" "investment_research" {
   repository = aws_ecr_repository.investment_research.name

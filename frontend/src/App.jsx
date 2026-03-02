@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, LogOut, Sun, Moon, PanelLeftClose } from "lucide-react";
-import TokenUsageDisplay from "./components/TokenUsageDisplay.jsx";
-import SubscriptionManagement from "./components/SubscriptionManagement.jsx";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense, lazy } from "react";
+import { Routes, Route, useParams, useNavigate } from "react-router-dom";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown, ExternalLink } from "lucide-react";
+import SettingsPanel from "./components/SettingsPanel.jsx";
+import UpgradeModal from "./components/UpgradeModal.jsx";
+import { stripeApi } from "./api/stripeApi.js";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
@@ -15,32 +17,8 @@ import SectionCard from "./components/research/SectionCard.jsx";
 import ResearchLayout from "./components/research/ResearchLayout.jsx";
 import { useCompanySearch } from "./hooks/useCompanySearch.js";
 
-// Research API URL for status checks
-const RESEARCH_API_URL = import.meta.env.VITE_RESEARCH_API_URL || 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
-
-/**
- * Check if a research report exists and is not expired.
- * Used when loading conversations with reference-only format.
- */
-async function checkReportStatus(ticker, token = null) {
-  try {
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-    const response = await fetch(`${RESEARCH_API_URL}/research/report/${ticker.toUpperCase()}/status`, { headers });
-
-    if (!response.ok) {
-      if (response.status === 404) {
-        return { exists: false, expired: true };
-      }
-      throw new Error(`Status check failed: ${response.status}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    logger.error('Error checking report status:', error);
-    return { exists: false, expired: true, error: error.message };
-  }
-}
-
+// Lazy-loaded waitlist page (code-split)
+const WaitlistPage = lazy(() => import("./components/waitlist/WaitlistPage.jsx"));
 
 /*************************
  * Environment Configuration *
@@ -51,6 +29,7 @@ const ENV_CONFIG = {
   ENVIRONMENT: import.meta.env.VITE_ENVIRONMENT || "development",
   ENABLE_DEBUG_LOGS: import.meta.env.VITE_ENABLE_DEBUG_LOGS === "true",
   ENABLE_DEMO_MODE: import.meta.env.VITE_ENABLE_DEMO_MODE === "true",
+  ENABLE_WAITLIST: import.meta.env.VITE_ENABLE_WAITLIST === "true",
   DEFAULT_USER_NAME: import.meta.env.VITE_DEFAULT_USER_NAME || "guest"
 };
 
@@ -131,7 +110,7 @@ function MessageBubble({ msg, user, messageRef }) {
           />
         </div>
       )}
-      <div className={classNames("max-w-[85%] md:max-w-[80%] rounded-2xl px-3 md:px-4 py-2.5 md:py-3 text-sm md:text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-sand-50 dark:bg-warm-900 text-sand-800 dark:text-warm-50")}>
+      <div className={classNames("max-w-[85%] md:max-w-[82%] rounded-2xl px-3 md:px-4 py-2.5 md:py-3 text-sm md:text-[15px] leading-relaxed shadow-sm", isSystem ? "bg-amber-50 dark:bg-amber-900/20 text-amber-900 dark:text-amber-200" : isUser ? "bg-indigo-600 text-white" : "bg-sand-50 dark:bg-warm-900 text-sand-800 dark:text-warm-50")}>
         <div className="whitespace-pre-wrap break-words">{msg.content}</div>
       </div>
       {isUser && (
@@ -157,6 +136,10 @@ function deriveTitle(msgs) {
  * Main UI component  *
  *********************/
 function ChatApp() {
+  // URL routing
+  const { conversationId: urlConversationId } = useParams();
+  const navigate = useNavigate();
+
   // Get authentication state
   const { user, isAuthenticated, token } = useAuth();
 
@@ -166,6 +149,8 @@ function ChatApp() {
   // Refs for auto-scroll functionality
   const messagesEndRef = useRef(null);
   const lastUserMessageRef = useRef(null);
+  const chatScrollRef = useRef(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
 
   // Refs for rate limit banner timeouts (to prevent memory leaks)
   const showBannerTimeoutRef = useRef(null);
@@ -173,6 +158,10 @@ function ChatApp() {
 
   // Cache for loaded conversation API responses: { [conversationId]: { conversation, messages, timestamp } }
   const conversationCacheRef = useRef({});
+
+  // Staleness guard: tracks the most recently requested conversation to prevent race conditions
+  // when the user rapidly switches between conversations (async responses arriving out of order)
+  const latestRequestedConversationRef = useRef(null);
 
   // Log environment config only once on component mount
   useEffect(() => {
@@ -207,6 +196,8 @@ function ChatApp() {
   const [remainingQueries, setRemainingQueries] = useState(() => getRemainingQueries());
   const [hasStartedQuerying, setHasStartedQuerying] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState(null);
   const [settingsTokenUsage, setSettingsTokenUsage] = useState(null);
 
   // Research mode state - for unified research view
@@ -214,9 +205,6 @@ function ChatApp() {
   const [visibleSections, setVisibleSections] = useState([]); // Sections to display (on-demand via ToC clicks)
   const [userExpandedSections, setUserExpandedSections] = useState(['01_executive_summary']); // Only sections user explicitly clicked (persisted)
   const [researchTocWidth] = useState(300);
-  const [reportExpired, setReportExpired] = useState(false);  // Track if loaded report has expired
-  const [expiredReportMeta, setExpiredReportMeta] = useState(null);  // Metadata for expired report UI
-
   // Research context - provides streaming state and actions
   const {
     selectedTicker: researchTicker,
@@ -229,6 +217,7 @@ function ChatApp() {
     currentStreamingSection,
     startResearch,
     fetchSection,
+    fetchSectionsBatch,
     setActiveSection,
     reset: resetResearch,
     loadSavedReport,  // Load report from history without streaming
@@ -284,7 +273,7 @@ function ChatApp() {
   // Other sections appear only when user clicks ToC items
   useEffect(() => {
     // DEBUG: Log every time this effect runs
-    console.log('[ExecSummary Effect DEBUG] Effect triggered:', {
+    logger.log('[ExecSummary Effect DEBUG] Effect triggered:', {
       currentStreamingSection,
       isResearchStreaming,
       condition1: !!currentStreamingSection,
@@ -295,7 +284,7 @@ function ChatApp() {
     if (currentStreamingSection && isResearchStreaming) {
       // Only auto-add executive summary - other sections require ToC click
       if (currentStreamingSection === '01_executive_summary') {
-        console.log('[ExecSummary Effect DEBUG] Adding exec summary to all arrays');
+        logger.log('[ExecSummary Effect DEBUG] Adding exec summary to all arrays');
         setVisibleSections(prev => {
           if (prev.includes(currentStreamingSection)) return prev;
           return [...prev, currentStreamingSection];
@@ -310,7 +299,7 @@ function ChatApp() {
         // Use logSectionInteraction (not setInteractionLog) because setInteractionLog doesn't support
         // functional updates - it dispatches the value directly. logSectionInteraction properly uses
         // the reducer which has built-in duplicate detection.
-        console.log('[ExecSummary Effect DEBUG] Calling logSectionInteraction for exec summary');
+        logger.log('[ExecSummary Effect DEBUG] Calling logSectionInteraction for exec summary');
         logSectionInteraction(currentStreamingSection);
       }
     }
@@ -352,7 +341,7 @@ function ChatApp() {
       setTimeout(() => {
         const sectionEl = document.getElementById(`section-${sectionId}`);
         if (sectionEl) {
-          sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
       }, 100);
       return;
@@ -366,11 +355,11 @@ function ChatApp() {
         setTimeout(() => {
           const sectionEl = document.getElementById(`section-${sectionId}`);
           if (sectionEl) {
-            sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
           }
         }, 100);
       } catch (err) {
-        console.error('Failed to fetch section:', err);
+        logger.error('Failed to fetch section:', err);
       }
     }
   }, [setActiveSection, streamedContent, isResearchStreaming, fetchSection, researchTicker, token, logSectionInteraction]);
@@ -396,7 +385,7 @@ function ChatApp() {
   // Build interleaved timeline from interaction log (sections and follow-ups in chronological order)
   const interactionTimeline = useMemo(() => {
     // DEBUG: Log interactionLog state
-    console.log('[interactionTimeline DEBUG] Computing timeline:', {
+    logger.log('[interactionTimeline DEBUG] Computing timeline:', {
       interactionLogLength: interactionLog?.length,
       interactionLogEntries: interactionLog?.map(e => e.id),
       hasExecSummary: interactionLog?.some(e => e.id === '01_executive_summary'),
@@ -406,14 +395,14 @@ function ChatApp() {
 
     // If no interaction log, fall back to old behavior (sections first, then follow-ups)
     if (!interactionLog || interactionLog.length === 0) {
-      console.log('[interactionTimeline DEBUG] Using fallback (orderedSections)');
+      logger.log('[interactionTimeline DEBUG] Using fallback (orderedSections)');
       return [
         ...orderedSections.map(section => ({ type: 'section', data: section })),
         ...followUpMessages.map(msg => ({ type: 'followup', data: msg })),
       ];
     }
 
-    console.log('[interactionTimeline DEBUG] Using interactionLog path');
+    logger.log('[interactionTimeline DEBUG] Using interactionLog path');
     // Build timeline: sections from interactionLog, then all follow-ups
     // Note: We don't match follow-ups by ID since backend generates different IDs than frontend.
     // Follow-ups are fetched directly from messages table and already sorted by timestamp.
@@ -499,7 +488,7 @@ function ChatApp() {
     const isResearchStateForCurrentConversation = researchStateConversationRef.current === selectedConversation?.conversation_id;
 
     // DEBUG: Log state for ToC persistence debugging
-    console.log('[ToC Save DEBUG]', {
+    logger.log('[ToC Save DEBUG]', {
       streamStatus,
       activeSectionId,
       lastSavedActiveSectionRef: lastSavedActiveSectionRef.current,
@@ -559,7 +548,7 @@ function ChatApp() {
         total_word_count: reportMeta?.total_word_count,
         last_updated: new Date().toISOString(),
       };
-      console.log('[ToC Save DEBUG] Saving research state to API:', {
+      logger.log('[ToC Save DEBUG] Saving research state to API:', {
         conversationId: selectedConversation.conversation_id,
         visible_sections: researchStateToSave.visible_sections,
         visible_sections_length: researchStateToSave.visible_sections?.length,
@@ -574,10 +563,10 @@ function ChatApp() {
         researchStateToSave,
         token
       ).then(() => {
-        console.log('[ToC Save DEBUG] Save successful for visible_sections:', researchStateToSave.visible_sections);
+        logger.log('[ToC Save DEBUG] Save successful for visible_sections:', researchStateToSave.visible_sections);
       }).catch(err => {
         logger.error('Failed to save research state to conversation metadata:', err);
-        console.error('[ToC Save DEBUG] Save FAILED:', err);
+        logger.error('[ToC Save DEBUG] Save FAILED:', err);
         // Reset saved ref so it can retry
         savedResearchRef.current = null;
       });
@@ -606,6 +595,23 @@ function ChatApp() {
     });
   }, []);
 
+  // Handle upgrade checkout (used by top-level UpgradeModal)
+  const handleUpgradeCheckout = useCallback(async () => {
+    if (!token) return;
+    setIsCheckoutLoading(true);
+    setCheckoutError(null);
+    try {
+      await stripeApi.redirectToCheckout(token, {
+        successUrl: `${window.location.origin}?subscription=success`,
+        cancelUrl: `${window.location.origin}?subscription=canceled`
+      });
+    } catch (err) {
+      logger.error('Checkout failed:', err);
+      setCheckoutError(err.message || 'Failed to start checkout');
+      setIsCheckoutLoading(false);
+    }
+  }, [token]);
+
   // Apply dark mode class to document
   useEffect(() => {
     if (darkMode) {
@@ -623,8 +629,10 @@ function ChatApp() {
     };
   }, []);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom when messages change (skip in research mode to avoid page shift)
   useEffect(() => {
+    if (showInvestmentResearch) return;
+
     const scrollTimeout = setTimeout(() => {
       if (messagesEndRef.current && messages.length > 0) {
         messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -632,7 +640,21 @@ function ChatApp() {
     }, 100);
 
     return () => clearTimeout(scrollTimeout);
-  }, [messages]);
+  }, [messages, showInvestmentResearch]);
+
+  // Track scroll position to show/hide "scroll to bottom" button
+  const handleChatScroll = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollToBottom(distanceFromBottom > 200);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, []);
 
   // Auto-open sidebar when user authenticates
   useEffect(() => {
@@ -689,6 +711,7 @@ function ChatApp() {
       const newConv = await createConversation(title);
       if (newConv) {
         setSelectedConversation(newConv);
+        navigate(`/c/${newConv.conversation_id}`, { replace: true });
         newConversationId = newConv.conversation_id;
       }
     }
@@ -784,7 +807,7 @@ function ChatApp() {
         setShowRateLimitBanner(false);
       }, 8000);
     }
-  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, startResearch, token, showInvestmentResearch, reportMeta, researchTicker, sendFollowUp, clearFollowUp, logSectionInteraction]);
+  }, [input, isAuthenticated, selectedConversation, messages.length, createConversation, setSelectedConversation, navigate, startResearch, token, showInvestmentResearch, reportMeta, researchTicker, sendFollowUp, clearFollowUp, logSectionInteraction]);
 
   const newChat = useCallback(() => {
     setMessages([]);
@@ -795,8 +818,6 @@ function ChatApp() {
     setCollapsedSections([]);
     setUserExpandedSections(['01_executive_summary']);
     setVisibleSections([]);
-    setReportExpired(false);
-    setExpiredReportMeta(null);
 
     // Clear selection - conversation will be created in doSend when user submits a company
     setSelectedConversation(null);
@@ -813,6 +834,9 @@ function ChatApp() {
   // Load conversation messages when switching conversations
   const loadConversationMessages = useCallback(async (conversationId, conversationTitle = null) => {
     if (!token || !conversationId) return;
+
+    // Mark this as the latest requested conversation (staleness guard)
+    latestRequestedConversationRef.current = conversationId;
 
     try {
       // Check cache for previously loaded conversation data
@@ -844,8 +868,11 @@ function ChatApp() {
         };
       }
 
+      // Staleness check #1: bail out if user has already clicked a different conversation
+      if (latestRequestedConversationRef.current !== conversationId) return;
+
       // DEBUG: Log raw API response to trace visible_sections persistence issue
-      console.log('[ToC Load DEBUG] loadConversationHistory response:', {
+      logger.log('[ToC Load DEBUG] loadConversationHistory response:', {
         conversationId,
         conversation_metadata: conversation?.metadata,
         research_state: conversation?.metadata?.research_state,
@@ -911,7 +938,7 @@ function ChatApp() {
         let savedResearchData = null;
 
         // DEBUG: Log raw conversation object to see what's coming from API
-        console.log('[ToC Load DEBUG] Raw conversation from API:', {
+        logger.log('[ToC Load DEBUG] Raw conversation from API:', {
           conversation_id: conversation?.conversation_id,
           metadata: conversation?.metadata,
           metadata_research_state: conversation?.metadata?.research_state,
@@ -920,7 +947,7 @@ function ChatApp() {
 
         if (researchState) {
           // Found research state in conversation metadata (new format)
-          console.log('[ToC Load DEBUG] Found research state in metadata:', {
+          logger.log('[ToC Load DEBUG] Found research state in metadata:', {
             ticker: researchState.ticker,
             active_section_id: researchState.active_section_id,
             visible_sections: researchState.visible_sections,
@@ -955,7 +982,7 @@ function ChatApp() {
                 const data = JSON.parse(msg.content);
                 if (data._type === 'research_report' || data._type === 'research_report_ref') {
                   foundCount++;
-                  console.log('[ToC Load DEBUG] Found saved research message (legacy)', foundCount, 'activeSectionId:', data.activeSectionId, 'savedAt:', data.savedAt);
+                  logger.log('[ToC Load DEBUG] Found saved research message (legacy)', foundCount, 'activeSectionId:', data.activeSectionId, 'savedAt:', data.savedAt);
                   savedResearchData = data;
                   // Don't break - continue to find the most recent message
                 }
@@ -966,7 +993,7 @@ function ChatApp() {
           }
         }
 
-        console.log('[ToC Load DEBUG] Final savedResearchData activeSectionId:', savedResearchData?.activeSectionId);
+        logger.log('[ToC Load DEBUG] Final savedResearchData activeSectionId:', savedResearchData?.activeSectionId);
 
         // Parse follow-up messages from conversation history
         // Detect follow-ups by: (1) JSON content with _type field (legacy), or
@@ -1034,8 +1061,12 @@ function ChatApp() {
         }
 
         if (ticker) {
-          setReportExpired(false);
-          setExpiredReportMeta(null);
+          // Clean up previous state before entering research view
+          // (moved from onSelectConversation to avoid intermediate layout flash)
+          setCollapsedSections([]);
+          setUserExpandedSections(['01_executive_summary']);
+          setVisibleSections([]);
+          researchStateConversationRef.current = null;
 
           // Set up research view
           setShowInvestmentResearch(true);
@@ -1047,7 +1078,7 @@ function ChatApp() {
           if (isReferenceFormat) {
             // NEW FORMAT: Reference-only - fetch sections on-demand from investment_reports_v2
             // Use length check instead of || to handle empty array (which is truthy but should default)
-            console.log('[ToC Load DEBUG] isReferenceFormat - computing savedVisibleSections:', {
+            logger.log('[ToC Load DEBUG] isReferenceFormat - computing savedVisibleSections:', {
               'savedResearchData.visibleSections': savedResearchData.visibleSections,
               'type': typeof savedResearchData.visibleSections,
               'isArray': Array.isArray(savedResearchData.visibleSections),
@@ -1063,7 +1094,7 @@ function ChatApp() {
             if (!savedVisibleSections.includes('01_executive_summary')) {
               savedVisibleSections = ['01_executive_summary', ...savedVisibleSections];
             }
-            console.log('[ToC Load DEBUG] Computed savedVisibleSections:', savedVisibleSections);
+            logger.log('[ToC Load DEBUG] Computed savedVisibleSections:', savedVisibleSections);
             const savedActiveSectionId = savedResearchData.activeSectionId || savedVisibleSections[0] || '01_executive_summary';
             // Load interaction log and ensure exec summary is included for rendering
             let savedInteractionLog = savedResearchData.interactionLog || [];
@@ -1076,74 +1107,44 @@ function ChatApp() {
               ];
             }
 
-            // Check if report still exists and is not expired
-            const status = await checkReportStatus(ticker, token);
+            // Load metadata first, then batch fetch sections (replaces checkReportStatus + N individual fetches)
+            setUserExpandedSections(savedVisibleSections);
+            setVisibleSections(savedVisibleSections);
+            setCollapsedSections([...savedVisibleSections]);
 
-            if (!status.exists || status.expired) {
-              // Report has expired or doesn't exist - show expiration banner
-              setReportExpired(true);
-              setExpiredReportMeta({
-                ticker: ticker,
-                generated_at: savedResearchData.generated_at,
-                ratings: savedResearchData.reportMeta?.ratings,
-                toc: savedResearchData.reportMeta?.toc,
-              });
-              setUserExpandedSections(savedVisibleSections);
-              setVisibleSections(savedVisibleSections);
+            loadSavedReport({
+              ticker: ticker,
+              reportMeta: savedResearchData.reportMeta,
+              streamedContent: {},  // Empty - batch fetch will populate
+              activeSectionId: savedActiveSectionId,
+              followUpMessages: savedFollowUpMessages,
+              interactionLog: savedInteractionLog,
+            });
+            researchStateConversationRef.current = conversationId;
+            lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
+            lastSavedSectionsRef.current = savedVisibleSections.length;
 
-              // Load metadata-only (no content to display)
-              loadSavedReport({
-                ticker: ticker,
-                reportMeta: savedResearchData.reportMeta,
-                streamedContent: {},  // Empty - report expired
-                activeSectionId: savedActiveSectionId,  // Restore ToC highlight
-                followUpMessages: savedFollowUpMessages,
-                interactionLog: savedInteractionLog,  // Restore interaction timeline
-              });
-              // Track which conversation this research state belongs to (prevents cross-contamination on switch)
-              researchStateConversationRef.current = conversationId;
-              // Set counters to prevent re-saving loaded data
-              lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
-              lastSavedSectionsRef.current = savedVisibleSections.length;
-            } else {
-              // Report exists - load metadata and fetch sections on-demand
-              console.log('[ToC Load DEBUG] Report exists - calling setUserExpandedSections and setVisibleSections with:', savedVisibleSections);
-              setUserExpandedSections(savedVisibleSections);
-              setVisibleSections(savedVisibleSections);
-              setCollapsedSections([...savedVisibleSections]);
+            // Single batch fetch: gets all sections + report_exists in one request
+            try {
+              const batchResult = await fetchSectionsBatch(ticker, savedVisibleSections, token);
 
-              // Load with metadata, empty content (will be populated by fetchSection)
-              loadSavedReport({
-                ticker: ticker,
-                reportMeta: savedResearchData.reportMeta,
-                streamedContent: {},  // Empty - fetch on-demand
-                activeSectionId: savedActiveSectionId,  // Restore ToC highlight
-                followUpMessages: savedFollowUpMessages,
-                interactionLog: savedInteractionLog,  // Restore interaction timeline
-              });
-              // Track which conversation this research state belongs to (prevents cross-contamination on switch)
-              researchStateConversationRef.current = conversationId;
-              // Set counters to prevent re-saving loaded data
-              lastSavedInteractionLogLengthRef.current = savedInteractionLog.length;
-              lastSavedSectionsRef.current = savedVisibleSections.length;
+              // Staleness check #2: bail out if user switched conversations during batch fetch
+              if (latestRequestedConversationRef.current !== conversationId) return;
 
-              // Fetch visible sections in parallel from investment_reports_v2
-              // Use animate: false for instant display when restoring saved conversations
-              try {
-                await Promise.all(
-                  savedVisibleSections.map(sectionId => fetchSection(ticker, sectionId, token, { animate: false }))
-                );
+              if (!batchResult.report_exists) {
+                // Report expired or doesn't exist — metadata is still shown, sections will be empty
+                logger.warn(`Report for ${ticker} not found or expired`);
+              } else {
                 // Scroll to restored active section after content loads
                 setTimeout(() => {
                   const sectionEl = document.getElementById(`section-${savedActiveSectionId}`);
                   if (sectionEl) {
-                    sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                   }
                 }, 150);
-              } catch (err) {
-                logger.error('Error fetching sections on-demand:', err);
-                // Continue anyway - partial content is better than none
               }
+            } catch (err) {
+              logger.error('Error batch fetching sections:', err);
             }
           } else if (isLegacyFormat) {
             // LEGACY FORMAT: Full content embedded - load directly (backward compatible)
@@ -1191,7 +1192,7 @@ function ChatApp() {
             setTimeout(() => {
               const sectionEl = document.getElementById(`section-${savedActiveSectionId}`);
               if (sectionEl) {
-                sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
               }
             }, 150);
           } else {
@@ -1230,16 +1231,46 @@ function ChatApp() {
       }
 
       // Regular conversation (including legacy "Analysis:" conversations) - show messages as chat
-      setShowInvestmentResearch(false);
+      // Clean up research state to avoid stale data from previous research conversation
+      resetResearch();
+      setCollapsedSections([]);
+      setUserExpandedSections(['01_executive_summary']);
+      setVisibleSections([]);
       researchStateConversationRef.current = null;
+      setShowInvestmentResearch(false);
       setMessages(formattedMessages);
     } catch (error) {
       logger.error('Error loading conversation messages:', error);
       // Don't alert on error, just log it
     }
-  }, [token, setMessages, startResearch, loadSavedReport, fetchSection, setInteractionLog]);
+  }, [token, setMessages, startResearch, loadSavedReport, fetchSection, fetchSectionsBatch, setInteractionLog, resetResearch]);
 
+  // Sync URL → conversation state
+  // Fires on: initial mount with /c/:id, browser back/forward, navigate() calls
+  // Sparse dep array is intentional — adding selectedConversation/conversations would cause infinite loops
+  useEffect(() => {
+    if (!urlConversationId) {
+      // URL is "/" — new chat mode
+      if (selectedConversation) {
+        newChat();
+      }
+      return;
+    }
 
+    // URL has a conversation ID — load if different from current
+    if (urlConversationId !== selectedConversation?.conversation_id) {
+      const conv = conversations.find(c => c.conversation_id === urlConversationId);
+      if (conv) {
+        setSelectedConversation(conv);
+        loadConversationMessages(urlConversationId, conv.title);
+      } else if (token) {
+        // Deep link or conversation not yet in sidebar list
+        setSelectedConversation({ conversation_id: urlConversationId, title: '' });
+        loadConversationMessages(urlConversationId);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlConversationId, token]);
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-sand-50 dark:bg-warm-950 text-sand-800 dark:text-warm-50">
@@ -1257,7 +1288,7 @@ function ChatApp() {
           {/* Sidebar - Show for authenticated users (visible in all modes including Research) */}
           {isAuthenticated && (
             <aside className={classNames(
-              "shrink-0 border-r border-sand-100 dark:border-warm-800 transition-all duration-300 ease-in-out",
+              "shrink-0 border-r border-transparent hover:border-indigo-400 dark:hover:border-indigo-400 transition-all duration-300 ease-in-out",
               // Mobile: fixed overlay that slides in from left
               "fixed inset-y-0 left-0 z-50 bg-sand-50 dark:bg-warm-950",
               // Desktop: relative positioning (normal flow)
@@ -1271,7 +1302,7 @@ function ChatApp() {
               <>
                 <div className="mb-8 md:mb-6 flex items-center justify-between">
                   <button
-                    onClick={newChat}
+                    onClick={() => navigate('/')}
                     className="text-xs tracking-[0.35em] text-sand-600 dark:text-warm-200 font-semibold hover:text-indigo-600 transition-colors cursor-pointer"
                     title="Start new chat"
                   >
@@ -1298,7 +1329,7 @@ function ChatApp() {
                     <Menu className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={newChat}
+                    onClick={() => navigate('/')}
                     className="rounded-md p-2 bg-indigo-600 text-white hover:bg-indigo-700"
                     title="New Analysis"
                   >
@@ -1340,13 +1371,13 @@ function ChatApp() {
 
             {sidebarOpen && (
               <div className="flex flex-col h-full pb-4">
-            <div className="flex items-center gap-2">
-              <button onClick={newChat} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg hover:bg-indigo-700 hover:shadow-indigo-200 dark:hover:shadow-warm-900/30 transition-all">
+            <div className="flex items-center justify-center gap-2">
+              <button onClick={() => navigate('/')} className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg hover:bg-indigo-700 hover:shadow-indigo-200 dark:hover:shadow-warm-900/30 transition-all">
                 <Plus className="h-4 w-4"/> New Analysis
               </button>
             </div>
 
-            <div className="mt-4 h-8 flex items-center gap-2 rounded-full border border-sand-200/80 dark:border-warm-800/50 bg-sand-50/90 dark:bg-warm-900/50 backdrop-blur-sm px-3 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
+            <div className="mt-4 h-8 flex items-center gap-2 rounded-full border border-transparent bg-sand-50/90 dark:bg-warm-900/50 backdrop-blur-sm px-3 hover:border-indigo-400 dark:hover:border-indigo-400 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
               <Search className="h-3.5 w-3.5 text-sand-400"/>
               <input value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Search" className="w-full bg-transparent text-xs outline-none placeholder:text-sand-400 dark:placeholder:text-warm-400"/>
             </div>
@@ -1380,30 +1411,20 @@ function ChatApp() {
                     c.title?.toLowerCase().includes(search.toLowerCase())
                   )}
                   selectedConversation={selectedConversation}
-                  onSelectConversation={async (conv) => {
-                    // Only clear messages if no cached data (avoids blank flash on revisit)
-                    const hasCached = !!conversationCacheRef.current[conv.conversation_id];
-                    if (!hasCached) {
-                      setMessages([]);
-                    }
-                    setShowInvestmentResearch(false);
-                    resetResearch();
-                    setCollapsedSections([]);
-                    setUserExpandedSections(['01_executive_summary']);
-                    setVisibleSections([]);
-                    setReportExpired(false);
-                    setExpiredReportMeta(null);
-                    researchStateConversationRef.current = null;
-
-                    setSelectedConversation(conv);
-                    // Load messages for this conversation
-                    if (conv.conversation_id) {
-                      await loadConversationMessages(conv.conversation_id, conv.title);
-                    }
+                  onSelectConversation={(conv) => {
+                    navigate(`/c/${conv.conversation_id}`);
                   }}
                   onUpdateConversation={updateConversation}
-                  onArchiveConversation={archiveConversation}
-                  onDeleteConversation={deleteConversation}
+                  onArchiveConversation={async (convId) => {
+                    const wasSelected = selectedConversation?.conversation_id === convId;
+                    await archiveConversation(convId);
+                    if (wasSelected) navigate('/', { replace: true });
+                  }}
+                  onDeleteConversation={async (convId) => {
+                    const wasSelected = selectedConversation?.conversation_id === convId;
+                    await deleteConversation(convId);
+                    if (wasSelected) navigate('/', { replace: true });
+                  }}
                   showArchived={showArchived}
                   loading={conversationsLoading}
                   onLoadMore={loadMoreConversations}
@@ -1445,6 +1466,15 @@ function ChatApp() {
                 darkMode={darkMode}
                 onDarkModeToggle={toggleDarkMode}
                 dropdownPosition="top"
+                subscriptionTier={effectiveTokenUsage?.subscription_tier || 'free'}
+                onPlanClick={() => {
+                  const tier = effectiveTokenUsage?.subscription_tier || 'free';
+                  if (tier !== 'plus') {
+                    setShowUpgradeModal(true);
+                  } else {
+                    setSettingsOpen(true);
+                  }
+                }}
               />
             </div>
               </div>
@@ -1453,7 +1483,7 @@ function ChatApp() {
           )}
 
           {/* Main panel */}
-          <main className="relative flex min-w-0 flex-1 flex-col">
+          <main className="relative flex min-w-0 flex-1 flex-col min-h-0 overflow-hidden">
             {/* Header - minimal, only for mobile menu and non-authenticated users */}
             <div className="flex items-center justify-between px-4 md:px-6 py-2">
               <div className="flex items-center gap-2 md:gap-3">
@@ -1477,6 +1507,15 @@ function ChatApp() {
                     onSettingsClick={() => setSettingsOpen(true)}
                     darkMode={darkMode}
                     onDarkModeToggle={toggleDarkMode}
+                    subscriptionTier={effectiveTokenUsage?.subscription_tier || 'free'}
+                    onPlanClick={() => {
+                      const tier = effectiveTokenUsage?.subscription_tier || 'free';
+                      if (tier !== 'plus') {
+                        setShowUpgradeModal(true);
+                      } else {
+                        setSettingsOpen(true);
+                      }
+                    }}
                   />
                 )}
               </div>
@@ -1521,9 +1560,8 @@ function ChatApp() {
                     streamStatus={streamStatus}
                     error={researchError}
                     progress={researchProgress}
-                    reportExpired={reportExpired}
-                    expiredReportMeta={expiredReportMeta}
                     tocWidth={researchTocWidth}
+                    visibleSections={visibleSections}
                     onSectionClick={handleTocSectionClick}
                     onClose={() => {
                       setShowInvestmentResearch(false);
@@ -1532,17 +1570,6 @@ function ChatApp() {
                     }}
                     onRetry={() => {
                       startResearch(researchTicker, token);
-                    }}
-                    onRegenerateExpired={() => {
-                      setReportExpired(false);
-                      setExpiredReportMeta(null);
-                      startResearch(expiredReportMeta.ticker, token);
-                    }}
-                    onDismissExpired={() => {
-                      setReportExpired(false);
-                      setExpiredReportMeta(null);
-                      setShowInvestmentResearch(false);
-                      resetResearch();
                     }}
                     composer={
                       <>
@@ -1589,7 +1616,7 @@ function ChatApp() {
                       if (item.type === 'section') {
                         const section = item.data;
                         return (
-                          <div key={`section-${section.section_id}`} id={`section-${section.section_id}`} className="mx-auto w-full max-w-2xl">
+                          <div key={`section-${section.section_id}`} id={`section-${section.section_id}`} className="mx-auto w-full max-w-3xl">
                             <SectionCard
                               section={section}
                               isStreaming={currentStreamingSection === section.section_id}
@@ -1610,7 +1637,7 @@ function ChatApp() {
                         const isFirstFollowup = interactionTimeline.slice(0, index).every(i => i.type !== 'followup');
 
                         return (
-                          <div key={`followup-${msg.id}`} className="mx-auto w-full max-w-2xl">
+                          <div key={`followup-${msg.id}`} className="mx-auto w-full max-w-3xl">
                             {isFirstFollowup && (
                               <div className="mt-6 pt-6 border-t border-sand-200 dark:border-warm-800">
                                 <div className="text-xs uppercase tracking-wide text-sand-400 dark:text-warm-400 mb-4 px-4">
@@ -1690,7 +1717,7 @@ function ChatApp() {
 
                     {/* Follow-up streaming indicator */}
                     {isFollowUpStreaming && followUpMessages.length === 0 && (
-                      <div className="mx-auto w-full max-w-2xl mt-4 px-4">
+                      <div className="mx-auto w-full max-w-3xl mt-4 px-4">
                         <div className="flex gap-3">
                           <div className="h-7 w-7 shrink-0">
                             <img
@@ -1711,9 +1738,9 @@ function ChatApp() {
                   </ResearchLayout>
                 ) : (
                   /* REGULAR CHAT VIEW */
-                  <div className="flex-1 flex min-h-0">
-                    <div className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
-                      <div className="mx-auto max-w-3xl space-y-4">
+                  <div className="flex-1 flex min-h-0 relative">
+                    <div ref={chatScrollRef} onScroll={handleChatScroll} className="flex-1 overflow-y-auto px-4 md:px-6 py-4 transition-all duration-300 ease-in-out scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
+                      <div className="mx-auto max-w-4xl space-y-4">
                         {/* User messages */}
                         {messages.map((m) => {
                           const userMessages = messages.filter(msg => msg.type === 'user');
@@ -1734,6 +1761,18 @@ function ChatApp() {
                         <div ref={messagesEndRef} />
                       </div>
                     </div>
+
+                    {/* Scroll to bottom button */}
+                    {showScrollToBottom && messages.length > 0 && (
+                      <button
+                        onClick={scrollToBottom}
+                        className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 rounded-full bg-sand-100 dark:bg-warm-800 border border-sand-200 dark:border-warm-700 shadow-md px-3 py-1.5 text-xs font-medium text-sand-600 dark:text-warm-200 hover:bg-sand-200 dark:hover:bg-warm-700 transition-all"
+                        aria-label="Scroll to bottom"
+                      >
+                        <ChevronDown className="h-4 w-4 inline-block mr-1" />
+                        New messages
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1771,57 +1810,32 @@ function ChatApp() {
 
 
       {/* Settings Panel */}
-      {settingsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>setSettingsOpen(false)}>
-          <div className="absolute right-0 top-0 h-full w-full md:max-w-xl overflow-y-auto bg-sand-50 dark:bg-warm-950 shadow-xl" onClick={(e)=>e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-sand-100 dark:border-warm-800 px-4 md:px-6 py-4">
-              <div className="text-sm font-semibold text-sand-900 dark:text-warm-50">Settings</div>
-              <button onClick={()=>setSettingsOpen(false)} className="rounded-md border border-sand-200 dark:border-warm-800 px-3 py-2 md:px-2 md:py-1 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 active:bg-sand-100 dark:active:bg-warm-600">Close</button>
-            </div>
-            <div className="space-y-6 p-4 md:p-6">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-sand-500 dark:text-warm-300">User ID</label>
-                {isAuthenticated ? (
-                  <div className="w-full rounded-lg border border-green-200 dark:border-green-700 bg-green-50 dark:bg-green-900/20 px-3 py-2 text-sm text-green-800 dark:text-green-300">
-                    {user?.id} (Google ID)
-                  </div>
-                ) : (
-                  <input value={userName} onChange={(e)=>setUserName(e.target.value)} className="w-full rounded-lg border border-sand-200 dark:border-warm-800 bg-sand-50 dark:bg-warm-900 px-3 py-2 text-sm text-sand-900 dark:text-warm-50 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"/>
-                )}
-                <div className="mt-1 text-[11px] text-sand-400 dark:text-warm-400">
-                  {isAuthenticated ?
-                    "Using your authenticated Google ID for consistent message tracking." :
-                    "Sign in to use your Google ID, or use a custom name for demo mode."
-                  }
-                </div>
-              </div>
+      <SettingsPanel
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        user={user}
+        isAuthenticated={isAuthenticated}
+        userName={userName}
+        onUserNameChange={setUserName}
+        tokenUsage={effectiveTokenUsage}
+        token={token}
+        showUpgradeModal={showUpgradeModal}
+        onShowUpgradeModalChange={setShowUpgradeModal}
+        onTokenUsageUpdate={setSettingsTokenUsage}
+      />
 
-
-
-              {/* Token Usage Section */}
-              <TokenUsageDisplay
-                tokenUsage={effectiveTokenUsage}
-                isAuthenticated={isAuthenticated}
-                onUpgrade={() => setShowUpgradeModal(true)}
-              />
-
-              {/* Subscription Management Section */}
-              <SubscriptionManagement
-                token={token}
-                isAuthenticated={isAuthenticated}
-                showUpgradeModal={showUpgradeModal}
-                onShowUpgradeModalChange={setShowUpgradeModal}
-                onTokenUsageUpdate={setSettingsTokenUsage}
-              />
-
-              <div className="rounded-lg bg-sand-50 dark:bg-warm-900 p-3 text-sm text-sand-600 dark:text-warm-200">
-                <div className="font-medium text-sand-800 dark:text-warm-100 mb-2">About Buffett</div>
-                <p>Your personal AI assistant trained on Warren Buffett&apos;s investing wisdom and business philosophy. All connections are automatically configured and ready to use.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Top-level Upgrade Modal (shown directly from Upgrade Plan button) */}
+      <UpgradeModal
+        isOpen={showUpgradeModal && !settingsOpen}
+        onClose={() => {
+          setShowUpgradeModal(false);
+          setCheckoutError(null);
+          setIsCheckoutLoading(false);
+        }}
+        onUpgrade={handleUpgradeCheckout}
+        isLoading={isCheckoutLoading}
+        error={checkoutError}
+      />
     </div>
   );
 }
@@ -1853,7 +1867,7 @@ function RateLimitBanner({ remainingQueries, onClose, onSignUp, isVisible }) {
   };
 
   return (
-    <div className={`mx-auto max-w-3xl mb-4 px-4 transform transition-all duration-1000 ease-in-out ${
+    <div className={`mx-auto max-w-4xl mb-4 px-4 transform transition-all duration-1000 ease-in-out ${
       isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
     }`}>
       <div className="flex items-center justify-between px-4 py-3 bg-sand-50 dark:bg-warm-900 rounded-lg text-white text-sm shadow-sm">
@@ -1975,7 +1989,7 @@ function SearchComposer({
     <div className="mx-auto max-w-3xl px-2 md:px-0">
       {/* Search Bar Container - iOS 26 liquid glass style */}
       <div className="relative">
-        <div className="relative flex items-center rounded-full border border-sand-200/80 dark:border-warm-800/50 bg-sand-50/90 dark:bg-warm-900/80 backdrop-blur-xl shadow-lg px-5 py-3.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
+        <div className="relative flex items-center rounded-full border border-sand-200/80 dark:border-warm-800/50 bg-sand-50/90 dark:bg-warm-900/80 backdrop-blur-xl shadow-lg px-5 py-2.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-900/30 transition-all">
           {/* Input */}
           <input
             ref={inputRef}
@@ -2039,9 +2053,14 @@ function SearchComposer({
                   <span className="font-semibold text-indigo-600 dark:text-indigo-400 min-w-[60px]">
                     {result.ticker}
                   </span>
-                  <span className="text-sm text-sand-600 dark:text-warm-200 truncate">
+                  <span className="text-sm text-sand-600 dark:text-warm-200 truncate flex-1">
                     {result.name}
                   </span>
+                  {result.has_report && (
+                    <span className="flex-shrink-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded-full">
+                      Report
+                    </span>
+                  )}
                 </button>
               ))
             ) : input.trim().length > 0 ? (
@@ -2113,9 +2132,10 @@ function DarkModeToggle({ darkMode, onToggle }) {
 }
 
 // Account Dropdown Component
-function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle, dropdownPosition = "bottom" }) {
+function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkModeToggle, dropdownPosition = "bottom", subscriptionTier = "free", onPlanClick }) {
   const { user, isAuthenticated, logout } = useAuth();
   const dropdownRef = useRef(null);
+  const [learnMoreOpen, setLearnMoreOpen] = useState(false);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -2203,6 +2223,74 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
                 </button>
                 <button
                   onClick={() => {
+                    onPlanClick?.();
+                    onToggle(false);
+                  }}
+                  className="flex items-center gap-3 w-full px-4 py-2 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                >
+                  <Crown className="h-4 w-4" />
+                  {subscriptionTier === 'plus' ? 'Manage Plan' : 'Upgrade Plan'}
+                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setLearnMoreOpen(!learnMoreOpen)}
+                    className="flex items-center gap-3 w-full px-4 py-2 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    <span className="flex-1 text-left">Learn More</span>
+                    <ChevronRight className={classNames(
+                      "h-3.5 w-3.5 text-sand-400 transition-transform duration-200",
+                      learnMoreOpen ? "rotate-90" : ""
+                    )} />
+                  </button>
+                  {learnMoreOpen && (
+                    <div className="absolute left-full top-0 ml-1 w-48 bg-sand-50 dark:bg-warm-950 border border-sand-200 dark:border-warm-800 rounded-lg shadow-lg py-1 z-50">
+                      <a
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-800 transition-colors"
+                      >
+                        <Shield className="h-3.5 w-3.5" />
+                        <span className="flex-1">Privacy Policy</span>
+                        <ExternalLink className="h-3 w-3 text-sand-400 dark:text-warm-500" />
+                      </a>
+                      <a
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-800 transition-colors"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        <span className="flex-1">Terms of Service</span>
+                        <ExternalLink className="h-3 w-3 text-sand-400 dark:text-warm-500" />
+                      </a>
+                      <a
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-sand-600 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-800 transition-colors"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        <span className="flex-1">Data Disclaimer</span>
+                        <ExternalLink className="h-3 w-3 text-sand-400 dark:text-warm-500" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+                <a
+                  href="#"
+                  onClick={(e) => { e.preventDefault(); onToggle(false); }}
+                  className="flex items-center gap-3 w-full px-4 py-2 text-sm text-sand-700 dark:text-warm-200 hover:bg-sand-50 dark:hover:bg-warm-800 transition-colors"
+                >
+                  <HelpCircle className="h-4 w-4" />
+                  Get Help
+                </a>
+                <button
+                  onClick={() => {
                     logout();
                     onToggle(false);
                   }}
@@ -2230,10 +2318,28 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
 }
 
 export default function App() {
+  const [showWaitlist, setShowWaitlist] = useState(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.has('ref')
+      || window.location.hash.includes('waitlist')
+      || ENV_CONFIG.ENABLE_WAITLIST;
+  });
+
+  if (showWaitlist) {
+    return (
+      <Suspense fallback={<div className="min-h-screen bg-sand-50 dark:bg-warm-950" />}>
+        <WaitlistPage onEnterApp={() => setShowWaitlist(false)} />
+      </Suspense>
+    );
+  }
+
   return (
     <AuthProvider>
       <ResearchProvider>
-        <ChatApp />
+        <Routes>
+          <Route path="/c/:conversationId" element={<ChatApp />} />
+          <Route path="*" element={<ChatApp />} />
+        </Routes>
       </ResearchProvider>
     </AuthProvider>
   );

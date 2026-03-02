@@ -11,7 +11,53 @@ import {
   MOCK_SECTION_DATA
 } from './researchFixtures';
 
-const API_BASE = 'https://t5wvlwfo5b.execute-api.us-east-1.amazonaws.com/dev';
+// Must match VITE_RESEARCH_API_URL in vite.config.js test.env
+const API_BASE = 'https://test-api.example.com/dev';
+
+// Must match VITE_ANALYSIS_FOLLOWUP_URL in vite.config.js test.env
+const FOLLOWUP_BASE = 'https://test-followup.example.com';
+
+// Shared follow-up handler (used by both API Gateway and direct Lambda URL routes)
+async function followupHandler({ request }) {
+  const body = await request.json();
+  const { ticker, question, section_id } = body;
+  const encoder = new TextEncoder();
+  const messageId = `msg-${Date.now()}`;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      controller.enqueue(encoder.encode(`event: followup_start\ndata: ${JSON.stringify({
+        message_id: messageId
+      })}\n\n`));
+
+      await delay(10);
+
+      const response = `Based on the ${section_id || 'report'} for ${ticker}, here's my analysis of "${question}": This is a mock response.`;
+      const chunks = chunkString(response, 50);
+
+      for (const chunk of chunks) {
+        controller.enqueue(encoder.encode(`event: followup_chunk\ndata: ${JSON.stringify({
+          message_id: messageId,
+          text: chunk
+        })}\n\n`));
+        await delay(5);
+      }
+
+      controller.enqueue(encoder.encode(`event: followup_end\ndata: ${JSON.stringify({
+        message_id: messageId
+      })}\n\n`));
+
+      controller.close();
+    }
+  });
+
+  return new HttpResponse(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache'
+    }
+  });
+}
 
 export const handlers = [
   // Health check endpoint
@@ -118,50 +164,12 @@ export const handlers = [
     });
   }),
 
-  // Follow-up endpoint (POST with SSE response)
-  http.post(`${API_BASE}/research/followup`, async ({ request }) => {
-    const body = await request.json();
-    const { ticker, question, section_id } = body;
-    const encoder = new TextEncoder();
-    const messageId = `msg-${Date.now()}`;
+  // Follow-up endpoint via API Gateway
+  http.post(`${API_BASE}/research/followup`, followupHandler),
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        // followup_start
-        controller.enqueue(encoder.encode(`event: followup_start\ndata: ${JSON.stringify({
-          message_id: messageId
-        })}\n\n`));
-
-        await delay(10);
-
-        // followup_chunk (simulated response)
-        const response = `Based on the ${section_id || 'report'} for ${ticker}, here's my analysis of "${question}": This is a mock response.`;
-        const chunks = chunkString(response, 50);
-
-        for (const chunk of chunks) {
-          controller.enqueue(encoder.encode(`event: followup_chunk\ndata: ${JSON.stringify({
-            message_id: messageId,
-            text: chunk
-          })}\n\n`));
-          await delay(5);
-        }
-
-        // followup_end
-        controller.enqueue(encoder.encode(`event: followup_end\ndata: ${JSON.stringify({
-          message_id: messageId
-        })}\n\n`));
-
-        controller.close();
-      }
-    });
-
-    return new HttpResponse(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache'
-      }
-    });
-  })
+  // Follow-up endpoint via direct Lambda Function URL
+  // (VITE_ANALYSIS_FOLLOWUP_URL bypasses API Gateway for SSE streaming)
+  http.post(FOLLOWUP_BASE, followupHandler),
 ];
 
 // Helper functions

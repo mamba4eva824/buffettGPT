@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from 'lucide-react';
+import logger from '../utils/logger';
 
 /**
  * Robust Avatar component with fallback handling and error recovery
@@ -32,7 +33,7 @@ export function Avatar({
 
   // Handle image load error with improved retry logic
   const handleImageError = () => {
-    console.warn('Avatar image failed to load:', actualSrc);
+    logger.warn('Avatar image failed to load:', actualSrc);
     setImageLoading(false);
 
     // Try to fix common Google Photos URL issues (only once)
@@ -50,7 +51,7 @@ export function Avatar({
       }
 
       if (cleanUrl !== actualSrc) {
-        console.log('Retrying with cleaned URL:', cleanUrl);
+        logger.log('Retrying with cleaned URL:', cleanUrl);
         setActualSrc(cleanUrl);
         setImageError(false);
         setImageLoading(true);

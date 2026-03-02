@@ -139,6 +139,7 @@ class ReportGenerator:
         4.8: 'investment_report_prompt_v4_8.txt',  # Audit grade v4.8 (executive summary first, dynamic headers, simplified language)
         4.9: 'investment_report_prompt_v4_9.txt',  # Audit grade v4.9 (consolidated dashboard - removed redundant sections 15/16)
         5.0: 'investment_report_prompt_v5_0.txt',  # Audit grade v5.0 (visual momentum dashboards, progress bars, pattern alerts)
+        5.1: 'investment_report_prompt_v5_1.txt',  # Audit grade v5.1 (revenue stickiness, margin waterfall, operating leverage, peer comparisons, decision triggers)
     }
 
     def __init__(self, use_api: bool = False, prompt_version: float = 5.0):
@@ -253,6 +254,9 @@ class ReportGenerator:
             currency=currency_info.get('code', 'USD'),
             source_cache_key=cache_key
         )
+        # Track that metrics were cached for this ticker so save_report_sections()
+        # doesn't redundantly cache them again
+        self._metrics_cached_for = ticker
 
         return {
             'ticker': ticker,
@@ -319,10 +323,13 @@ class ReportGenerator:
         fiscal_year: int,
         report_content: str,
         ratings: Dict[str, Any],
-        features: Dict[str, Any] = None
+        features: Dict[str, Any] = None,
+        raw_financials: Dict[str, Any] = None,
+        currency_info: Dict[str, Any] = None
     ) -> None:
         """
         Save a report as section items to DynamoDB v2 table.
+        Also caches metrics to metrics-history table when raw_financials is provided.
 
         V2 Schema (Single Executive Item pattern):
         - 1 executive item (00_executive): ToC + ratings + 5 executive sections combined
@@ -338,9 +345,29 @@ class ReportGenerator:
             report_content: Full markdown report content
             ratings: Structured ratings dict (or None to extract from report)
             features: Optional features snapshot to store in metadata
+            raw_financials: Optional raw financial data for metrics caching.
+                When provided, quarterly trends are extracted and cached to
+                the metrics-history table for the follow-up agent.
+            currency_info: Optional currency info dict (used with raw_financials)
         """
         ticker = ticker.upper()
         print(f"  Saving report sections for {ticker} (v2 schema) to DynamoDB...")
+
+        # Cache metrics to metrics-history table if raw financials provided
+        # and prepare_data() didn't already cache them for this ticker
+        if raw_financials and getattr(self, '_metrics_cached_for', None) != ticker:
+            try:
+                quarterly_trends = extract_quarterly_trends(raw_financials)
+                currency = (currency_info or {}).get('code', 'USD')
+                cache_key = f'v3:{ticker}:{fiscal_year}'
+                self._batch_write_metrics_cache(
+                    ticker=ticker,
+                    quarterly_trends=quarterly_trends,
+                    currency=currency,
+                    source_cache_key=cache_key
+                )
+            except Exception as e:
+                print(f"  Warning: Failed to cache metrics for {ticker}: {e}")
 
         # Parse report into sections
         sections = parse_report_sections(report_content, ticker)

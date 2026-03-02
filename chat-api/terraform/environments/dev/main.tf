@@ -76,6 +76,12 @@ locals {
 
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
+
+    # Waitlist Table
+    WAITLIST_TABLE = module.dynamodb.waitlist_table_name
+
+    # Frontend URL (for referral links)
+    FRONTEND_URL = var.frontend_url
   }
 
   # Function-specific environment variables
@@ -94,6 +100,11 @@ locals {
       STRIPE_PLUS_PRICE_ID_ARN   = module.stripe.stripe_plus_price_id_arn
       STRIPE_PUBLISHABLE_KEY_ARN = module.stripe.stripe_publishable_key_arn
       USERS_TABLE                = var.enable_authentication ? module.auth[0].users_table_name : ""
+    }
+    waitlist_handler = {
+      RESEND_API_KEY_ARN = module.email.resend_api_key_arn
+      RESEND_FROM_EMAIL  = module.email.resend_from_email
+      API_BASE_URL       = module.api_gateway.http_api_endpoint
     }
   }
 }
@@ -224,6 +235,9 @@ module "api_gateway" {
   enable_subscription_routes = true
   enable_stripe_webhook      = true
 
+  # Waitlist API (signup, status, referral tracking)
+  enable_waitlist_routes = true
+
   common_tags = local.common_tags
 }
 
@@ -347,6 +361,25 @@ module "stripe" {
 resource "aws_iam_role_policy_attachment" "lambda_stripe_secrets" {
   role       = module.core.lambda_role_name
   policy_arn = module.stripe.stripe_secrets_policy_arn
+}
+
+# ================================================
+# Email Module - Resend Integration
+# ================================================
+
+module "email" {
+  source = "../../modules/email"
+
+  environment        = local.environment
+  common_tags        = local.common_tags
+  resend_secret_name = "resend_dev_key"
+  resend_from_email  = "onboarding@resend.dev"
+}
+
+# Attach Resend secrets policy to Lambda execution role
+resource "aws_iam_role_policy_attachment" "lambda_resend_secrets" {
+  role       = module.core.lambda_role_name
+  policy_arn = module.email.resend_secrets_policy_arn
 }
 
 # ================================================
