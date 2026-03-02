@@ -97,7 +97,7 @@ variable "bedrock_model_id" {
 variable "investment_research_image_tag" {
   description = "Docker image tag for investment research Lambda"
   type        = string
-  default     = "v1.2.0"
+  default     = "latest"
 }
 
 # Followup Action Variables
