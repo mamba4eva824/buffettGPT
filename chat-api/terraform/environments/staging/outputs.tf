@@ -40,6 +40,16 @@ output "lambda_function_arns" {
   value       = module.lambda.function_arns
 }
 
+output "investment_research_function_url" {
+  description = "Investment research Lambda function URL"
+  value       = module.lambda.investment_research_docker_function_url
+}
+
+output "analysis_followup_function_url" {
+  description = "Analysis followup Lambda function URL"
+  value       = module.lambda.analysis_followup_function_url
+}
+
 # ================================================
 # DynamoDB Outputs
 # ================================================
