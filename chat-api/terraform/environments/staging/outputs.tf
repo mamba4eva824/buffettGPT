@@ -1,5 +1,6 @@
 # Staging Environment Outputs
 # These values are used by CI/CD and for sharing access with testers
+# Updated 2025-01: Removed CloudFront, deprecated DynamoDB, and Knowledge Base outputs
 
 # ================================================
 # API Gateway Outputs
@@ -14,6 +15,9 @@ output "http_api_endpoint" {
   description = "The HTTP API Gateway endpoint URL"
   value       = module.api_gateway.http_api_endpoint
 }
+
+# WebSocket API outputs - REMOVED (2026-02)
+# websocket_api_id and websocket_api_endpoint deprecated
 
 # ================================================
 # Lambda Outputs
@@ -59,12 +63,12 @@ output "dynamodb_tables" {
 
 output "bedrock_agent_id" {
   description = "The ID of the Bedrock agent"
-  value       = module.bedrock.followup_agent_id
+  value       = module.bedrock.agent_id
 }
 
 output "bedrock_agent_alias_id" {
   description = "The alias ID of the Bedrock agent"
-  value       = module.bedrock.followup_agent_alias_id
+  value       = module.bedrock.agent_alias_id
 }
 
 # ================================================
@@ -74,9 +78,22 @@ output "bedrock_agent_alias_id" {
 output "staging_access_info" {
   description = "Information for accessing the staging environment"
   value = {
-    environment  = "staging"
-    frontend_url = module.cloudfront.cloudfront_url
-    http_api_url = module.api_gateway.http_api_endpoint
-    instructions = "Share the frontend URL with friends and family for testing."
+    environment    = "staging"
+    frontend_url   = module.cloudfront.cloudfront_url
+    http_api_url   = module.api_gateway.http_api_endpoint
+    websocket_url  = module.api_gateway.websocket_api_endpoint
+    instructions   = "Share the frontend URL with friends and family for testing."
   }
 }
+
+# ================================================
+# DEPRECATED OUTPUTS (Removed 2025-01)
+# ================================================
+# The following outputs were removed as part of RAG chatbot deprecation:
+# - chat_messages_table_name (table removed)
+# - bedrock_knowledge_base_id (KB removed)
+# - cloudfront_distribution_id (module removed)
+# - cloudfront_url (module removed)
+# - cloudfront_domain_name (module removed)
+# - s3_bucket_name (module removed)
+# ================================================
