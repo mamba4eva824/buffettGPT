@@ -63,12 +63,12 @@ output "dynamodb_tables" {
 
 output "bedrock_agent_id" {
   description = "The ID of the Bedrock agent"
-  value       = module.bedrock.agent_id
+  value       = module.bedrock.followup_agent_id
 }
 
 output "bedrock_agent_alias_id" {
   description = "The alias ID of the Bedrock agent"
-  value       = module.bedrock.agent_alias_id
+  value       = module.bedrock.followup_agent_alias_id
 }
 
 # ================================================
@@ -81,7 +81,7 @@ output "staging_access_info" {
     environment    = "staging"
     frontend_url   = module.cloudfront.cloudfront_url
     http_api_url   = module.api_gateway.http_api_endpoint
-    websocket_url  = module.api_gateway.websocket_api_endpoint
+    research_url   = module.lambda.investment_research_docker_function_url
     instructions   = "Share the frontend URL with friends and family for testing."
   }
 }
