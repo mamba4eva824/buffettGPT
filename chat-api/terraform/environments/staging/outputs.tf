@@ -85,14 +85,30 @@ output "bedrock_agent_alias_id" {
 # Access Instructions Output
 # ================================================
 
+output "landing_cloudfront_url" {
+  description = "CloudFront URL for the landing page"
+  value       = module.cloudfront_landing.cloudfront_url
+}
+
+output "landing_s3_bucket_name" {
+  description = "S3 bucket name for the landing page"
+  value       = module.cloudfront_landing.s3_bucket_name
+}
+
+output "landing_cloudfront_distribution_id" {
+  description = "CloudFront distribution ID for the landing page"
+  value       = module.cloudfront_landing.cloudfront_distribution_id
+}
+
 output "staging_access_info" {
   description = "Information for accessing the staging environment"
   value = {
     environment    = "staging"
-    frontend_url   = module.cloudfront.cloudfront_url
+    app_url        = module.cloudfront.cloudfront_url
+    landing_url    = module.cloudfront_landing.cloudfront_url
     http_api_url   = module.api_gateway.http_api_endpoint
     research_url   = module.lambda.investment_research_docker_function_url
-    instructions   = "Share the frontend URL with friends and family for testing."
+    instructions   = "Share the landing URL for new signups. Share the app URL with testers."
   }
 }
 

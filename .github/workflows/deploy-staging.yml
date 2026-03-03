@@ -75,6 +75,9 @@ jobs:
       http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
       research_function_url: ${{ steps.terraform-output.outputs.research_function_url }}
       followup_function_url: ${{ steps.terraform-output.outputs.followup_function_url }}
+      landing_s3_bucket: ${{ steps.terraform-output.outputs.landing_s3_bucket }}
+      landing_cloudfront_id: ${{ steps.terraform-output.outputs.landing_cloudfront_id }}
+      app_cloudfront_url: ${{ steps.terraform-output.outputs.app_cloudfront_url }}
 
     steps:
       - name: Checkout code
@@ -169,10 +172,16 @@ jobs:
           HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
           RESEARCH_URL=$(terraform output -raw investment_research_function_url 2>/dev/null || echo "")
           FOLLOWUP_URL=$(terraform output -raw analysis_followup_function_url 2>/dev/null || echo "")
+          LANDING_BUCKET=$(terraform output -raw landing_s3_bucket_name 2>/dev/null || echo "")
+          LANDING_CF_ID=$(terraform output -raw landing_cloudfront_distribution_id 2>/dev/null || echo "")
+          APP_CF_URL=$(terraform output -raw cloudfront_url 2>/dev/null || echo "")
 
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
           echo "research_function_url=$RESEARCH_URL" >> $GITHUB_OUTPUT
           echo "followup_function_url=$FOLLOWUP_URL" >> $GITHUB_OUTPUT
+          echo "landing_s3_bucket=$LANDING_BUCKET" >> $GITHUB_OUTPUT
+          echo "landing_cloudfront_id=$LANDING_CF_ID" >> $GITHUB_OUTPUT
+          echo "app_cloudfront_url=$APP_CF_URL" >> $GITHUB_OUTPUT
 
           echo "📡 API Endpoints:"
           echo "  HTTP API: $HTTP_ENDPOINT"
@@ -209,7 +218,6 @@ jobs:
           VITE_ENVIRONMENT=staging
           VITE_ENABLE_DEBUG_LOGS=false
           VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          VITE_ENABLE_WAITLIST=true
           EOF
 
           echo "✅ Created .env.staging with API endpoints"
@@ -224,6 +232,48 @@ jobs:
         with:
           name: frontend-dist
           path: frontend/dist
+          retention-days: 1
+
+  build-landing:
+    name: Build Landing Page
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        working-directory: landing
+        run: npm ci
+
+      - name: Create staging environment file
+        working-directory: landing
+        run: |
+          cat > .env.staging << EOF
+          VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
+          VITE_ENVIRONMENT=staging
+          VITE_ENABLE_DEBUG_LOGS=false
+          VITE_APP_URL=${{ needs.deploy-infrastructure.outputs.app_cloudfront_url }}
+          EOF
+
+          echo "✅ Created .env.staging with API endpoints"
+          cat .env.staging
+
+      - name: Build landing page
+        working-directory: landing
+        run: npm run build -- --mode staging
+
+      - name: Upload landing artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: landing-dist
+          path: landing/dist
           retention-days: 1
 
   deploy-frontend:
@@ -279,10 +329,56 @@ jobs:
           echo ""
           echo "Note: CloudFront cache invalidation may take 1-2 minutes to complete."
 
+  deploy-landing:
+    name: Deploy Landing Page to S3 + CloudFront
+    runs-on: ubuntu-latest
+    needs: [build-landing, deploy-infrastructure]
+
+    steps:
+      - name: Download landing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: landing-dist
+          path: landing/dist
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Sync HTML files to S3 (no cache)
+        run: |
+          aws s3 sync landing/dist s3://${{ needs.deploy-infrastructure.outputs.landing_s3_bucket }}/ \
+            --exclude "*" \
+            --include "*.html" \
+            --cache-control "public, max-age=0, must-revalidate" \
+            --metadata-directive REPLACE
+
+          echo "✅ HTML files synced with no-cache headers"
+
+      - name: Sync static assets to S3 (long-term cache)
+        run: |
+          aws s3 sync landing/dist s3://${{ needs.deploy-infrastructure.outputs.landing_s3_bucket }}/ \
+            --exclude "*.html" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --metadata-directive REPLACE
+
+          echo "✅ Static assets synced with long-term cache headers"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ needs.deploy-infrastructure.outputs.landing_cloudfront_id }} \
+            --paths "/*"
+
+          echo "✅ CloudFront cache invalidation initiated"
+
   deployment-summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure, build-frontend, deploy-frontend]
+    needs: [deploy-infrastructure, build-frontend, deploy-frontend, deploy-landing]
     if: always()
 
     steps:

@@ -72,8 +72,8 @@ locals {
     # Waitlist Table
     WAITLIST_TABLE = module.dynamodb.waitlist_table_name
 
-    # Frontend URL (for referral links)
-    FRONTEND_URL = module.cloudfront.cloudfront_url
+    # Frontend URL (for referral links - points to landing page)
+    FRONTEND_URL = module.cloudfront_landing.cloudfront_url
   }
 
   # Function-specific environment variables
@@ -357,6 +357,21 @@ module "cloudfront" {
   project_name = local.project_name
   environment  = local.environment
   price_class  = "PriceClass_100" # US, Canada, Europe
+
+  common_tags = local.common_tags
+}
+
+# ================================================
+# CloudFront + S3 Landing Page
+# ================================================
+
+module "cloudfront_landing" {
+  source = "../../modules/cloudfront-static-site"
+
+  project_name = local.project_name
+  environment  = local.environment
+  site_name    = "landing"
+  price_class  = "PriceClass_100"
 
   common_tags = local.common_tags
 }

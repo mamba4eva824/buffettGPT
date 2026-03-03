@@ -30,7 +30,7 @@ const FEATURES = [
   },
 ];
 
-export default function WaitlistPage({ onEnterApp }) {
+export default function WaitlistPage({ appUrl }) {
   const [email, setEmail] = useState('');
   const [referralCodeInput, setReferralCodeInput] = useState('');
   const [showReferralInput, setShowReferralInput] = useState(false);
@@ -230,13 +230,13 @@ export default function WaitlistPage({ onEnterApp }) {
             >
               &larr; Back to home
             </button>
-            {onEnterApp && (
-              <button
-                onClick={onEnterApp}
+            {appUrl && (
+              <a
+                href={appUrl}
                 className="block mx-auto text-sm text-sand-500 dark:text-warm-300 hover:text-indigo-600 transition-colors"
               >
-                Already have access? Enter the app &rarr;
-              </button>
+                Already have access? Log in &rarr;
+              </a>
             )}
           </div>
         </div>
@@ -252,13 +252,13 @@ export default function WaitlistPage({ onEnterApp }) {
         <span className="text-xl font-bold text-sand-900 dark:text-warm-50">
           Buffett
         </span>
-        {onEnterApp && (
-          <button
-            onClick={onEnterApp}
+        {appUrl && (
+          <a
+            href={appUrl}
             className="text-sm text-sand-500 dark:text-warm-300 hover:text-indigo-600 flex items-center gap-1 transition-colors"
           >
-            Enter App <ArrowRight size={14} />
-          </button>
+            Log in <ArrowRight size={14} />
+          </a>
         )}
       </nav>
 
@@ -652,9 +652,8 @@ export default function WaitlistPage({ onEnterApp }) {
         <h2 className="text-2xl font-bold text-sand-900 dark:text-warm-50 text-center mb-8">
           Refer Friends, Earn Rewards
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {[
-            { count: '1 referral', reward: 'Early Access', desc: 'Skip the waitlist' },
             { count: '3 referrals', reward: '1 Month Free', desc: 'Plus subscription ($10 value)' },
             { count: '5 referrals', reward: '3 Months Free', desc: 'Plus subscription ($30 value)' },
           ].map((tier) => (

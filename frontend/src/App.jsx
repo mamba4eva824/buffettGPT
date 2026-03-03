@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, Suspense, lazy } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, useParams, useNavigate } from "react-router-dom";
 import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown, ExternalLink } from "lucide-react";
 import SettingsPanel from "./components/SettingsPanel.jsx";
@@ -17,9 +17,6 @@ import SectionCard from "./components/research/SectionCard.jsx";
 import ResearchLayout from "./components/research/ResearchLayout.jsx";
 import { useCompanySearch } from "./hooks/useCompanySearch.js";
 
-// Lazy-loaded waitlist page (code-split)
-const WaitlistPage = lazy(() => import("./components/waitlist/WaitlistPage.jsx"));
-
 /*************************
  * Environment Configuration *
  *************************/
@@ -29,7 +26,6 @@ const ENV_CONFIG = {
   ENVIRONMENT: import.meta.env.VITE_ENVIRONMENT || "development",
   ENABLE_DEBUG_LOGS: import.meta.env.VITE_ENABLE_DEBUG_LOGS === "true",
   ENABLE_DEMO_MODE: import.meta.env.VITE_ENABLE_DEMO_MODE === "true",
-  ENABLE_WAITLIST: import.meta.env.VITE_ENABLE_WAITLIST === "true",
   DEFAULT_USER_NAME: import.meta.env.VITE_DEFAULT_USER_NAME || "guest"
 };
 
@@ -2318,21 +2314,6 @@ function AccountDropdown({ isOpen, onToggle, onSettingsClick, darkMode, onDarkMo
 }
 
 export default function App() {
-  const [showWaitlist, setShowWaitlist] = useState(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.has('ref')
-      || window.location.hash.includes('waitlist')
-      || ENV_CONFIG.ENABLE_WAITLIST;
-  });
-
-  if (showWaitlist) {
-    return (
-      <Suspense fallback={<div className="min-h-screen bg-sand-50 dark:bg-warm-950" />}>
-        <WaitlistPage onEnterApp={() => setShowWaitlist(false)} />
-      </Suspense>
-    );
-  }
-
   return (
     <AuthProvider>
       <ResearchProvider>

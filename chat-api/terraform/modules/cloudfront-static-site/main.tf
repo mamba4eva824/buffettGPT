@@ -17,12 +17,12 @@ terraform {
 # ================================================
 
 resource "aws_s3_bucket" "frontend" {
-  bucket = "${var.project_name}-${var.environment}-frontend"
+  bucket = "${var.project_name}-${var.environment}-${var.site_name}"
 
   tags = merge(
     var.common_tags,
     {
-      Name    = "${var.project_name}-${var.environment}-frontend"
+      Name    = "${var.project_name}-${var.environment}-${var.site_name}"
       Purpose = "Frontend static site hosting"
     }
   )
@@ -100,8 +100,8 @@ data "aws_iam_policy_document" "s3_cloudfront_oac" {
 # ================================================
 
 resource "aws_cloudfront_origin_access_control" "frontend" {
-  name                              = "${var.project_name}-${var.environment}-oac"
-  description                       = "OAC for ${var.project_name} ${var.environment} frontend S3 bucket"
+  name                              = var.site_name == "frontend" ? "${var.project_name}-${var.environment}-oac" : "${var.project_name}-${var.environment}-${var.site_name}-oac"
+  description                       = "OAC for ${var.project_name} ${var.environment} ${var.site_name} S3 bucket"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
@@ -114,7 +114,7 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 resource "aws_cloudfront_distribution" "frontend" {
   enabled             = true
   is_ipv6_enabled     = true
-  comment             = "${var.project_name}-${var.environment}-frontend"
+  comment             = "${var.project_name}-${var.environment}-${var.site_name}"
   default_root_object = "index.html"
   price_class         = var.price_class
   http_version        = "http2and3"
@@ -170,8 +170,8 @@ resource "aws_cloudfront_distribution" "frontend" {
   tags = merge(
     var.common_tags,
     {
-      Name    = "${var.project_name}-${var.environment}-cloudfront"
-      Purpose = "Frontend CDN"
+      Name    = var.site_name == "frontend" ? "${var.project_name}-${var.environment}-cloudfront" : "${var.project_name}-${var.environment}-${var.site_name}-cloudfront"
+      Purpose = "${var.site_name} CDN"
     }
   )
 

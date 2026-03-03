@@ -1,7 +1,6 @@
-import { Check, Zap, Crown, Gift } from 'lucide-react';
+import { Check, Crown, Gift } from 'lucide-react';
 
 const TIERS = [
-  { threshold: 1, label: 'Early Access', icon: Zap, reward: 'Skip the waitlist' },
   { threshold: 3, label: '1 Month Free', icon: Gift, reward: '1 month free Plus' },
   { threshold: 5, label: '3 Months Free', icon: Crown, reward: '3 months free Plus' },
 ];

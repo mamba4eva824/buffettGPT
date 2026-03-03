@@ -26,6 +26,12 @@ variable "wait_for_deployment" {
   default     = true
 }
 
+variable "site_name" {
+  description = "Short name to distinguish this site (e.g., 'app' or 'landing')"
+  type        = string
+  default     = "frontend"
+}
+
 variable "common_tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
