@@ -167,8 +167,8 @@ jobs:
         working-directory: chat-api/terraform/environments/staging
         run: |
           HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
-          RESEARCH_URL=$(terraform output -raw investment_research_function_url)
-          FOLLOWUP_URL=$(terraform output -raw analysis_followup_function_url)
+          RESEARCH_URL=$(terraform output -raw investment_research_function_url 2>/dev/null || echo "")
+          FOLLOWUP_URL=$(terraform output -raw analysis_followup_function_url 2>/dev/null || echo "")
 
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
           echo "research_function_url=$RESEARCH_URL" >> $GITHUB_OUTPUT

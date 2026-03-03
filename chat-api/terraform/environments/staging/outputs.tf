@@ -19,6 +19,16 @@ output "http_api_endpoint" {
 # WebSocket API outputs - REMOVED (2026-02)
 # websocket_api_id and websocket_api_endpoint deprecated
 
+output "analysis_api_endpoint" {
+  description = "Analysis REST API endpoint URL (for streaming analysis)"
+  value       = module.api_gateway.analysis_api_endpoint
+}
+
+output "research_api_endpoint" {
+  description = "Research REST API endpoint URL"
+  value       = module.api_gateway.research_api_endpoint
+}
+
 # ================================================
 # Lambda Outputs
 # ================================================

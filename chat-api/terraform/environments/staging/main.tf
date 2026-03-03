@@ -51,7 +51,7 @@ locals {
     # Bedrock Configuration
     BEDROCK_REGION       = var.bedrock_region
     FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
-    FOLLOWUP_AGENT_ALIAS = try(module.bedrock.agent_alias_id, var.bedrock_agent_alias)
+    FOLLOWUP_AGENT_ALIAS = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
 
     # FMP API Configuration
     FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
@@ -77,7 +77,26 @@ locals {
   }
 
   # Function-specific environment variables
-  lambda_function_env_vars = {}
+  lambda_function_env_vars = {
+    stripe_webhook_handler = {
+      STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
+      STRIPE_WEBHOOK_SECRET_ARN  = module.stripe.stripe_webhook_secret_arn
+      STRIPE_PLUS_PRICE_ID_ARN   = module.stripe.stripe_plus_price_id_arn
+      TOKEN_LIMIT_PLUS           = tostring(module.stripe.token_limit_plus)
+      USERS_TABLE                = var.enable_authentication ? module.auth[0].users_table_name : ""
+    }
+    subscription_handler = {
+      STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
+      STRIPE_PLUS_PRICE_ID_ARN   = module.stripe.stripe_plus_price_id_arn
+      STRIPE_PUBLISHABLE_KEY_ARN = module.stripe.stripe_publishable_key_arn
+      USERS_TABLE                = var.enable_authentication ? module.auth[0].users_table_name : ""
+    }
+    waitlist_handler = {
+      RESEND_API_KEY_ARN = module.email.resend_api_key_arn
+      RESEND_FROM_EMAIL  = module.email.resend_from_email
+      API_BASE_URL       = module.api_gateway.http_api_endpoint
+    }
+  }
 }
 
 # ================================================
@@ -128,11 +147,27 @@ module "lambda" {
   log_retention_days  = 14 # 2 week retention for staging
 
   reserved_concurrency = {
-    chat_processor = 5 # Higher than dev for multiple testers
+    analysis_followup = 10
   }
 
   common_tags = local.common_tags
   kms_key_arn = module.core.kms_key_arn
+
+  # Followup Action Lambda (Bedrock action group handler)
+  create_followup_action_lambda = true
+  followup_action_image_tag     = "latest"
+
+  # DynamoDB table ARNs for followup-action Lambda IAM policy
+  investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
+  financial_data_cache_table_arn  = module.dynamodb.financial_data_cache_table_arn
+
+  # DynamoDB table names for followup-action Lambda environment variables
+  investment_reports_v2_table_name = module.dynamodb.investment_reports_v2_table_name
+  financial_data_cache_table_name  = module.dynamodb.financial_data_cache_table_name
+
+  # Metrics History Cache table for followup-action Lambda
+  metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
+  metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
 }
 
 # ================================================
@@ -151,11 +186,27 @@ module "api_gateway" {
   # API configuration
   enable_cors                     = true
   enable_authorization            = var.enable_authentication
+  enable_search                   = false  # Disable AI search for staging
   authorizer_function_arn         = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
   authorizer_function_name        = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
   auth_callback_function_arn      = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
   cloudfront_url                  = module.cloudfront.cloudfront_url
+
+  # Analysis Streaming API (REST API with JWT auth)
+  enable_analysis_api       = true
+  auth_verify_invoke_arn    = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
+  auth_verify_function_name = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
+
+  # Investment Research API (REST API with JWT auth)
+  enable_research_api                 = true
+  investment_research_function_url    = module.lambda.investment_research_docker_function_url
+  investment_research_function_name   = module.lambda.investment_research_docker_function_name
+  analysis_followup_function_url      = module.lambda.analysis_followup_url
+
+  # Subscription/Stripe API (checkout, portal, status, webhook)
+  enable_subscription_routes = true
+  enable_stripe_webhook      = true
 
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
@@ -249,6 +300,51 @@ module "bedrock" {
   # Agent versioning - set to true to use versioned routing (not DRAFT)
   # This allows the alias to point to numbered versions (1, 2, 3, etc.)
   create_agent_version = true
+
+  # Action Group for Follow-up Agent
+  # Uses dedicated followup-action Lambda for report data retrieval
+  enable_followup_action_group         = true
+  followup_action_lambda_arn           = module.lambda.followup_action_arn
+  followup_action_lambda_function_name = module.lambda.followup_action_name
+}
+
+# ================================================
+# Stripe Module - Payment Integration
+# ================================================
+
+module "stripe" {
+  source = "../../modules/stripe"
+
+  environment = local.environment
+  common_tags = local.common_tags
+
+  # Token limit for Plus subscribers (2M tokens/month)
+  token_limit_plus = 2000000
+}
+
+# Attach Stripe secrets policy to Lambda execution role
+resource "aws_iam_role_policy_attachment" "lambda_stripe_secrets" {
+  role       = module.core.lambda_role_name
+  policy_arn = module.stripe.stripe_secrets_policy_arn
+}
+
+# ================================================
+# Email Module - Resend Integration
+# ================================================
+
+module "email" {
+  source = "../../modules/email"
+
+  environment        = local.environment
+  common_tags        = local.common_tags
+  resend_secret_name = "resend_staging_key"
+  resend_from_email  = "onboarding@resend.dev"
+}
+
+# Attach Resend secrets policy to Lambda execution role
+resource "aws_iam_role_policy_attachment" "lambda_resend_secrets" {
+  role       = module.core.lambda_role_name
+  policy_arn = module.email.resend_secrets_policy_arn
 }
 
 # ================================================
@@ -268,7 +364,5 @@ module "cloudfront" {
 # ================================================
 # Post-Deployment Configuration
 # ================================================
-# Note: The WebSocket endpoint for the chat_processor Lambda is set
-# through the common environment variables to avoid circular dependency.
-# The chat_processor function will receive WEBSOCKET_API_ENDPOINT
-# as an environment variable once both modules are deployed.
+# Note: WebSocket infrastructure deprecated (2026-02) per WEBSOCKET_DEPRECATION_PLAN.md
+# All chat functionality now uses REST+SSE via Research and Follow-up APIs
