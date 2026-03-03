@@ -16,15 +16,8 @@ output "http_api_endpoint" {
   value       = module.api_gateway.http_api_endpoint
 }
 
-output "websocket_api_id" {
-  description = "The ID of the WebSocket API Gateway"
-  value       = module.api_gateway.websocket_api_id
-}
-
-output "websocket_api_endpoint" {
-  description = "The WebSocket API Gateway endpoint URL"
-  value       = module.api_gateway.websocket_api_endpoint
-}
+# WebSocket API outputs - REMOVED (2026-02)
+# websocket_api_id and websocket_api_endpoint deprecated
 
 # ================================================
 # Lambda Outputs

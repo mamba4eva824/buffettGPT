@@ -73,7 +73,6 @@ jobs:
 
     outputs:
       http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
-      websocket_api_endpoint: ${{ steps.terraform-output.outputs.websocket_api_endpoint }}
       research_function_url: ${{ steps.terraform-output.outputs.research_function_url }}
       followup_function_url: ${{ steps.terraform-output.outputs.followup_function_url }}
 
@@ -168,18 +167,15 @@ jobs:
         working-directory: chat-api/terraform/environments/staging
         run: |
           HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
-          WS_ENDPOINT=$(terraform output -raw websocket_api_endpoint)
           RESEARCH_URL=$(terraform output -raw investment_research_function_url)
           FOLLOWUP_URL=$(terraform output -raw analysis_followup_function_url)
 
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
-          echo "websocket_api_endpoint=$WS_ENDPOINT" >> $GITHUB_OUTPUT
           echo "research_function_url=$RESEARCH_URL" >> $GITHUB_OUTPUT
           echo "followup_function_url=$FOLLOWUP_URL" >> $GITHUB_OUTPUT
 
           echo "📡 API Endpoints:"
           echo "  HTTP API: $HTTP_ENDPOINT"
-          echo "  WebSocket: $WS_ENDPOINT"
           echo "  Research Lambda: $RESEARCH_URL"
           echo "  Followup Lambda: $FOLLOWUP_URL"
 
@@ -206,7 +202,7 @@ jobs:
         run: |
           cat > .env.staging << EOF
           VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
-          VITE_WEBSOCKET_URL=${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}
+          VITE_WEBSOCKET_URL=
           VITE_RESEARCH_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
           VITE_RESEARCH_LAMBDA_URL=${{ needs.deploy-infrastructure.outputs.research_function_url }}
           VITE_ANALYSIS_FOLLOWUP_URL=${{ needs.deploy-infrastructure.outputs.research_function_url }}followup
@@ -297,7 +293,7 @@ jobs:
           echo ""
           echo "Environment: staging"
           echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
-          echo "WebSocket: ${{ needs.deploy-infrastructure.outputs.websocket_api_endpoint }}"
+          echo "Research Lambda: ${{ needs.deploy-infrastructure.outputs.research_function_url }}"
           echo "Frontend: ${{ secrets.CLOUDFRONT_URL }}"
           echo ""
           echo "✅ Backend infrastructure deployed"
