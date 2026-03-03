@@ -11,6 +11,7 @@ import boto3
 import httpx
 from datetime import datetime, timedelta
 from decimal import Decimal
+import time
 from typing import Optional
 from .logger import get_logger
 
@@ -47,6 +48,23 @@ def get_fmp_api_key() -> str:
     except Exception as e:
         logger.error(f"Failed to retrieve FMP API key: {e}")
         raise
+
+
+def _request_with_retry(client, url, params, max_retries=3):
+    """HTTP GET request with exponential backoff on 429 (rate limit)."""
+    for attempt in range(max_retries + 1):
+        response = client.get(url, params=params)
+        if response.status_code == 429:
+            if attempt == max_retries:
+                logger.error(f"FMP rate limit: max retries ({max_retries}) exhausted for {url}")
+                response.raise_for_status()
+            wait = 2 ** attempt  # 1s, 2s, 4s
+            logger.warning(f"FMP rate limit (429): retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+            time.sleep(wait)
+            continue
+        response.raise_for_status()
+        return response
+    return response  # unreachable but satisfies linters
 
 
 def get_cache_table():
@@ -460,8 +478,7 @@ def fetch_from_fmp(ticker: str) -> dict:
 
             try:
                 logger.info(f"Fetching {endpoint_name} for {ticker}")
-                response = client.get(url, params=params)
-                response.raise_for_status()
+                response = _request_with_retry(client, url, params)
 
                 data = response.json()
                 statements[statement_key] = data  # Use internal key (balance_sheet, etc.)
@@ -722,15 +739,11 @@ def fetch_key_metrics(ticker: str, limit: int = 5) -> list:
 
     with httpx.Client(timeout=15.0) as client:
         try:
-            response = client.get(
-                url,
-                params={
-                    'symbol': ticker.upper(),
-                    'limit': limit,
-                    'apikey': api_key
-                }
-            )
-            response.raise_for_status()
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'limit': limit,
+                'apikey': api_key
+            })
             data = response.json()
             logger.info(f"[FMP] Fetched {len(data)} periods of key metrics for {ticker}")
             return data
@@ -760,14 +773,10 @@ def fetch_key_metrics_ttm(ticker: str) -> dict:
 
     with httpx.Client(timeout=15.0) as client:
         try:
-            response = client.get(
-                url,
-                params={
-                    'symbol': ticker.upper(),
-                    'apikey': api_key
-                }
-            )
-            response.raise_for_status()
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'apikey': api_key
+            })
             data = response.json()
 
             # TTM endpoint returns a list with one item
@@ -801,14 +810,10 @@ def fetch_financial_ratios_ttm(ticker: str) -> dict:
 
     with httpx.Client(timeout=15.0) as client:
         try:
-            response = client.get(
-                url,
-                params={
-                    'symbol': ticker.upper(),
-                    'apikey': api_key
-                }
-            )
-            response.raise_for_status()
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'apikey': api_key
+            })
             data = response.json()
 
             # TTM endpoint returns a list with one item
@@ -843,16 +848,12 @@ def fetch_analyst_estimates(ticker: str, limit: int = 10) -> list:
 
     with httpx.Client(timeout=15.0) as client:
         try:
-            response = client.get(
-                url,
-                params={
-                    'symbol': ticker.upper(),
-                    'period': 'annual',
-                    'limit': limit,
-                    'apikey': api_key
-                }
-            )
-            response.raise_for_status()
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'period': 'annual',
+                'limit': limit,
+                'apikey': api_key
+            })
             data = response.json()
             logger.info(f"[FMP] Fetched {len(data)} analyst estimates for {ticker}")
             return data
@@ -861,4 +862,115 @@ def fetch_analyst_estimates(ticker: str, limit: int = 10) -> list:
             return []
         except Exception as e:
             logger.error(f"[FMP] Error fetching analyst estimates for {ticker}: {e}")
+            return []
+
+
+def fetch_earnings(ticker: str, limit: int = 12) -> list:
+    """
+    Fetch historical earnings data for a ticker.
+
+    Returns actual EPS, estimated EPS, revenue, and earnings dates.
+
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL')
+        limit: Number of earnings records to fetch (default: 12)
+
+    Returns:
+        List of earnings dicts, most recent first
+    """
+    api_key = get_fmp_api_key()
+    url = "https://financialmodelingprep.com/stable/earnings"
+
+    with httpx.Client(timeout=15.0) as client:
+        try:
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'limit': limit,
+                'apikey': api_key
+            })
+            data = response.json()
+            logger.info(f"[FMP] Fetched {len(data)} earnings records for {ticker}")
+            return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[FMP] HTTP error fetching earnings for {ticker}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"[FMP] Error fetching earnings for {ticker}: {e}")
+            return []
+
+
+def fetch_earnings_calendar_upcoming(ticker: str) -> dict:
+    """
+    Fetch the next upcoming earnings date for a ticker.
+
+    Queries the earnings calendar and filters for future dates,
+    returning the nearest upcoming earnings entry.
+
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL')
+
+    Returns:
+        Dict with next upcoming earnings info, or empty dict if none found
+    """
+    api_key = get_fmp_api_key()
+    url = "https://financialmodelingprep.com/stable/earnings-calendar"
+
+    with httpx.Client(timeout=15.0) as client:
+        try:
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'limit': 4,
+                'apikey': api_key
+            })
+            data = response.json()
+            today = datetime.now().strftime('%Y-%m-%d')
+            future = [d for d in data if d.get('date', '') > today]
+            if future:
+                result = min(future, key=lambda x: x.get('date', ''))
+                logger.info(f"[FMP] Next earnings for {ticker}: {result.get('date', 'N/A')}")
+                return result
+            logger.info(f"[FMP] No upcoming earnings found for {ticker}")
+            return {}
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[FMP] HTTP error fetching earnings calendar for {ticker}: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"[FMP] Error fetching earnings calendar for {ticker}: {e}")
+            return {}
+
+
+def fetch_dividends(ticker: str, limit: int = 40) -> list:
+    """
+    Fetch historical dividend data for a ticker.
+
+    Returns per-payment dividend records including per-share amounts,
+    payment dates, frequency, and yield at time of payment.
+
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL')
+        limit: Number of dividend records to fetch (default: 40, ~10 years quarterly)
+
+    Returns:
+        List of dividend dicts (most recent first), or empty list if no dividends
+        or on error. Each dict contains: symbol, date, recordDate, paymentDate,
+        declarationDate, adjDividend, dividend, yield, frequency.
+    """
+    api_key = get_fmp_api_key()
+    url = "https://financialmodelingprep.com/stable/dividends"
+
+    with httpx.Client(timeout=15.0) as client:
+        try:
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'limit': limit,
+                'apikey': api_key
+            })
+            data = response.json()
+            logger.info(f"[FMP] Fetched {len(data)} dividend records for {ticker}")
+            return data
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[FMP] HTTP error fetching dividends for {ticker}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"[FMP] Error fetching dividends for {ticker}: {e}")
             return []

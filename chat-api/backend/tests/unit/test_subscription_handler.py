@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 os.environ['ENVIRONMENT'] = 'test'
 os.environ['USERS_TABLE'] = 'buffett-test-users'
 os.environ['TOKEN_USAGE_TABLE'] = 'buffett-test-token-usage'
+os.environ['WAITLIST_TABLE'] = 'waitlist-test-buffett'
 os.environ['FRONTEND_URL'] = 'https://buffettgpt.test'
 os.environ['TOKEN_LIMIT_PLUS'] = '2000000'
 
@@ -68,11 +69,32 @@ def create_token_usage_table(dynamodb):
     return table
 
 
+def create_waitlist_table(dynamodb):
+    """Create waitlist table."""
+    table = dynamodb.create_table(
+        TableName='waitlist-test-buffett',
+        KeySchema=[{'AttributeName': 'email', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[
+            {'AttributeName': 'email', 'AttributeType': 'S'},
+            {'AttributeName': 'referral_code', 'AttributeType': 'S'},
+        ],
+        GlobalSecondaryIndexes=[{
+            'IndexName': 'referral-code-index',
+            'KeySchema': [{'AttributeName': 'referral_code', 'KeyType': 'HASH'}],
+            'Projection': {'ProjectionType': 'ALL'},
+        }],
+        BillingMode='PAY_PER_REQUEST'
+    )
+    table.wait_until_exists()
+    return table
+
+
 def create_all_tables(dynamodb):
     """Create all required tables."""
     return {
         'users': create_users_table(dynamodb),
         'token_usage': create_token_usage_table(dynamodb),
+        'waitlist': create_waitlist_table(dynamodb),
     }
 
 
@@ -1708,3 +1730,284 @@ class TestDynamoDBErrorHandling:
         assert response['statusCode'] == 200
         body = json.loads(response['body'])
         assert 'checkout_url' in body
+
+
+# =============================================================================
+# Test Class: Referral Trial at Checkout
+# =============================================================================
+
+class TestReferralTrialCheckout:
+    """Tests for referral reward trial days applied at checkout."""
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_3_referrals_applies_30_day_trial(self, mock_get_customer, mock_create_session):
+        """
+        Given: User with 3 referrals in waitlist table
+        When: POST /subscription/checkout
+        Then: create_checkout_session called with trial_period_days=30
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'referral-user-3',
+            'email': 'referral3@example.com',
+            'subscription_tier': 'free',
+        })
+        tables['waitlist'].put_item(Item={
+            'email': 'referral3@example.com',
+            'referral_code': 'BUFF-ABC123',
+            'referral_count': 3,
+            'status': 'early_access',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/trial30',
+            'session_id': 'cs_trial_30'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+        handler.waitlist_table = tables['waitlist']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            authorizer_context={'lambda': {'user_id': 'referral-user-3', 'email': 'referral3@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs['trial_period_days'] == 30
+        assert call_kwargs['extra_metadata']['referral_trial_days'] == '30'
+        assert call_kwargs['extra_metadata']['referral_source'] == 'waitlist'
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_5_referrals_applies_90_day_trial(self, mock_get_customer, mock_create_session):
+        """
+        Given: User with 5 referrals in waitlist table
+        When: POST /subscription/checkout
+        Then: create_checkout_session called with trial_period_days=90
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'referral-user-5',
+            'email': 'referral5@example.com',
+            'subscription_tier': 'free',
+        })
+        tables['waitlist'].put_item(Item={
+            'email': 'referral5@example.com',
+            'referral_code': 'BUFF-DEF456',
+            'referral_count': 5,
+            'status': 'early_access',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/trial90',
+            'session_id': 'cs_trial_90'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+        handler.waitlist_table = tables['waitlist']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            authorizer_context={'lambda': {'user_id': 'referral-user-5', 'email': 'referral5@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs['trial_period_days'] == 90
+        assert call_kwargs['extra_metadata']['referral_trial_days'] == '90'
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_fewer_than_3_referrals_no_trial(self, mock_get_customer, mock_create_session):
+        """
+        Given: User with 2 referrals (below threshold)
+        When: POST /subscription/checkout
+        Then: create_checkout_session called without trial_period_days
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'referral-user-2',
+            'email': 'referral2@example.com',
+            'subscription_tier': 'free',
+        })
+        tables['waitlist'].put_item(Item={
+            'email': 'referral2@example.com',
+            'referral_code': 'BUFF-GHI789',
+            'referral_count': 2,
+            'status': 'waitlisted',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/notrial',
+            'session_id': 'cs_no_trial'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+        handler.waitlist_table = tables['waitlist']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            authorizer_context={'lambda': {'user_id': 'referral-user-2', 'email': 'referral2@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs.get('trial_period_days') is None
+        assert call_kwargs.get('extra_metadata') is None
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_already_claimed_referral_no_trial(self, mock_get_customer, mock_create_session):
+        """
+        Given: User with 5 referrals but referral_claimed_at already set
+        When: POST /subscription/checkout
+        Then: create_checkout_session called without trial (one-time claim)
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'claimed-user',
+            'email': 'claimed@example.com',
+            'subscription_tier': 'free',
+        })
+        tables['waitlist'].put_item(Item={
+            'email': 'claimed@example.com',
+            'referral_code': 'BUFF-JKL012',
+            'referral_count': 5,
+            'status': 'early_access',
+            'referral_claimed_at': '2026-01-15T00:00:00Z',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/claimed',
+            'session_id': 'cs_claimed'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+        handler.waitlist_table = tables['waitlist']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            authorizer_context={'lambda': {'user_id': 'claimed-user', 'email': 'claimed@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs.get('trial_period_days') is None
+        assert call_kwargs.get('extra_metadata') is None
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_email_not_in_waitlist_no_trial(self, mock_get_customer, mock_create_session):
+        """
+        Given: User's email not found in waitlist table
+        When: POST /subscription/checkout
+        Then: create_checkout_session called without trial (graceful fallback)
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'no-waitlist-user',
+            'email': 'nowaitlist@example.com',
+            'subscription_tier': 'free',
+        })
+        # No waitlist entry for this email
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/nowaitlist',
+            'session_id': 'cs_nowaitlist'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+        handler.waitlist_table = tables['waitlist']
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            authorizer_context={'lambda': {'user_id': 'no-waitlist-user', 'email': 'nowaitlist@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs.get('trial_period_days') is None
+
+    @mock_aws
+    @patch('handlers.subscription_handler.create_checkout_session')
+    @patch('handlers.subscription_handler.get_customer_by_email')
+    def test_waitlist_lookup_error_continues_without_trial(self, mock_get_customer, mock_create_session):
+        """
+        Given: Waitlist table lookup raises ClientError
+        When: POST /subscription/checkout
+        Then: Checkout proceeds without trial (non-fatal error)
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'waitlist-error-user',
+            'email': 'waitlisterror@example.com',
+            'subscription_tier': 'free',
+        })
+
+        mock_get_customer.return_value = None
+        mock_create_session.return_value = {
+            'checkout_url': 'https://checkout.stripe.com/fallback',
+            'session_id': 'cs_fallback'
+        }
+
+        import handlers.subscription_handler as handler
+        handler.users_table = tables['users']
+
+        # Mock waitlist table to raise error
+        mock_waitlist = MagicMock()
+        mock_waitlist.get_item.side_effect = ClientError(
+            {'Error': {'Code': 'InternalServerError', 'Message': 'DynamoDB unavailable'}},
+            'GetItem'
+        )
+        handler.waitlist_table = mock_waitlist
+
+        event = build_api_event(
+            method='POST',
+            path='/subscription/checkout',
+            authorizer_context={'lambda': {'user_id': 'waitlist-error-user', 'email': 'waitlisterror@example.com'}}
+        )
+        response = handler.lambda_handler(event, None)
+
+        # Should still succeed without trial
+        assert response['statusCode'] == 200
+        call_kwargs = mock_create_session.call_args[1]
+        assert call_kwargs.get('trial_period_days') is None

@@ -303,9 +303,9 @@ class TestFormattedOutput:
                 {'date': '2023-12-31', 'calendarYear': '2023', 'totalDebt': 14000000000, 'cashAndCashEquivalents': 7000000000, 'totalStockholdersEquity': 46000000000, 'totalAssets': 96000000000, 'totalLiabilities': 50000000000},
             ],
             'cash_flow': [
-                {'date': '2025-09-30', 'calendarYear': '2025', 'operatingCashFlow': 5000000000, 'freeCashFlow': 3000000000, 'capitalExpenditure': -2000000000, 'dividendsPaid': -500000000, 'commonStockRepurchased': -1000000000},
-                {'date': '2024-12-31', 'calendarYear': '2024', 'operatingCashFlow': 4500000000, 'freeCashFlow': 2500000000, 'capitalExpenditure': -2000000000, 'dividendsPaid': -500000000, 'commonStockRepurchased': -800000000},
-                {'date': '2023-12-31', 'calendarYear': '2023', 'operatingCashFlow': 4000000000, 'freeCashFlow': 2000000000, 'capitalExpenditure': -2000000000, 'dividendsPaid': -500000000, 'commonStockRepurchased': -600000000},
+                {'date': '2025-09-30', 'calendarYear': '2025', 'operatingCashFlow': 5000000000, 'freeCashFlow': 3000000000, 'capitalExpenditure': -2000000000, 'commonDividendsPaid': -500000000, 'commonStockRepurchased': -1000000000},
+                {'date': '2024-12-31', 'calendarYear': '2024', 'operatingCashFlow': 4500000000, 'freeCashFlow': 2500000000, 'capitalExpenditure': -2000000000, 'commonDividendsPaid': -500000000, 'commonStockRepurchased': -800000000},
+                {'date': '2023-12-31', 'calendarYear': '2023', 'operatingCashFlow': 4000000000, 'freeCashFlow': 2000000000, 'capitalExpenditure': -2000000000, 'commonDividendsPaid': -500000000, 'commonStockRepurchased': -600000000},
             ],
         }
 

@@ -1,8 +1,8 @@
 """
 Unit tests for the section parser module.
 
-Tests both v4.8 format (legacy: includes Warning Signs + Vibe Check)
-and v5.1 format (current: replaced with Decision Triggers).
+Tests v5.2 format (current: 19 sections including Dividend, Moat, and Earnings Recap).
+Also maintains backward compatibility with v4.8 and v5.1 header patterns.
 """
 
 import pytest
@@ -19,8 +19,8 @@ from investment_research.section_parser import (
 )
 
 
-# Sample report content for testing (v5.1 format with numbered headers)
-# Uses the format that v5.1 prompt produces: "### N. Dynamic Title"
+# Sample report content for testing (v5.2 format with numbered headers)
+# Uses the format that v5.2 prompt produces: "### N. Dynamic Title" + keyword headers
 SAMPLE_REPORT = '''
 ### 1. TL;DR
 
@@ -122,7 +122,28 @@ Apple is shrinking share count by 3% per year. Your slice gets bigger.
 
 **Bottom line:** + buyback king
 
-### 13. Bull Case
+## Dividend: 0.5% Yield — Growth Over Income
+
+Apple pays a modest 0.5% dividend yield. At $0.96 per share annually, you'd collect
+about $96 per year for every $10,000 invested. That's basically a coffee a week.
+
+The dividend has grown 7% per year for 12 straight years. The payout ratio is just 15%,
+meaning Apple could quadruple its dividend and still have cash left over.
+
+**Bottom line:** + safe but tiny — you're here for the growth, not the income
+
+## Moat: The Ecosystem Lock-In — Why 1.5 Billion Users Can't Leave
+
+Apple has one of the widest moats in tech. Once you're in the ecosystem — iPhone,
+MacBook, AirPods, iCloud, Apple Watch — switching to Android means losing your
+messages, photos, app purchases, and the seamless integration you're used to.
+
+That switching cost is Apple's superpower. Combined with brand loyalty that borders
+on religious devotion, competitors can't realistically steal Apple's customers.
+
+**Bottom line:** + wide moat — the ecosystem is a fortress
+
+### 15. Bull Case
 
 1. **Services growth** — 12% growth in high-margin recurring revenue
    - *Evidence:* Services revenue at $24B/quarter, up from $19B two years ago
@@ -134,7 +155,7 @@ Apple is shrinking share count by 3% per year. Your slice gets bigger.
 
 **Dream Scenario:** Services hits 30% of revenue, AI features trigger iPhone upgrade super cycle.
 
-### 14. Bear Case
+### 16. Bear Case
 
 1. **Hardware saturation** — iPhone growth is essentially zero
    - *Likelihood:* High — smartphone market is mature
@@ -146,7 +167,14 @@ Apple is shrinking share count by 3% per year. Your slice gets bigger.
 
 **Nightmare Scenario:** China bans iPhone sales, regulation forces App Store fee cuts.
 
-### 15. Real Talk
+## Earnings Recap: 11 for 12 — Wall Street Keeps Underestimating Them
+
+Apple has beaten Wall Street's earnings estimates in 11 out of the last 12 quarters.
+The average surprise is +4.2%. Management is clearly sandbagging their guidance.
+
+**Bottom line:** + elite beat rate — they keep over-delivering
+
+### 18. Real Talk
 
 Apple is the blue chip of blue chips. If you're looking for 100x returns, look elsewhere.
 But if you want a steady performer that won't keep you up at night, Apple is your pick.
@@ -154,7 +182,7 @@ But if you want a steady performer that won't keep you up at night, Apple is you
 Remember: this is the toll booth operator for premium smartphones. As long as people
 want the best phone, Apple will collect.
 
-### 16. Decision Triggers: Key Numbers to Track for AAPL
+### 19. Decision Triggers: Key Numbers to Track for AAPL
 
 | Signal | What to Watch | Current Level | Level to Watch | Why It Matters |
 |--------|--------------|---------------|----------------|----------------|
@@ -175,6 +203,9 @@ Set a calendar reminder for April 2026.
   "cashflow": {"rating": "Very Strong", "confidence": "High", "key_factors": ["$94B FCF", "100% conversion"]},
   "debt": {"rating": "Very Strong", "confidence": "High", "short_term_debt_pct": 10, "key_factors": ["Net cash position", "$50B excess"]},
   "dilution": {"rating": "Very Strong", "confidence": "High", "dilution_pct": -3, "key_factors": ["3% annual buybacks", "Low SBC"]},
+  "dividend": {"rating": "Moderate", "confidence": "High", "yield_pct": 0.5, "payout_ratio_pct": 15, "growth_streak_years": 12, "key_factors": ["0.5% yield", "15% payout ratio", "12-year growth streak"]},
+  "moat": {"rating": "Very Strong", "confidence": "High", "moat_width": "wide", "primary_source": "switching costs + ecosystem", "key_factors": ["1.5B user ecosystem", "High switching costs", "Brand loyalty"]},
+  "earnings_recap": {"beat_rate_pct": 91.7, "avg_surprise_pct": 4.2, "key_factors": ["11/12 beats", "4.2% avg surprise"]},
   "overall_verdict": "HOLD",
   "conviction": "High"
 }
@@ -183,12 +214,12 @@ Set a calendar reminder for April 2026.
 
 
 class TestParseReportSections:
-    """Tests for parse_report_sections function (v5.1 format)."""
+    """Tests for parse_report_sections function (v5.2 format)."""
 
     def test_parses_all_sections(self):
-        """Should parse all 16 sections from a complete v5.1 report."""
+        """Should parse all 19 sections from a complete v5.2 report."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
-        assert len(sections) == 16
+        assert len(sections) == 19
 
     def test_sections_in_order(self):
         """Sections should be sorted by display_order."""
@@ -197,28 +228,29 @@ class TestParseReportSections:
         assert orders == sorted(orders)
 
     def test_section_ids_correct(self):
-        """Section IDs should match v5.1 expected pattern."""
+        """Section IDs should match v5.2 expected pattern."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
         expected_ids = [
             '01_tldr', '02_business', '03_health', '04_fit', '05_verdict',
             '06_growth', '07_profit', '08_valuation', '09_earnings',
-            '10_cashflow', '11_debt', '12_dilution', '13_bull', '14_bear',
-            '15_realtalk', '16_triggers'
+            '10_cashflow', '11_debt', '12_dilution', '13_dividend', '14_moat',
+            '15_bull', '16_bear', '17_recap',
+            '18_realtalk', '19_triggers'
         ]
         actual_ids = [s.section_id for s in sections]
         assert actual_ids == expected_ids
 
     def test_part_assignment(self):
-        """Sections should be assigned to correct parts (v5.1 layout)."""
+        """Sections should be assigned to correct parts (v5.2 layout)."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
 
         part1 = [s for s in sections if s.part == 1]
         part2 = [s for s in sections if s.part == 2]
         part3 = [s for s in sections if s.part == 3]
 
-        assert len(part1) == 5  # Executive summary
-        assert len(part2) == 9  # Detailed analysis (no Warning Signs or Vibe Check)
-        assert len(part3) == 2  # Real Talk + Decision Triggers
+        assert len(part1) == 5   # Executive summary
+        assert len(part2) == 12  # Detailed analysis (+ Dividend, Moat, Earnings Recap)
+        assert len(part3) == 2   # Real Talk + Decision Triggers
 
     def test_dynamic_header_parsing(self):
         """Should extract dynamic headers correctly."""
@@ -299,15 +331,56 @@ Some content.
         assert ratings is None
 
 
+class TestStripTrailingJsonBlock:
+    """Tests for JSON block stripping from the last section (19_triggers)."""
+
+    def test_json_stripped_from_last_section(self):
+        """The 19_triggers section content should NOT contain the JSON ratings block."""
+        sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
+        triggers = [s for s in sections if s.section_id == '19_triggers']
+        assert len(triggers) == 1
+
+        content = triggers[0].content
+        assert '```json' not in content
+        assert '"overall_verdict"' not in content
+        assert '"growth"' not in content
+
+    def test_triggers_content_preserved(self):
+        """Non-JSON content in Decision Triggers should remain intact."""
+        sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
+        triggers = [s for s in sections if s.section_id == '19_triggers']
+
+        content = triggers[0].content
+        # The trigger table and reminder text should still be there
+        assert 'Bullish signal' in content
+        assert 'Caution signal' in content
+        assert 'calendar reminder' in content
+
+    def test_ratings_still_extracted_from_full_report(self):
+        """extract_ratings_json() should still find ratings in the raw report."""
+        ratings = extract_ratings_json(SAMPLE_REPORT)
+        assert ratings is not None
+        assert ratings['overall_verdict'] == 'HOLD'
+        assert 'growth' in ratings
+
+    def test_no_stripping_when_no_json(self):
+        """Sections without JSON blocks should be unaffected."""
+        sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
+        # Check a non-last section has no stripping side effects
+        growth = [s for s in sections if s.section_id == '06_growth']
+        if growth:
+            assert growth[0].content  # Content should exist and not be empty
+
+
 class TestBuildToc:
     """Tests for build_toc function."""
 
     def test_builds_complete_toc(self):
-        """Should build ToC with all v5.1 sections."""
+        """Should build ToC with all v5.2 sections."""
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
         toc = build_toc(sections)
 
-        assert len(toc) == 16
+        assert len(toc) == 19
 
     def test_toc_entry_structure(self):
         """ToC entries should have correct structure."""
@@ -341,8 +414,8 @@ class TestBuildMergedToc:
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
         merged = build_merged_toc(sections)
 
-        # v5.1: 1 executive summary + 9 detailed + 2 real talk = 12
-        assert len(merged) == 12
+        # v5.2: 1 executive summary + 12 detailed + 2 real talk = 15
+        assert len(merged) == 15
 
     def test_merged_toc_preserves_part2_3_sections(self):
         """Part 2 and 3 sections should be preserved individually."""
@@ -351,9 +424,12 @@ class TestBuildMergedToc:
 
         section_ids = [entry['section_id'] for entry in merged]
         assert '06_growth' in section_ids
-        assert '14_bear' in section_ids
-        assert '15_realtalk' in section_ids
-        assert '16_triggers' in section_ids
+        assert '13_dividend' in section_ids
+        assert '14_moat' in section_ids
+        assert '16_bear' in section_ids
+        assert '17_recap' in section_ids
+        assert '18_realtalk' in section_ids
+        assert '19_triggers' in section_ids
 
 
 class TestGetSectionsByPart:
@@ -374,7 +450,7 @@ class TestGetSectionsByPart:
         sections = parse_report_sections(SAMPLE_REPORT, 'AAPL')
         detailed = get_detailed_sections(sections)
 
-        assert len(detailed) == 9
+        assert len(detailed) == 12
         assert all(s.part == 2 for s in detailed)
 
 
@@ -453,31 +529,66 @@ class TestDynamicHeaderPatterns:
             health_sections = [s for s in sections if s.section_id == '03_health']
             assert len(health_sections) == 1, f"Failed to match: {header}"
 
+    def test_dividend_keyword_patterns(self):
+        """Should match Dividend keyword header patterns (v5.2)."""
+        patterns = [
+            "## Dividend: 3.2% Yield — Getting a Raise Every Year",
+            "### 13. Dividend: No Dividend — Every Dollar Goes Back Into Growth",
+            "## Dividend: 0.4% Yield — Growth Over Income",
+        ]
+        for header in patterns:
+            sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
+            dividend = [s for s in sections if s.section_id == '13_dividend']
+            assert len(dividend) == 1, f"Failed to match: {header}"
+
+    def test_moat_keyword_patterns(self):
+        """Should match Moat keyword header patterns (v5.2)."""
+        patterns = [
+            "## Moat: The Ecosystem Lock-In — Why Customers Can't Leave",
+            "### 14. Moat: No Real Moat — They Compete on Price",
+            "## Moat: Brand Power, But Walls Are Thinning",
+        ]
+        for header in patterns:
+            sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
+            moat = [s for s in sections if s.section_id == '14_moat']
+            assert len(moat) == 1, f"Failed to match: {header}"
+
     def test_real_talk_patterns(self):
-        """Should match Real Talk with both v4.8 (§17) and v5.1 (§15) numbering."""
+        """Should match Real Talk with v4.8 (§17), v5.1 (§15), and v5.2 (§18) numbering."""
         patterns = [
             "## Real Talk",
             "## 15. Real Talk",
             "## 17. Real Talk",
+            "## 18. Real Talk",
             "### 15. Real Talk",
         ]
         for header in patterns:
             sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
-            realtalk = [s for s in sections if s.section_id == '15_realtalk']
+            realtalk = [s for s in sections if s.section_id == '18_realtalk']
             assert len(realtalk) == 1, f"Failed to match: {header}"
 
     def test_decision_triggers_patterns(self):
-        """Should match Decision Triggers header patterns (v5.1)."""
+        """Should match Decision Triggers header patterns (v5.1+)."""
         patterns = [
             "## Decision Triggers: Key Numbers to Track for AAPL",
             "## 16. Decision Triggers: What Could Change the AAPL Story",
             "### 16. Decision Triggers",
+            "## 19. Decision Triggers: What to Watch",
             "## Decision Triggers",
         ]
         for header in patterns:
             sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
-            triggers = [s for s in sections if s.section_id == '16_triggers']
+            triggers = [s for s in sections if s.section_id == '19_triggers']
             assert len(triggers) == 1, f"Failed to match: {header}"
+
+    def test_v51_bull_case_not_stolen_by_dividend(self):
+        """A v5.1 report with '### 13. Bull Case' should match Bull Case, not Dividend."""
+        header = "### 13. Bull Case"
+        sections = parse_report_sections(f"{header}\n\nContent here.", 'TEST')
+        bull = [s for s in sections if s.section_id == '15_bull']
+        dividend = [s for s in sections if s.section_id == '13_dividend']
+        assert len(bull) == 1, "v5.1 '13. Bull Case' should match Bull Case"
+        assert len(dividend) == 0, "v5.1 '13. Bull Case' should NOT match Dividend"
 
 
 class TestParsedSectionDataclass:

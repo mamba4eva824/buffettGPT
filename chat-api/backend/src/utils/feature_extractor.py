@@ -101,8 +101,8 @@ def aggregate_annual_data(
     ]
     CASHFLOW_FLOW_METRICS = [
         'operatingCashFlow', 'freeCashFlow', 'capitalExpenditure',
-        'dividendsPaid', 'commonStockRepurchased', 'netCashUsedForInvestingActivites',
-        'netCashUsedProvidedByFinancingActivities', 'netChangeInCash'
+        'commonDividendsPaid', 'commonStockRepurchased', 'netCashProvidedByInvestingActivities',
+        'netCashProvidedByFinancingActivities', 'netChangeInCash'
     ]
 
     # Group quarters by fiscal year
@@ -278,7 +278,7 @@ def extract_cashflow_metrics(balance_sheet: list, income_statement: list, cashfl
     operating_cf = extract_value(cashflow, 'operatingCashFlow', 0, 0)
     fcf = extract_value(cashflow, 'freeCashFlow', 0, 0)
     capex = abs(extract_value(cashflow, 'capitalExpenditure', 0, 0))
-    dividends = abs(extract_value(cashflow, 'dividendsPaid', 0, 0))
+    dividends = abs(extract_value(cashflow, 'commonDividendsPaid', 0, 0))
     buybacks = abs(extract_value(cashflow, 'commonStockRepurchased', 0, 0))
 
     # Current metrics
@@ -579,7 +579,7 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         fcf = extract_value(cashflow, 'freeCashFlow', i, 0)
         ocf = extract_value(cashflow, 'operatingCashFlow', i, 0)
         capex = abs(extract_value(cashflow, 'capitalExpenditure', i, 0))
-        dividends = abs(extract_value(cashflow, 'dividendsPaid', i, 0))
+        dividends = abs(extract_value(cashflow, 'commonDividendsPaid', i, 0))
         buybacks = abs(extract_value(cashflow, 'commonStockRepurchased', i, 0))
 
         # Stock-based compensation (actual SBC for dilution analysis)
@@ -1811,17 +1811,182 @@ CATEGORY_METRICS = {
     ]
 }
 
+# Categories populated from event-based data (earnings/dividends), not quarterly_trends arrays.
+# These are embedded into the same per-quarter DynamoDB items alongside CATEGORY_METRICS.
+EVENT_BASED_CATEGORIES = ['earnings_events', 'dividend']
+
+
+def _align_earnings_to_quarters(
+    earnings_history: List[Dict[str, Any]],
+    period_dates: List[str]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Align earnings event records to fiscal quarter period_dates.
+
+    Earnings are matched to the most recent period_date that falls BEFORE
+    the earnings announcement date, since earnings always report a quarter
+    that has already ended.
+
+    Args:
+        earnings_history: List of FMP earnings dicts with 'date', 'epsActual',
+            'epsEstimated', 'revenueActual', 'revenueEstimated'
+        period_dates: Sorted list of fiscal quarter end dates (e.g., ["2024-09-28", "2024-12-28"])
+
+    Returns:
+        Dict mapping fiscal_date -> earnings metrics dict
+    """
+    if not earnings_history or not period_dates:
+        return {}
+
+    sorted_dates = sorted(period_dates)
+    aligned = {}
+
+    for earning in earnings_history:
+        earn_date = earning.get('date', '')
+        if not earn_date:
+            continue
+
+        # Find the most recent period_date before the earnings announcement
+        best_match = None
+        for pd in sorted_dates:
+            if pd <= earn_date:
+                best_match = pd
+            else:
+                break
+
+        if not best_match:
+            continue
+
+        # Don't overwrite if we already have earnings for this quarter
+        # (keep the most recent earnings event per quarter)
+        if best_match in aligned:
+            continue
+
+        eps_actual = earning.get('epsActual')
+        eps_estimated = earning.get('epsEstimated')
+        rev_actual = earning.get('revenueActual')
+        rev_estimated = earning.get('revenueEstimated')
+
+        metrics = {
+            'earnings_date': earn_date,
+        }
+
+        if eps_actual is not None:
+            metrics['eps_actual'] = eps_actual
+        if eps_estimated is not None:
+            metrics['eps_estimated'] = eps_estimated
+        if eps_actual is not None and eps_estimated is not None:
+            metrics['eps_surprise_pct'] = safe_divide(
+                (float(eps_actual) - float(eps_estimated)),
+                abs(float(eps_estimated))
+            ) * 100
+            metrics['eps_beat'] = float(eps_actual) > float(eps_estimated)
+
+        if rev_actual is not None:
+            metrics['revenue_actual'] = rev_actual
+        if rev_estimated is not None:
+            metrics['revenue_estimated'] = rev_estimated
+        if rev_actual is not None and rev_estimated is not None and rev_estimated != 0:
+            metrics['revenue_surprise_pct'] = safe_divide(
+                (float(rev_actual) - float(rev_estimated)),
+                abs(float(rev_estimated))
+            ) * 100
+
+        aligned[best_match] = metrics
+
+    return aligned
+
+
+def _align_dividends_to_quarters(
+    dividend_history: List[Dict[str, Any]],
+    period_dates: List[str]
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Aggregate dividend payment records into fiscal quarters.
+
+    Each dividend payment is assigned to the most recent period_date before
+    its ex-dividend date. Multiple payments in the same quarter are aggregated.
+
+    Args:
+        dividend_history: List of FMP dividend dicts with 'date', 'adjDividend',
+            'yield', 'frequency'
+        period_dates: Sorted list of fiscal quarter end dates
+
+    Returns:
+        Dict mapping fiscal_date -> dividend metrics dict.
+        For non-dividend-paying companies (empty input), returns empty dict.
+    """
+    if not dividend_history or not period_dates:
+        return {}
+
+    sorted_dates = sorted(period_dates)
+    # Aggregate dividends per quarter
+    quarter_divs: Dict[str, list] = {}
+
+    for div in dividend_history:
+        div_date = div.get('date', '')
+        if not div_date:
+            continue
+
+        # Find the most recent period_date before the ex-dividend date
+        best_match = None
+        for pd in sorted_dates:
+            if pd <= div_date:
+                best_match = pd
+            else:
+                break
+
+        if not best_match:
+            continue
+
+        if best_match not in quarter_divs:
+            quarter_divs[best_match] = []
+        quarter_divs[best_match].append(div)
+
+    # Build aggregated metrics per quarter
+    aligned = {}
+    for fiscal_date, divs in quarter_divs.items():
+        total_dps = sum(d.get('adjDividend', 0) or 0 for d in divs)
+        # Use the most recent dividend's yield and frequency
+        latest = divs[0] if divs else {}
+        frequency = latest.get('frequency', 'Unknown')
+
+        metrics = {
+            'dps': round(total_dps, 4) if total_dps else 0,
+            'payments_in_quarter': len(divs),
+            'frequency': frequency,
+        }
+        div_yield = latest.get('yield')
+        if div_yield is not None:
+            metrics['dividend_yield'] = div_yield
+
+        # Annualize DPS based on frequency
+        freq_multiplier = {
+            'Quarterly': 4, 'Monthly': 12, 'Semi-Annual': 2,
+            'Annual': 1, 'Special': 1
+        }
+        multiplier = freq_multiplier.get(frequency, 4)
+        if total_dps > 0:
+            metrics['annualized_dps'] = round(total_dps * multiplier, 4)
+
+        aligned[fiscal_date] = metrics
+
+    return aligned
+
 
 def prepare_metrics_for_cache(
     ticker: str,
     quarterly_trends: Dict[str, Any],
     currency: str = "USD",
-    source_cache_key: str = ""
+    source_cache_key: str = "",
+    earnings_history: List[Dict[str, Any]] = None,
+    dividend_history: List[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Transform quarterly_trends into quarter-based items for metrics-history-cache.
 
-    Creates one DynamoDB item per quarter with all 7 metric categories embedded.
+    Creates one DynamoDB item per quarter with all 9 metric categories embedded
+    (7 from quarterly_trends + earnings_events + dividend from event data).
     This optimized schema reduces items from 140 to 20 per ticker while preserving
     the ability to filter by category at query time (~85% token savings).
 
@@ -1830,6 +1995,8 @@ def prepare_metrics_for_cache(
         quarterly_trends: Dict from extract_quarterly_trends() with metric arrays
         currency: Currency code (e.g., "USD", "EUR")
         source_cache_key: Cache key from financial data cache (for traceability)
+        earnings_history: Optional list of FMP earnings records (from fetch_earnings)
+        dividend_history: Optional list of FMP dividend records (from fetch_dividends)
 
     Returns:
         List of items ready for DynamoDB batch_write_item.
@@ -1849,7 +2016,8 @@ def prepare_metrics_for_cache(
             "earnings_quality": { ... },  # ~8 metrics
             "dilution": { ... },          # ~4 metrics
             "valuation": { ... },         # ~8 metrics
-            ...
+            "earnings_events": { ... },   # EPS beat/miss, surprise % (optional)
+            "dividend": { ... },          # DPS, yield, frequency (optional)
         }
     """
     items = []
@@ -1863,6 +2031,14 @@ def prepare_metrics_for_cache(
     if not period_dates:
         logger.warning(f"No period_dates found in quarterly_trends for {ticker}")
         return items
+
+    # Align event-based data to fiscal quarters
+    earnings_by_quarter = _align_earnings_to_quarters(
+        earnings_history or [], period_dates
+    )
+    dividend_by_quarter = _align_dividends_to_quarters(
+        dividend_history or [], period_dates
+    )
 
     now = int(time.time())
     expires_at = now + (90 * 24 * 60 * 60)  # 90 days TTL
@@ -1907,7 +2083,7 @@ def prepare_metrics_for_cache(
             'source_cache_key': source_cache_key
         }
 
-        # Embed each category's metrics
+        # Embed each quarterly_trends category's metrics
         has_any_metrics = False
         for category, metric_names in CATEGORY_METRICS.items():
             category_metrics = {}
@@ -1921,9 +2097,23 @@ def prepare_metrics_for_cache(
                 item[category] = category_metrics
                 has_any_metrics = True
 
+        # Embed event-based categories (earnings + dividends)
+        if fiscal_date in earnings_by_quarter:
+            item['earnings_events'] = earnings_by_quarter[fiscal_date]
+            has_any_metrics = True
+
+        if fiscal_date in dividend_by_quarter:
+            item['dividend'] = dividend_by_quarter[fiscal_date]
+            has_any_metrics = True
+        elif dividend_history is not None and len(dividend_history) == 0:
+            # Explicitly signal non-dividend-paying company
+            item['dividend'] = {'dividend_status': 'none', 'dps': 0}
+            has_any_metrics = True
+
         # Only add item if we have at least one category with metrics
         if has_any_metrics:
             items.append(item)
 
-    logger.info(f"Prepared {len(items)} cache items for {ticker} (1 item per quarter, 7 categories embedded)")
+    total_categories = 7 + (1 if earnings_by_quarter else 0) + (1 if dividend_by_quarter or (dividend_history is not None and len(dividend_history) == 0) else 0)
+    logger.info(f"Prepared {len(items)} cache items for {ticker} (1 item per quarter, {total_categories} categories embedded)")
     return items

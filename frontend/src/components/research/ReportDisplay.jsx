@@ -3,6 +3,10 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import useTypewriter from '../../hooks/useTypewriter';
 
+/** Strip trailing JSON ratings block from section content (safety net for existing data). */
+const stripTrailingJsonBlock = (text) =>
+  text ? text.replace(/\n*---\s*\n*```json\s*\{[\s\S]*?\}\s*```\s*$/, '').replace(/\n*```json\s*\{[\s\S]*?\}\s*```\s*$/, '').trim() : '';
+
 export default function ReportDisplay({
   content = '',
   isStreaming = false,
@@ -12,8 +16,11 @@ export default function ReportDisplay({
   const containerRef = useRef(null);
   const lastContentLengthRef = useRef(0);
 
+  // Strip trailing JSON ratings block from content (safety net for legacy data)
+  const cleanContent = stripTrailingJsonBlock(content);
+
   // ChatGPT-style streaming effect with natural pacing
-  const { displayText, isTyping } = useTypewriter(content, {
+  const { displayText, isTyping } = useTypewriter(cleanContent, {
     speed: 1.5,           // Speed multiplier (1.0 = normal, 2.0 = 2x faster)
     isActive: isStreaming,
     alwaysAnimate: true   // Always animate from start on mount

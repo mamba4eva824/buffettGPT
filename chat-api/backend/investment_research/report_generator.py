@@ -23,7 +23,10 @@ from src.utils.fmp_client import (
     fetch_key_metrics,
     fetch_key_metrics_ttm,
     fetch_financial_ratios_ttm,
-    fetch_analyst_estimates
+    fetch_analyst_estimates,
+    fetch_earnings,
+    fetch_earnings_calendar_upcoming,
+    fetch_dividends
 )
 from src.utils.feature_extractor import extract_all_features, extract_quarterly_trends, prepare_metrics_for_cache
 from investment_research.index_tickers import get_index_tickers
@@ -98,7 +101,7 @@ class ReportGenerator:
     Storage:
     - Uses V2 table schema (investment-reports-v2) with section-per-item storage
     - V1 table was removed - all reports now use V2 schema
-    - Each report stored as 13 items: 1 executive + 12 detailed sections
+    - Each report stored as 15 items: 1 executive + 14 detailed sections
 
     Modes:
     - Claude Code mode (RECOMMENDED): Use prepare_data() to get metrics,
@@ -140,9 +143,10 @@ class ReportGenerator:
         4.9: 'investment_report_prompt_v4_9.txt',  # Audit grade v4.9 (consolidated dashboard - removed redundant sections 15/16)
         5.0: 'investment_report_prompt_v5_0.txt',  # Audit grade v5.0 (visual momentum dashboards, progress bars, pattern alerts)
         5.1: 'investment_report_prompt_v5_1.txt',  # Audit grade v5.1 (revenue stickiness, margin waterfall, operating leverage, peer comparisons, decision triggers)
+        5.2: 'investment_report_prompt_v5_2.txt',  # Audit grade v5.2 (cross-report uniqueness, anti-templating, variable DCA/momentum formats)
     }
 
-    def __init__(self, use_api: bool = False, prompt_version: float = 5.0):
+    def __init__(self, use_api: bool = False, prompt_version: float = 5.2):
         """
         Initialize the report generator.
 
@@ -196,7 +200,9 @@ class ReportGenerator:
             4.7: "Audit Grade v4.7 - extensive depth, investment fit, $100/mo projections",
             4.8: "Audit Grade v4.8 - executive summary first, dynamic headers, simplified language",
             4.9: "Audit Grade v4.9 - consolidated dashboard (removed redundant sections 15/16)",
-            5.0: "Audit Grade v5.0 - visual momentum dashboards, progress bars, pattern alerts [RECOMMENDED]",
+            5.0: "Audit Grade v5.0 - visual momentum dashboards, progress bars, pattern alerts",
+            5.1: "Audit Grade v5.1 - revenue stickiness, margin waterfall, operating leverage, decision triggers",
+            5.2: "Audit Grade v5.2 - cross-report uniqueness, anti-templating, variable formats [RECOMMENDED]",
         }
         return descriptions.get(self.prompt_version, "Unknown")
 
@@ -237,7 +243,10 @@ class ReportGenerator:
             'key_metrics_historical': fetch_key_metrics(ticker, limit=5),
             'key_metrics_ttm': fetch_key_metrics_ttm(ticker),
             'financial_ratios_ttm': fetch_financial_ratios_ttm(ticker),
-            'analyst_estimates': fetch_analyst_estimates(ticker, limit=10)
+            'analyst_estimates': fetch_analyst_estimates(ticker, limit=10),
+            'earnings_history': fetch_earnings(ticker, limit=12),
+            'earnings_calendar': fetch_earnings_calendar_upcoming(ticker),
+            'dividend_history': fetch_dividends(ticker),
         }
 
         # 4. Format data for analysis (with multi-currency support and valuation)
@@ -252,7 +261,9 @@ class ReportGenerator:
             ticker=ticker,
             quarterly_trends=quarterly_trends,
             currency=currency_info.get('code', 'USD'),
-            source_cache_key=cache_key
+            source_cache_key=cache_key,
+            earnings_history=valuation_data.get('earnings_history'),
+            dividend_history=valuation_data.get('dividend_history')
         )
         # Track that metrics were cached for this ticker so save_report_sections()
         # doesn't redundantly cache them again
@@ -273,7 +284,9 @@ class ReportGenerator:
         ticker: str,
         quarterly_trends: Dict[str, Any],
         currency: str = "USD",
-        source_cache_key: str = ""
+        source_cache_key: str = "",
+        earnings_history: list = None,
+        dividend_history: list = None
     ) -> None:
         """
         Batch write metrics items to metrics-history-cache table.
@@ -287,14 +300,18 @@ class ReportGenerator:
             quarterly_trends: Dict from extract_quarterly_trends()
             currency: Currency code
             source_cache_key: Cache key from financial data cache
+            earnings_history: Optional list of FMP earnings records
+            dividend_history: Optional list of FMP dividend records
         """
         try:
-            # Prepare cache items (7 categories × N quarters)
+            # Prepare cache items (up to 9 categories × N quarters)
             items = prepare_metrics_for_cache(
                 ticker=ticker,
                 quarterly_trends=quarterly_trends,
                 currency=currency,
-                source_cache_key=source_cache_key
+                source_cache_key=source_cache_key,
+                earnings_history=earnings_history,
+                dividend_history=dividend_history
             )
 
             if not items:
@@ -311,7 +328,7 @@ class ReportGenerator:
                     )
                     batch.put_item(Item=item_decimal)
 
-            print(f"  Cached {len(items)} metric items for {ticker} (7 categories × {len(quarterly_trends.get('quarters', []))} quarters)")
+            print(f"  Cached {len(items)} metric items for {ticker} (up to 9 categories × {len(quarterly_trends.get('quarters', []))} quarters)")
 
         except Exception as e:
             # Non-blocking - log error but don't fail report generation
@@ -333,8 +350,8 @@ class ReportGenerator:
 
         V2 Schema (Single Executive Item pattern):
         - 1 executive item (00_executive): ToC + ratings + 5 executive sections combined
-        - 12 detailed section items (06_growth through 17_realtalk)
-        Total: 13 items per report
+        - 14 detailed section items (06_growth through 19_triggers)
+        Total: 15 items per report
 
         This enables fast initial load (single DynamoDB read for executive)
         and progressive loading of detailed sections.
@@ -369,16 +386,17 @@ class ReportGenerator:
             except Exception as e:
                 print(f"  Warning: Failed to cache metrics for {ticker}: {e}")
 
-        # Parse report into sections
+        # Extract ratings from raw report content BEFORE parsing sections
+        # (parsing strips the JSON block from the last section's content)
+        if not ratings:
+            ratings = extract_ratings_json(report_content) or {}
+
+        # Parse report into sections (strips JSON block from last section)
         sections = parse_report_sections(report_content, ticker)
         if not sections:
             raise ValueError(f"Failed to parse any sections from report for {ticker}")
 
         print(f"    Parsed {len(sections)} sections")
-
-        # Extract ratings from report if not provided
-        if not ratings:
-            ratings = extract_ratings_json(report_content) or {}
 
         # Delete any existing sections for this ticker (ensures clean state)
         self._delete_existing_sections(ticker)
@@ -655,8 +673,8 @@ class ReportGenerator:
         ]
         CASHFLOW_FLOW_METRICS = [
             'operatingCashFlow', 'freeCashFlow', 'capitalExpenditure',
-            'dividendsPaid', 'commonStockRepurchased', 'netCashUsedForInvestingActivites',
-            'netCashUsedProvidedByFinancingActivities', 'netChangeInCash'
+            'commonDividendsPaid', 'commonStockRepurchased', 'netCashProvidedByInvestingActivities',
+            'netCashProvidedByFinancingActivities', 'netChangeInCash'
         ]
 
         # Group quarters by fiscal year
@@ -770,7 +788,7 @@ class ReportGenerator:
         ttm['operatingCashFlow'] = sum(cf.get('operatingCashFlow', 0) or 0 for cf in cf_stmts)
         ttm['freeCashFlow'] = sum(cf.get('freeCashFlow', 0) or 0 for cf in cf_stmts)
         ttm['capitalExpenditure'] = sum(cf.get('capitalExpenditure', 0) or 0 for cf in cf_stmts)
-        ttm['dividendsPaid'] = sum(cf.get('dividendsPaid', 0) or 0 for cf in cf_stmts)
+        ttm['commonDividendsPaid'] = sum(cf.get('commonDividendsPaid', 0) or 0 for cf in cf_stmts)
         ttm['commonStockRepurchased'] = sum(cf.get('commonStockRepurchased', 0) or 0 for cf in cf_stmts)
 
         # Calculate derived ratios
@@ -894,7 +912,7 @@ class ReportGenerator:
             ttm_ocf = ttm_metrics.get('operatingCashFlow', 0)
             ttm_fcf = ttm_metrics.get('freeCashFlow', 0)
             ttm_capex = abs(ttm_metrics.get('capitalExpenditure', 0))
-            ttm_dividends = abs(ttm_metrics.get('dividendsPaid', 0))
+            ttm_dividends = abs(ttm_metrics.get('commonDividendsPaid', 0))
             ttm_buybacks = abs(ttm_metrics.get('commonStockRepurchased', 0))
             ttm_fcf_margin = ttm_metrics.get('fcfMargin', 0)
             ttm_ocf_ni = ttm_metrics.get('ocfToNi', 0)
@@ -908,7 +926,7 @@ class ReportGenerator:
             ocf = cf.get('operatingCashFlow', 0)
             fcf = cf.get('freeCashFlow', 0)
             capex = abs(cf.get('capitalExpenditure', 0))
-            dividends = abs(cf.get('dividendsPaid', 0))
+            dividends = abs(cf.get('commonDividendsPaid', 0))
             buybacks = abs(cf.get('commonStockRepurchased', 0))
             rev = inc.get('revenue', 1)
             ni = inc.get('netIncome', 1)
@@ -1189,6 +1207,109 @@ class ReportGenerator:
                 elif gap_pct > 50:
                     output.append(f"\n**Note**: Adjusted earnings exceed GAAP by {gap_pct}%")
 
+        # ── EARNINGS HISTORY (v5.2) ──────────────────────────────────
+        if valuation_data and valuation_data.get('earnings_history'):
+            # Filter to only past quarters with actual results
+            earnings = [e for e in valuation_data['earnings_history'] if e.get('epsActual') is not None]
+            output.append("\n## EARNINGS HISTORY (Last 12 Quarters)")
+            output.append("| Date | EPS Estimated | EPS Actual | EPS Surprise % | Revenue Estimated | Revenue Actual | Revenue Surprise % |")
+            output.append("|------|---------------|------------|----------------|-------------------|----------------|--------------------|")
+            beat_count = 0
+            total_count = 0
+            eps_surprises = []
+            rev_beat_count = 0
+            rev_total_count = 0
+            for e in earnings[:12]:
+                date = e.get('date', 'N/A')
+                eps_est = e.get('epsEstimated')
+                eps_act = e.get('epsActual')
+                rev_est = e.get('revenueEstimated')
+                rev_act = e.get('revenueActual')
+
+                # Calculate surprise percentages
+                eps_surprise = ''
+                if eps_est and eps_act and eps_est != 0:
+                    try:
+                        eps_surprise_val = ((float(eps_act) - float(eps_est)) / abs(float(eps_est))) * 100
+                        eps_surprise = f"{eps_surprise_val:+.1f}%"
+                        eps_surprises.append({'date': date, 'val': eps_surprise_val})
+                        if eps_surprise_val > 1:
+                            beat_count += 1
+                        total_count += 1
+                    except (ValueError, ZeroDivisionError):
+                        eps_surprise = 'N/A'
+                        total_count += 1
+
+                rev_surprise = ''
+                if rev_est and rev_act and rev_est != 0:
+                    try:
+                        rev_surprise_val = ((float(rev_act) - float(rev_est)) / abs(float(rev_est))) * 100
+                        rev_surprise = f"{rev_surprise_val:+.1f}%"
+                        rev_total_count += 1
+                        if rev_surprise_val > 0:
+                            rev_beat_count += 1
+                    except (ValueError, ZeroDivisionError):
+                        rev_surprise = 'N/A'
+
+                def fmt_val(v, is_revenue=False):
+                    if v is None:
+                        return 'N/A'
+                    try:
+                        v = float(v)
+                        if is_revenue:
+                            if abs(v) >= 1e9:
+                                return f"${v/1e9:.1f}B"
+                            elif abs(v) >= 1e6:
+                                return f"${v/1e6:.0f}M"
+                            else:
+                                return f"${v:,.0f}"
+                        else:
+                            return f"${v:.2f}"
+                    except (ValueError, TypeError):
+                        return str(v)
+
+                output.append(
+                    f"| {date} | {fmt_val(eps_est)} | {fmt_val(eps_act)} | {eps_surprise} | {fmt_val(rev_est, True)} | {fmt_val(rev_act, True)} | {rev_surprise} |"
+                )
+
+            # Beat rate and summary stats
+            if total_count > 0:
+                beat_rate = (beat_count / total_count) * 100
+                output.append(f"\n**EPS Beat Rate:** {beat_count}/{total_count} quarters ({beat_rate:.0f}%)")
+
+                if eps_surprises:
+                    avg_surprise = sum(s['val'] for s in eps_surprises) / len(eps_surprises)
+                    largest_beat = max(eps_surprises, key=lambda s: s['val'])
+                    largest_miss = min(eps_surprises, key=lambda s: s['val'])
+                    output.append(f"**Avg EPS Surprise:** {avg_surprise:+.1f}%")
+                    output.append(f"**Largest Beat:** {largest_beat['val']:+.1f}% ({largest_beat['date']})")
+                    output.append(f"**Largest Miss:** {largest_miss['val']:+.1f}% ({largest_miss['date']})")
+
+                    # Trend direction: compare avg of first half vs second half
+                    if len(eps_surprises) >= 4:
+                        mid = len(eps_surprises) // 2
+                        recent_avg = sum(s['val'] for s in eps_surprises[:mid]) / mid
+                        older_avg = sum(s['val'] for s in eps_surprises[mid:]) / (len(eps_surprises) - mid)
+                        if recent_avg > older_avg + 2:
+                            trend = "Accelerating (recent surprises larger)"
+                        elif recent_avg < older_avg - 2:
+                            trend = "Decelerating (recent surprises smaller)"
+                        else:
+                            trend = "Stable"
+                        output.append(f"**Surprise Trend:** {trend}")
+
+                if rev_total_count > 0:
+                    rev_beat_rate = (rev_beat_count / rev_total_count) * 100
+                    output.append(f"**Revenue Beat Rate:** {rev_beat_count}/{rev_total_count} quarters ({rev_beat_rate:.0f}%)")
+
+        # ── NEXT EARNINGS DATE (v5.2) ────────────────────────────────
+        if valuation_data and valuation_data.get('earnings_calendar'):
+            cal = valuation_data['earnings_calendar']
+            next_date = cal.get('date', 'Unknown')
+            time_of_day = cal.get('time', '')
+            time_label = ' (Before Market Open)' if time_of_day == 'bmo' else ' (After Market Close)' if time_of_day == 'amc' else ''
+            output.append(f"\n## NEXT EARNINGS DATE\n{next_date}{time_label}")
+
         # === DEBT MATURITY ANALYSIS (NEW FOR AUDIT) ===
         output.append("\n## DEBT MATURITY STRUCTURE")
         output.append("**When are the debt payments due?**\n")
@@ -1284,13 +1405,178 @@ class ReportGenerator:
             output.append(f"    Operating Cash Flow: {fmt.full(cf.get('operatingCashFlow', 0))}" if cf.get('operatingCashFlow') else "    Operating CF: N/A")
             output.append(f"    Capital Expenditures: {fmt.full(cf.get('capitalExpenditure', 0))}" if cf.get('capitalExpenditure') else "    CapEx: N/A")
             output.append(f"    Free Cash Flow: {fmt.full(cf.get('freeCashFlow', 0))}" if cf.get('freeCashFlow') else "    FCF: N/A")
-            output.append(f"    Dividends Paid: {fmt.full(cf.get('dividendsPaid', 0))}" if cf.get('dividendsPaid') else "    Dividends: N/A")
+            output.append(f"    Dividends Paid: {fmt.full(cf.get('commonDividendsPaid', 0))}" if cf.get('commonDividendsPaid') else "    Dividends: N/A")
             output.append(f"    Share Repurchases: {fmt.full(cf.get('commonStockRepurchased', 0))}" if cf.get('commonStockRepurchased') else "    Buybacks: N/A")
+
+        # === DIVIDEND ANALYSIS ===
+        if valuation_data:
+            dividend_output = self._format_dividend_analysis(valuation_data, fmt)
+            output.append(dividend_output)
 
         # === VALUATION & MEAN REVERSION ANALYSIS ===
         if valuation_data:
             valuation_output = self._format_valuation_metrics(valuation_data, fmt)
             output.append(valuation_output)
+
+        return "\n".join(output)
+
+    def _format_dividend_analysis(self, valuation_data: dict, fmt) -> str:
+        """
+        Format dividend analysis from FMP /stable/dividends endpoint data.
+
+        Computes annual DPS, raise history, CAGR, streak count, and combines
+        with TTM ratios (yield, payout ratio, DPS) already fetched.
+        For non-dividend stocks, returns a short "no dividend" note.
+
+        Args:
+            valuation_data: Dict containing 'dividend_history' list and
+                           'financial_ratios_ttm' dict
+            fmt: CurrencyFormatter instance for money formatting
+
+        Returns:
+            Formatted string with dividend analysis section
+        """
+        from collections import defaultdict
+        from dateutil.relativedelta import relativedelta
+
+        output = []
+        output.append("\n## DIVIDEND ANALYSIS")
+
+        dividend_history = valuation_data.get('dividend_history', [])
+        ratios_ttm = valuation_data.get('financial_ratios_ttm', {})
+
+        # Non-dividend stock path
+        if not dividend_history:
+            output.append("This company does not currently pay a dividend. No dividend history available.")
+            return "\n".join(output)
+
+        # --- Current Dividend Snapshot (from TTM ratios already fetched) ---
+        ttm_yield = ratios_ttm.get('dividendYieldTTM')
+        ttm_payout = ratios_ttm.get('dividendPayoutRatioTTM')
+        ttm_dps = ratios_ttm.get('dividendPerShareTTM')
+        frequency = dividend_history[0].get('frequency', 'N/A') if dividend_history else 'N/A'
+
+        output.append("\n### Current Dividend Snapshot")
+        output.append("| Metric | Value |")
+        output.append("|--------|-------|")
+        output.append(f"| Dividend Per Share (TTM) | {f'${ttm_dps:.2f}' if ttm_dps else 'N/A'} |")
+        output.append(f"| Dividend Yield (TTM) | {f'{ttm_yield * 100:.2f}%' if ttm_yield else 'N/A'} |")
+        output.append(f"| Payout Ratio (TTM) | {f'{ttm_payout * 100:.1f}%' if ttm_payout else 'N/A'} |")
+        output.append(f"| Payment Frequency | {frequency} |")
+
+        # Estimate next payment date from most recent payment
+        try:
+            last_payment_str = dividend_history[0].get('paymentDate', '')
+            if last_payment_str:
+                last_payment = datetime.strptime(last_payment_str, '%Y-%m-%d')
+                freq_months = {'Quarterly': 3, 'Monthly': 1, 'Semi-Annual': 6, 'Annual': 12}
+                months_ahead = freq_months.get(frequency, 3)
+                next_payment = last_payment + relativedelta(months=months_ahead)
+                output.append(f"| Next Expected Payment | ~{next_payment.strftime('%b %Y')} (estimated) |")
+            else:
+                output.append("| Next Expected Payment | N/A |")
+        except (ValueError, TypeError):
+            output.append("| Next Expected Payment | N/A |")
+
+        # --- Filter to regular dividends only (exclude specials) ---
+        regular_dividends = [
+            d for d in dividend_history
+            if d.get('frequency', '').lower() != 'special'
+        ]
+
+        if not regular_dividends:
+            output.append("\nNo regular dividend payments found (only special dividends).")
+            return "\n".join(output)
+
+        # --- Aggregate annual DPS (sum adjDividend by calendar year) ---
+        annual_dps = defaultdict(float)
+        for d in regular_dividends:
+            year = d.get('date', '')[:4]
+            if year:
+                annual_dps[year] += d.get('adjDividend', 0)
+
+        # Sort years descending, skip current year if incomplete (< 2 payments)
+        current_year = str(datetime.now().year)
+        current_year_payments = sum(1 for d in regular_dividends if d.get('date', '').startswith(current_year))
+
+        sorted_years = sorted(annual_dps.keys(), reverse=True)
+        # Use current year only if it has enough payments, otherwise start from prior year
+        if sorted_years and sorted_years[0] == current_year and current_year_payments < 2:
+            sorted_years = sorted_years[1:]
+
+        if len(sorted_years) < 2:
+            output.append(f"\nInsufficient dividend history for raise analysis (only {len(sorted_years)} year(s) of data).")
+            return "\n".join(output)
+
+        # --- 5-Year Raise History Table ---
+        output.append("\n### Raise History (Annual Dividend Per Share)")
+        output.append("| Year | Annual DPS | YoY Change |")
+        output.append("|------|-----------|------------|")
+
+        display_years = sorted_years[:6]  # Show up to 6 years for 5 YoY changes
+        raises_data = []
+        for i, year in enumerate(display_years):
+            dps = annual_dps[year]
+            if i < len(display_years) - 1:
+                prev_dps = annual_dps[display_years[i + 1]]
+                if prev_dps > 0:
+                    change_pct = ((dps - prev_dps) / prev_dps) * 100
+                    raises_data.append({'year': year, 'dps': dps, 'change': change_pct})
+                    output.append(f"| {year} | ${dps:.2f} | {'+' if change_pct >= 0 else ''}{change_pct:.1f}% |")
+                else:
+                    raises_data.append({'year': year, 'dps': dps, 'change': None})
+                    output.append(f"| {year} | ${dps:.2f} | N/A |")
+            else:
+                output.append(f"| {year} | ${dps:.2f} | — (base year) |")
+
+        # --- Consecutive Raise Streak ---
+        streak = 0
+        for i in range(len(sorted_years) - 1):
+            current_dps = annual_dps[sorted_years[i]]
+            prior_dps = annual_dps[sorted_years[i + 1]]
+            if current_dps > prior_dps and prior_dps > 0:
+                streak += 1
+            else:
+                break
+
+        # Classify streak
+        if streak >= 25:
+            streak_label = "Dividend Aristocrat (25+ years)"
+        elif streak >= 10:
+            streak_label = "Reliable Raiser (10-24 years)"
+        elif streak >= 5:
+            streak_label = "Building Track Record (5-9 years)"
+        elif streak >= 1:
+            streak_label = "Early Stage (1-4 years)"
+        else:
+            streak_label = "No Consecutive Raises"
+
+        output.append(f"\nConsecutive Raise Streak: {streak} years — {streak_label}")
+        output.append("(Note: Streak is based on available data window; actual company streak may be longer)")
+
+        # --- CAGR ---
+        # Use max available window up to 5 years
+        cagr_years = min(5, len(sorted_years) - 1)
+        if cagr_years >= 2:
+            latest_dps = annual_dps[sorted_years[0]]
+            oldest_dps = annual_dps[sorted_years[cagr_years]]
+            if oldest_dps > 0 and latest_dps > 0:
+                cagr = (latest_dps / oldest_dps) ** (1 / cagr_years) - 1
+                output.append(f"{cagr_years}-Year Dividend CAGR: {cagr * 100:.1f}%")
+            else:
+                output.append(f"{cagr_years}-Year Dividend CAGR: N/A (insufficient data)")
+        else:
+            output.append("Dividend CAGR: N/A (insufficient history)")
+
+        # --- Special Dividends Note (if any) ---
+        special_dividends = [
+            d for d in dividend_history
+            if d.get('frequency', '').lower() == 'special'
+        ]
+        if special_dividends:
+            output.append(f"\nNote: {len(special_dividends)} special (one-time) dividend(s) detected and excluded from raise history/CAGR:")
+            for sd in special_dividends[:3]:
+                output.append(f"  - {sd.get('date', 'N/A')}: ${sd.get('adjDividend', 0):.2f}/share (Special)")
 
         return "\n".join(output)
 
@@ -1612,16 +1898,10 @@ class ReportGenerator:
         """
         Extract JSON ratings block from response.
 
-        Searches for ```json ... ``` block containing the structured ratings.
+        Delegates to extract_ratings_json() from section_parser to avoid
+        duplicate regex logic.
         """
-        try:
-            # Find JSON block in markdown code fence
-            json_match = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', content)
-            if json_match:
-                return json.loads(json_match.group(1))
-        except (json.JSONDecodeError, AttributeError) as e:
-            print(f"    Warning: Failed to parse ratings JSON: {e}")
-        return {}
+        return extract_ratings_json(content) or {}
 
     def _cache_report(
         self,
@@ -2039,7 +2319,7 @@ class ReportGenerator:
             ocf = cf.get('operatingCashFlow', 0) or 0
             fcf = cf.get('freeCashFlow', 0) or 0
             capex = abs(cf.get('capitalExpenditure', 0) or 0)
-            dividends = abs(cf.get('dividendsPaid', 0) or 0)
+            dividends = abs(cf.get('commonDividendsPaid', 0) or 0)
 
             # Get revenue for FCF margin
             inc = income_statements[i] if i < len(income_statements) else {}

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { X, Crown, Check, Zap, Loader2, AlertCircle } from 'lucide-react';
+import { X, Crown, Check, Zap, Loader2, AlertCircle, Gift } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /**
@@ -10,13 +10,15 @@ import { motion, AnimatePresence } from 'framer-motion';
  * - Pricing ($10/month)
  * - Benefits list
  * - Checkout button
+ * - Referral trial banner (if trialDays > 0)
  */
 export default function UpgradeModal({
   isOpen,
   onClose,
   onUpgrade,
   isLoading = false,
-  error = null
+  error = null,
+  trialDays = 0
 }) {
   // Close on escape key - must be before early return to satisfy hooks rules
   useEffect(() => {
@@ -88,6 +90,23 @@ export default function UpgradeModal({
 
         {/* Content */}
         <div className="p-5">
+          {/* Referral trial banner */}
+          {trialDays > 0 && (
+            <div className="mb-5 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-center gap-2">
+                <Gift className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                    Referral reward: {trialDays}-day free trial
+                  </p>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    You won&apos;t be charged until after your trial ends
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Price display */}
           <div className="text-center mb-6">
             <div className="flex items-baseline justify-center gap-1">
@@ -95,7 +114,9 @@ export default function UpgradeModal({
               <span className="text-sand-500 dark:text-warm-300">/month</span>
             </div>
             <p className="text-sm text-sand-500 dark:text-warm-300 mt-1">
-              Cancel anytime
+              {trialDays > 0
+                ? `Free for ${trialDays} days, then $10/month`
+                : 'Cancel anytime'}
             </p>
           </div>
 

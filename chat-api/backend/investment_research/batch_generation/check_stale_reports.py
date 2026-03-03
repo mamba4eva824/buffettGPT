@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Check which DJIA reports need refresh based on new earnings.
+Check which index reports need refresh based on new earnings.
 
 Adapted from earnings_tracker.py for batch generation workflow.
 Uses the FMP /stable/earnings-calendar endpoint to check if new
@@ -8,6 +8,7 @@ earnings have been released since the reports were generated.
 
 Usage:
     python -m investment_research.batch_generation.check_stale_reports
+    python -m investment_research.batch_generation.check_stale_reports --index sp100
     python -m investment_research.batch_generation.check_stale_reports --tickers-only
     python -m investment_research.batch_generation.check_stale_reports --env prod
 """
@@ -21,27 +22,29 @@ from typing import List, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from investment_research.earnings_tracker import EarningsTracker
-from investment_research.index_tickers import DJIA_TICKERS
+from investment_research.index_tickers import get_index_tickers
 
 
-def check_djia_staleness(
+def check_staleness(
     tickers_only: bool = False,
     environment: str = "dev",
-    tickers: Optional[List[str]] = None
+    tickers: Optional[List[str]] = None,
+    index: str = "djia"
 ) -> List[str]:
     """
-    Check staleness for all DJIA tickers.
+    Check staleness for all tickers in an index.
 
     Args:
         tickers_only: If True, output only ticker symbols (for piping)
         environment: Environment name (dev, staging, prod)
-        tickers: List of tickers to check (defaults to DJIA_TICKERS)
+        tickers: List of tickers to check (defaults to index tickers)
+        index: Index to check (djia, sp100, sp500)
 
     Returns:
         List of stale ticker symbols
     """
     if tickers is None:
-        tickers = DJIA_TICKERS
+        tickers = get_index_tickers(index)
 
     tracker = EarningsTracker(environment=environment)
 
@@ -51,7 +54,7 @@ def check_djia_staleness(
 
     if not tickers_only:
         print("=" * 60)
-        print("  DJIA Report Staleness Check")
+        print(f"  {index.upper()} Report Staleness Check")
         print("=" * 60)
         print()
         print(f"Checking {len(tickers)} tickers...")
@@ -107,14 +110,21 @@ def check_djia_staleness(
     return [r['ticker'] for r in stale] + no_report
 
 
+# Backward compatibility alias
+check_djia_staleness = check_staleness
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Check which DJIA reports need refresh based on new earnings",
+        description="Check which index reports need refresh based on new earnings",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Check all DJIA reports
+    # Check all DJIA reports (default)
     python -m investment_research.batch_generation.check_stale_reports
+
+    # Check S&P 100 reports
+    python -m investment_research.batch_generation.check_stale_reports --index sp100
 
     # Output only stale ticker symbols (for piping)
     python -m investment_research.batch_generation.check_stale_reports --tickers-only
@@ -126,6 +136,12 @@ Examples:
     python -m investment_research.batch_generation.check_stale_reports --tickers-only | \\
         xargs -I {} python -m investment_research.batch_generation.prepare_batch_data --tickers {}
         """
+    )
+    parser.add_argument(
+        "--index",
+        type=str,
+        default="djia",
+        help="Index to check (default: djia). Options: djia, sp100, sp500"
     )
     parser.add_argument(
         "--tickers-only",
@@ -152,10 +168,11 @@ Examples:
     if args.tickers:
         tickers = [t.strip().upper() for t in args.tickers.split(',')]
 
-    stale_tickers = check_djia_staleness(
+    stale_tickers = check_staleness(
         tickers_only=args.tickers_only,
         environment=args.env,
-        tickers=tickers
+        tickers=tickers,
+        index=args.index
     )
 
     # Exit with error code if any stale

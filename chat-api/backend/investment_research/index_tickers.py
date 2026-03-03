@@ -1,10 +1,10 @@
 """
-DJIA and S&P 500 ticker lists for batch report generation.
+DJIA, S&P 100, and S&P 500 ticker lists for batch report generation.
 
 Used by the report generation CLI to iterate over major index constituents.
 
-NOTE: Starting with 10 companies per index for initial testing.
-Can be expanded to full lists after validation.
+NOTE: SP500 still contains 10 representative companies for testing.
+SP100 contains the top 100 S&P 500 companies by market cap (102 tickers).
 """
 
 # Dow Jones Industrial Average - All 30 components
@@ -57,23 +57,44 @@ SP500_TICKERS = [
     'T',      # AT&T - Telecom, dividend
 ]
 
+# Top 100 S&P 500 by market cap — 102 tickers
+# BRK-B is FMP's format for Berkshire Hathaway B shares
+# GOOGL used (not GOOG duplicate)
+# Last updated: Feb 2026. Refresh quarterly from slickcharts.com/sp500/marketcap
+SP100_TICKERS = [
+    'AAPL', 'ABBV', 'ABT', 'ACN', 'ADI', 'AMAT', 'AMD', 'AMGN', 'AMZN', 'ANET',
+    'APH', 'AVGO', 'AXP', 'BA', 'BAC', 'BLK', 'BMY', 'BKNG', 'BRK-B', 'BSX',
+    'C', 'CAT', 'CEG', 'CMCSA', 'CME', 'COF', 'COP', 'COST', 'CRM', 'CSCO',
+    'CVX', 'DE', 'DHR', 'DIS', 'ETN', 'GE', 'GILD', 'GLW', 'GOOGL', 'GS',
+    'HCA', 'HD', 'HON', 'IBM', 'INTC', 'ISRG', 'JNJ', 'JPM', 'KLAC', 'KO',
+    'LIN', 'LLY', 'LMT', 'LOW', 'LRCX', 'MA', 'MCD', 'MCK', 'MDT', 'MET',
+    'META', 'MO', 'MRK', 'MS', 'MSFT', 'MU', 'NEE', 'NFLX', 'NOC', 'NOW',
+    'NVDA', 'ORCL', 'PANW', 'PEP', 'PFE', 'PG', 'PGR', 'PH', 'PLD', 'PLTR',
+    'PM', 'QCOM', 'RTX', 'SBUX', 'SCHW', 'SO', 'SPGI', 'SYK', 'T', 'TJX',
+    'TMO', 'TMUS', 'TSLA', 'TXN', 'UBER', 'UNH', 'UNP', 'V', 'VRTX', 'WFC',
+    'WMT', 'XOM',
+]
+
 
 def get_index_tickers(index: str) -> list:
     """
     Get tickers for a given index.
 
     Args:
-        index: 'DJIA' or 'SP500'
+        index: 'DJIA', 'SP500', or 'SP100'
 
     Returns:
         List of ticker symbols
     """
-    if index.upper() == 'DJIA':
+    idx = index.upper().replace('-', '')
+    if idx == 'DJIA':
         return DJIA_TICKERS.copy()
-    elif index.upper() == 'SP500':
+    elif idx == 'SP500':
         return SP500_TICKERS.copy()
+    elif idx == 'SP100':
+        return SP100_TICKERS.copy()
     else:
-        raise ValueError(f"Unknown index: {index}. Use 'DJIA' or 'SP500'")
+        raise ValueError(f"Unknown index: {index}. Use 'DJIA', 'SP500', or 'SP100'")
 
 
 def get_test_tickers() -> list:

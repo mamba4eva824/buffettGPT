@@ -71,8 +71,9 @@ def get_mock_toc() -> list:
         {'section_id': '12_dilution', 'title': 'Dilution: Buying Back 3%', 'part': 2, 'icon': 'pie-chart', 'word_count': 400, 'display_order': 8},
         {'section_id': '13_bull', 'title': 'Bull Case', 'part': 2, 'icon': 'trending-up', 'word_count': 350, 'display_order': 9},
         {'section_id': '14_bear', 'title': 'Bear Case', 'part': 2, 'icon': 'trending-down', 'word_count': 350, 'display_order': 10},
-        {'section_id': '15_realtalk', 'title': 'Real Talk', 'part': 3, 'icon': 'message-circle', 'word_count': 500, 'display_order': 11},
-        {'section_id': '16_triggers', 'title': 'Decision Triggers', 'part': 3, 'icon': 'crosshair', 'word_count': 400, 'display_order': 12},
+        {'section_id': '15_recap', 'title': 'Earnings Recap: 10 for 12 — The Consistent Beater', 'part': 2, 'icon': 'bar-chart-2', 'word_count': 450, 'display_order': 11},
+        {'section_id': '15_realtalk', 'title': 'Real Talk', 'part': 3, 'icon': 'message-circle', 'word_count': 500, 'display_order': 12},
+        {'section_id': '16_triggers', 'title': 'Decision Triggers', 'part': 3, 'icon': 'crosshair', 'word_count': 400, 'display_order': 13},
     ]
 
 
@@ -126,6 +127,7 @@ def get_mock_section(section_id: str, ticker: str = 'AAPL', expired: bool = Fals
     section_data = {
         '06_growth': {'title': 'Growth: 3% to 4% — The Slow Climb', 'part': 2, 'icon': 'chart-up', 'display_order': 6},
         '11_debt': {'title': 'Debt: The $50B War Chest', 'part': 2, 'icon': 'bank', 'display_order': 11},
+        '15_recap': {'title': 'Earnings Recap: 10 for 12 — The Consistent Beater', 'part': 2, 'icon': 'bar-chart-2', 'display_order': 15},
         '15_realtalk': {'title': 'Real Talk', 'part': 3, 'icon': 'message-circle', 'display_order': 15},
         '16_triggers': {'title': 'Decision Triggers', 'part': 3, 'icon': 'crosshair', 'display_order': 16},
     }
@@ -258,7 +260,7 @@ class TestGetExecutive:
             assert 'toc' in result
             assert 'ratings' in result
             assert 'executive_summary' in result
-            assert len(result['toc']) == 12
+            assert len(result['toc']) == 13
 
     def test_returns_none_when_not_found(self):
         """Verify None is returned when executive item doesn't exist."""
@@ -332,7 +334,7 @@ class TestGetReportToc:
             assert result is not None
             assert 'toc' in result
             assert 'ratings' in result
-            assert len(result['toc']) == 12
+            assert len(result['toc']) == 13
             # Should NOT include executive_summary content
             assert 'executive_summary' not in result
 

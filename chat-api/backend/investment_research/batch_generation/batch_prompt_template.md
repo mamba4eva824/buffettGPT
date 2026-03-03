@@ -14,7 +14,7 @@ This template is used by each parallel Claude session to generate reports for it
 
 {BATCH_TICKERS}
 
-(6 companies per batch, 5 batches total = 30 DJIA companies)
+({TICKERS_PER_BATCH} companies in this batch, {WINDOW_COUNT} batches total = {TOTAL_TICKERS} companies)
 
 ---
 
@@ -22,7 +22,7 @@ This template is used by each parallel Claude session to generate reports for it
 
 Before running this batch:
 
-1. **Data file exists**: `djia_30_batch_data.json` (from `prepare_batch_data.py`)
+1. **Data file exists**: `{DATA_FILE}` (from `prepare_batch_data.py`)
 2. **Prompt file exists**: `chat-api/backend/investment_research/prompts/{PROMPT_FILE_NAME}`
 3. **AWS credentials configured** for DynamoDB access
 
@@ -36,7 +36,7 @@ Before running this batch:
 import json
 
 # Load pre-fetched FMP data
-with open('djia_30_batch_data.json') as f:
+with open('{DATA_FILE}') as f:
     batch_data = json.load(f)
 
 # Get data for specific ticker
@@ -64,21 +64,23 @@ Using Claude Code, generate the investment report following the prompt structure
 4. Is It a Good Fit? - Investment suitability
 5. The Verdict - Buy/Hold/Sell recommendation
 
-**Part 2: Deep Dive (12 sections)**
+**Part 2: Deep Dive (14 sections)**
 6. Growth - Revenue and earnings trends
-7. Profitability - Margins and efficiency
-8. Valuation - P/E, P/B, EV/EBITDA analysis
+7. Profitability - Margins, ROE, and efficiency
+8. Valuation - P/E deep dive, P/B, EV/EBITDA analysis
 9. Earnings Quality - Accruals and sustainability
 10. Cash Flow - Operating and free cash flow
 11. Debt - Leverage and coverage ratios
 12. Dilution - Share count trends
-13. Bull Case - Optimistic scenario
-14. Bear Case - Pessimistic scenario
-15. Warning Signs - Red flags to watch
-16. Vibe Check - Qualitative assessment
+13. Dividend - Dividend history, yield, and growth (or "no dividend" note)
+14. Moat - Competitive advantages and durability
+15. Bull Case - Optimistic scenario
+16. Bear Case - Risks and pessimistic scenario
+17. Earnings Recap - Recent quarterly earnings beat/miss history
 
 **Part 3: Conclusion**
-17. Real Talk - Final honest assessment
+18. Real Talk - Final honest assessment
+19. Decision Triggers - Specific events that would change the thesis
 
 ### Step 4: Include JSON Ratings Block
 
@@ -112,14 +114,8 @@ Write the report to a temp file, then save via Python:
 
 ```bash
 # Write report to temp file (done via Write tool)
-# Then save to DynamoDB:
-cd {PROJECT_ROOT}/chat-api/backend && python3 -c "
-import sys; sys.path.insert(0, '.')
-from investment_research.report_generator import ReportGenerator
-generator = ReportGenerator(prompt_version={PROMPT_VERSION})
-report_content = open('/tmp/{TICKER}_report.md').read()
-generator.save_report_sections('{TICKER}', 2026, report_content)
-"
+# Then save to DynamoDB with metrics caching:
+cd {PROJECT_ROOT}/chat-api/backend && python3 -m investment_research.batch_generation.batch_save_report --ticker {TICKER} --data-file {PROJECT_ROOT}/{DATA_FILE} --report /tmp/{TICKER}_report.md --prompt-version {PROMPT_VERSION}
 ```
 
 ### Step 6: Confirm
@@ -132,7 +128,7 @@ Print: `✓ {TICKER} saved`
 
 ## Completion Signal
 
-When all 6 reports in your batch are saved:
+When all reports in your batch are saved:
 
 ```
 BATCH COMPLETE: {BATCH_TICKERS}
@@ -142,13 +138,7 @@ BATCH COMPLETE: {BATCH_TICKERS}
 
 ## Batch Assignments
 
-| Batch | Window | Companies |
-|-------|--------|-----------|
-| 1 | 0 | AAPL, AMGN, AXP, BA, CAT, CRM |
-| 2 | 1 | CSCO, CVX, DIS, DOW, GS, HD |
-| 3 | 2 | HON, IBM, INTC, JNJ, JPM, KO |
-| 4 | 3 | MCD, MMM, MRK, MSFT, NKE, PG |
-| 5 | 4 | TRV, UNH, V, VZ, WBA, WMT |
+Your assigned batch is shown above in "Your Assigned Companies".
 
 ---
 
@@ -169,5 +159,4 @@ If a report fails to generate or save:
 ## Estimated Time
 
 - ~5-7 minutes per report
-- ~35-40 minutes per batch (6 reports)
-- ~35-40 minutes total (5 parallel batches)
+- Total time depends on batch size and number of parallel windows

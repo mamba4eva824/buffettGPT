@@ -46,6 +46,8 @@ nav:
     - Routes: api/routes.md
     - WebSocket: api/websocket.md
     - Authentication: api/authentication.md
+    - Security Review: api/SECURITY_REVIEW.md
+    - Security Test Report: api/SECURITY_TEST_REPORT.md
   - Investment Research:
     - investment-research/index.md
     - Report Generation: investment-research/report-generation.md
@@ -60,21 +62,51 @@ nav:
     - Lambda Functions: infrastructure/lambda-functions.md
     - DynamoDB Schema: infrastructure/dynamodb-schema.md
     - Deployment: infrastructure/deployment.md
+  - Stripe:
+    - Integration Guide: stripe/STRIPE_INTEGRATION_GUIDE.md
+    - Architecture: stripe/ARCHITECTURE.md
+    - Phase A - Infrastructure: stripe/PHASE_A_INFRASTRUCTURE_REPORT.md
+    - Phase B - Backend Handlers: stripe/PHASE_B_BACKEND_HANDLERS_REPORT.md
+    - Phase C - Terraform Integration: stripe/PHASE_C_TERRAFORM_INTEGRATION_REPORT.md
+    - Phase D - Stripe Configuration: stripe/PHASE_D_STRIPE_CONFIGURATION_REPORT.md
+    - Phase E - Frontend Integration: stripe/PHASE_E_FRONTEND_INTEGRATION_REPORT.md
+    - Phase F - Testing: stripe/PHASE_F_TESTING_REPORT.md
+    - Subscription Tier Sync: stripe/SUBSCRIPTION_TIER_SYNC_IMPLEMENTATION.md
+    - Cancellation Testing: stripe/CANCELLATION_TESTING_GUIDE.md
+    - Cancellation E2E Summary: stripe/SUBSCRIPTION_CANCELLATION_E2E_SUMMARY.md
+    - Comprehensive Test Plan: stripe/COMPREHENSIVE_STRIPE_TESTING_PLAN.md
+    - E2E Invoice & Token Limit Testing: stripe/E2E_INVOICE_TOKEN_LIMIT_TESTING.md
+    - Load & Performance Testing: stripe/STRIPE_LOAD_PERFORMANCE_TESTING.md
+    - Performance Report: stripe/PERFORMANCE_REPORT.md
+    - Security Review: stripe/STRIPE_SECURITY_REVIEW.md
   - Development:
     - development/index.md
     - Testing: development/testing.md
     - Streaming: development/streaming.md
     - UI Guidelines: development/ui-guidelines.md
+  - Testing Reports:
+    - Token Usage Integration Tests: tests/TOKEN_USAGE_TRACKER_INTEGRATION_TESTS.md
+  - Landing Page:
+    - Email System: landing_page/EMAIL_SYSTEM.md
+    - Pre-Launch Checklist: landing_page/PRE_LAUNCH_CHECKLIST.md
+  - Referral:
+    - Executive Summary: referral/executive-summary.md
   - Prompts:
     - prompts/index.md
     - v4.8: prompts/versions/v4_8.md
     - v5.0: prompts/versions/v5_0.md
-  - Changelog: changelog/index.md
+  - Changelog:
+    - changelog/index.md
+    - Full Changelog: changelog/CHANGELOG.md
+  - Daily Reports:
+    - Waitlist Testing (2026-02-12): daily_reports/2026-02-12-waitlist-testing-report.md
   - Reference:
     - reference/index.md
     - Company Tickers: reference/company-tickers.md
     - Troubleshooting: reference/troubleshooting.md
-  - Archive: archive/index.md
+  - Archive:
+    - archive/index.md
+    - Warren Buffett Letters: archive/warren-buffett-letters/index.md
 
 plugins:
   - search

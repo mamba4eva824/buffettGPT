@@ -16,6 +16,7 @@ Usage:
 
 import boto3
 from datetime import datetime
+from decimal import Decimal
 
 
 def seed_test_report(ticker: str, environment: str = 'dev') -> dict:
@@ -72,14 +73,20 @@ def seed_test_report(ticker: str, environment: str = 'dev') -> dict:
     return {'ticker': ticker, 'sections': list(sections.keys())}
 
 
-def seed_test_metrics(ticker: str, quarters: int = 8, environment: str = 'dev') -> dict:
+def seed_test_metrics(ticker: str, quarters: int = 8, environment: str = 'dev',
+                      include_earnings: bool = True, include_dividends: bool = True) -> dict:
     """
-    Seed metrics-history-cache table with quarterly data.
+    Seed metrics-history-cache table with quarterly data using nested-category schema.
+
+    Uses the same embedded-category structure as production: each item has
+    category maps (revenue_profit, cashflow, etc.) rather than flat metric keys.
 
     Args:
         ticker: Stock ticker
         quarters: Number of quarters to seed
         environment: Target environment
+        include_earnings: Whether to include earnings_events category
+        include_dividends: Whether to include dividend category
 
     Returns:
         Dict with seeded ticker and fiscal dates
@@ -90,21 +97,97 @@ def seed_test_metrics(ticker: str, quarters: int = 8, environment: str = 'dev') 
     fiscal_dates = []
     base_revenue = 50000000000  # $50B
 
+    # Map quarter number to month for ISO date format
+    quarter_end_months = {1: '03-31', 2: '06-30', 3: '09-30', 4: '12-31'}
+    quarter_labels = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4'}
+
     for q in range(quarters):
         year = 2025 - (q // 4)
-        quarter = 4 - (q % 4)
-        fiscal_date = f'{year}-Q{quarter}'
+        quarter_num = 4 - (q % 4)
+        fiscal_date = f'{year}-{quarter_end_months[quarter_num]}'
         fiscal_dates.append(fiscal_date)
 
-        table.put_item(Item={
+        revenue = int(base_revenue * (1 + 0.03 * q))
+        net_income = int(base_revenue * 0.2 * (1 + 0.02 * q))
+        fcf = int(base_revenue * 0.15 * (1 + 0.025 * q))
+
+        item = {
             'ticker': ticker,
             'fiscal_date': fiscal_date,
-            'revenue': int(base_revenue * (1 + 0.03 * q)),
-            'net_income': int(base_revenue * 0.2 * (1 + 0.02 * q)),
-            'free_cash_flow': int(base_revenue * 0.15 * (1 + 0.025 * q)),
-            'total_debt': int(base_revenue * 0.3),
-            'shareholders_equity': int(base_revenue * 0.6)
-        })
+            'fiscal_year': year,
+            'fiscal_quarter': quarter_labels[quarter_num],
+            'currency': 'USD',
+            'revenue_profit': {
+                'revenue': revenue,
+                'net_income': net_income,
+                'eps': Decimal(str(round(net_income / 15000000000, 2))),
+                'gross_margin': Decimal('0.45'),
+                'operating_margin': Decimal('0.30'),
+                'net_margin': Decimal(str(round(net_income / revenue, 4))),
+            },
+            'cashflow': {
+                'free_cash_flow': fcf,
+                'operating_cash_flow': int(fcf * 1.3),
+                'fcf_margin': Decimal(str(round(fcf / revenue, 4))),
+                'dividends_paid': int(base_revenue * 0.02),
+            },
+            'balance_sheet': {
+                'total_debt': int(base_revenue * 0.3),
+                'total_equity': int(base_revenue * 0.6),
+                'cash_position': int(base_revenue * 0.15),
+                'net_debt': int(base_revenue * 0.15),
+            },
+            'debt_leverage': {
+                'debt_to_equity': Decimal('0.5'),
+                'interest_coverage': Decimal('15.0'),
+                'current_ratio': Decimal('1.2'),
+            },
+            'earnings_quality': {
+                'gaap_net_income': net_income,
+                'adjusted_earnings': int(net_income * 1.05),
+                'sbc_to_revenue_pct': Decimal('3.5'),
+            },
+            'dilution': {
+                'diluted_shares': 15000000000,
+                'dilution_pct': Decimal('0.3'),
+            },
+            'valuation': {
+                'roe': Decimal('0.35'),
+                'roic': Decimal('0.28'),
+                'roa': Decimal('0.18'),
+            },
+        }
+
+        # Add earnings_events category
+        if include_earnings:
+            # Earnings report ~30 days after quarter end
+            earn_month = int(fiscal_date[5:7]) + 1
+            earn_year = year
+            if earn_month > 12:
+                earn_month = 1
+                earn_year += 1
+            item['earnings_events'] = {
+                'earnings_date': f'{earn_year}-{earn_month:02d}-28',
+                'eps_actual': Decimal(str(round(net_income / 15000000000, 2))),
+                'eps_estimated': Decimal(str(round(net_income / 15000000000 * 0.97, 2))),
+                'eps_surprise_pct': Decimal('3.1'),
+                'eps_beat': True,
+                'revenue_actual': revenue,
+                'revenue_estimated': int(revenue * 0.99),
+                'revenue_surprise_pct': Decimal('1.0'),
+            }
+
+        # Add dividend category
+        if include_dividends:
+            item['dividend'] = {
+                'dps': Decimal('0.25'),
+                'payments_in_quarter': 1,
+                'frequency': 'Quarterly',
+                'dividend_yield': Decimal('0.6'),
+                'annualized_dps': Decimal('1.0'),
+            }
+
+        table.put_item(Item=item)
 
     return {'ticker': ticker, 'fiscal_dates': fiscal_dates}
 
