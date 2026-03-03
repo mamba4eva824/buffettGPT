@@ -1,9 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { stripeApi } from '../api/stripeApi';
+import { waitlistApi } from '../api/waitlistApi';
 import SubscriptionCard from './SubscriptionCard';
 import UpgradeModal from './UpgradeModal';
 import logger from '../utils/logger';
+
+// Referral tier thresholds (must match backend REFERRAL_TRIAL_TIERS)
+const REFERRAL_TRIAL_TIERS = [
+  { threshold: 5, trialDays: 90 },
+  { threshold: 3, trialDays: 30 },
+];
 
 /**
  * SubscriptionManagement - Full subscription management section
@@ -31,6 +38,9 @@ export default function SubscriptionManagement({
   const setShowUpgradeModal = onShowUpgradeModalChange || setInternalShowUpgradeModal;
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState(null);
+
+  // Referral trial eligibility
+  const [referralTrialDays, setReferralTrialDays] = useState(0);
 
   // Portal loading state
   const [isPortalLoading, setIsPortalLoading] = useState(false);
@@ -66,6 +76,34 @@ export default function SubscriptionManagement({
   useEffect(() => {
     fetchSubscriptionStatus();
   }, [fetchSubscriptionStatus]);
+
+  // Check referral trial eligibility from waitlist
+  useEffect(() => {
+    const checkReferralEligibility = async () => {
+      try {
+        const waitlistEmail = localStorage.getItem('waitlist.email');
+        const waitlistCode = localStorage.getItem('waitlist.referralCode');
+        if (!waitlistEmail || !waitlistCode) return;
+
+        const status = await waitlistApi.getStatus(waitlistEmail, waitlistCode);
+        const referralCount = status?.referral_count || 0;
+
+        // Determine trial days from referral count (highest tier first)
+        for (const tier of REFERRAL_TRIAL_TIERS) {
+          if (referralCount >= tier.threshold) {
+            setReferralTrialDays(tier.trialDays);
+            return;
+          }
+        }
+      } catch {
+        // Silently fail — referral check is non-critical
+      }
+    };
+
+    if (isAuthenticated) {
+      checkReferralEligibility();
+    }
+  }, [isAuthenticated]);
 
   // Check for subscription success/cancel from URL
   useEffect(() => {
@@ -187,6 +225,7 @@ export default function SubscriptionManagement({
         onUpgrade={handleUpgrade}
         isLoading={isCheckoutLoading}
         error={checkoutError}
+        trialDays={referralTrialDays}
       />
 
       {/* Inline error display */}

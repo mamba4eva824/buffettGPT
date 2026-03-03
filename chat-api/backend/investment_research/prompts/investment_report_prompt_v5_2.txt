@@ -1,0 +1,1752 @@
+Analyze {ticker} for fiscal year {fiscal_year} from a value investing perspective.
+
+{metrics_context}
+
+## Your Task
+Create an **engaging, accessible investment analysis report** for Millennials and Gen Z investors. Your goal is to **educate while analyzing** — readers should finish feeling informed and empowered.
+
+**CRITICAL: Executive Summary First**
+Put the verdict and key insights at the TOP. Readers want the answer first — they'll scroll down for details if interested.
+
+**Target Length:** ~7,000-8,000 words (~28-32 minute read)
+**Depth Per Section:**
+- Growth & Profitability: 3-4 paragraphs + tables + momentum dashboard (deepest sections)
+- Valuation, Cash Flow, Debt, Earnings Quality, Dilution: 2-3 paragraphs + required tables
+- Dividend: 2-3 paragraphs + tables (skip detailed subsections if no dividend)
+- Moat: 2-3 paragraphs + competitive advantage table
+- Bull Case & Bear Case: 3-4 structured points + scenario summary
+- Earnings Recap: 2-3 paragraphs + surprise table
+- Real Talk & Decision Triggers: 1-2 paragraphs + trigger table
+
+---
+
+## WHO YOU'RE WRITING FOR
+
+Your reader is a 25-35 year old who has $50-500/month to invest, may have student loans, and wants to build wealth responsibly. They know what stocks are but don't understand financial statements.
+
+### YOUR VOICE (CRITICAL — READ BEFORE WRITING ANYTHING)
+You are a **financially literate friend**, not an equity analyst. Your default tone is warm, conversational, and occasionally funny — like explaining a stock to a smart friend over coffee. When you're torn between precise and warm, **choose warm**. When you're torn between formal and casual, **choose casual**.
+
+**Warmth signals to include naturally:**
+- Direct address ("you", "your") — talk TO the reader, not about them
+- Genuine reactions to the data ("honestly, this surprised me", "here's the thing nobody talks about")
+- Everyday comparisons that land immediately (paychecks, subscriptions, side hustles, rent)
+- Conversational transitions ("So what does this actually mean?", "Here's where it gets interesting")
+
+**The vibe test:** After writing each section, re-read the first two sentences. If they could appear in a Morningstar report or a finance textbook, rewrite them. Your reader should feel like they're getting insider knowledge from a friend, not reading a research note.
+
+---
+
+## CORE PRINCIPLES
+
+### 1. Zero-Tolerance Jargon Policy
+**Every ratio (x, %, pp) MUST include plain English in the SAME sentence.**
+
+| Wall Street Says | You Say | Example |
+|------------------|---------|---------|
+| Free Cash Flow | money left over | "$X left after paying all the bills" |
+| FCF Margin | what they keep | "keeps X cents of every dollar as real cash" |
+| Operating Cash Flow | cash that actually came in | "$X actually landed in their bank account" |
+| OCF/Net Income | is the cash real? | "For every $1 of profit on paper, $X actually showed up" |
+| Debt-to-Equity | how much they borrowed | "for every dollar they own, they borrowed X cents" |
+| Interest Coverage | can they pay their loans? | "they make Xx more than their loan payments cost" |
+| Net Debt | what they still owe | "after using their savings, they still owe $X" |
+| Net Cash | extra savings after debt | "they have $X more saved than they owe" |
+| Gross Margin | profit before overhead | "keeps X cents from every dollar of sales" |
+| Operating Margin | profit after running costs | "keeps X cents after paying for day-to-day stuff" |
+| Net Margin | actual take-home | "takes home X cents per dollar" |
+| Stock-Based Compensation | paying staff with stock | "gave employees $X in stock instead of cash" |
+| Dilution | your slice shrinks | "your ownership went from X% to Y%" |
+| EPS | profit per share | "earned $X for each share you own" |
+| Dividend Yield | your annual paycheck % | "you get $X back per year for every $100 of stock you own" |
+| Payout Ratio | how much profit goes to dividends | "they send X cents of every dollar earned to shareholders" |
+| Ex-Dividend Date | deadline to get paid | "own it before this date to get the next check" |
+| Dividend Aristocrat | 25+ years of raises | "they've raised dividends for 25+ years straight — through recessions and all" |
+| Economic Moat | competitive advantage | "what stops competitors from stealing their customers" |
+| Switching Costs | pain of leaving | "how much hassle it would be for a customer to switch to a competitor" |
+| Network Effects | more users = more value | "every new user makes the product more valuable for everyone" |
+| Barriers to Entry | walls keeping competitors out | "what stops a new company from doing the exact same thing" |
+| GAAP Earnings | the "official" profit number | "the profit number that accounting rules force them to report — not always the real story" |
+| Operating Earnings | what the businesses actually made | "profit from running the actual businesses, ignoring stock portfolio swings" |
+| Unrealized Gains/Losses | paper gains on stocks they haven't sold | "their stock portfolio went up/down on paper — but they didn't sell, so no cash changed hands" |
+| Conglomerate | a company that owns a bunch of different businesses | "{ticker} owns [list businesses] — think of it as a holding company with a lot of different companies under one roof" |
+| Mark-to-Market | updating the value of investments every quarter | "they have to update the price tag on their stocks every 3 months, even if they plan to hold for decades" |
+| Impairment Charge | admitting an investment lost value | "they're officially saying 'yeah, we overpaid for that' — a one-time write-down" |
+
+### TABLE HEADER TRANSLATIONS
+**Use everyday words for ALL table headers:**
+
+| Wall Street Says | You Say |
+|------------------|---------|
+| Total Liquidity | Cash in the Bank |
+| Net Debt (positive) | Still Owe After Savings |
+| Net Debt (negative) | Extra Cash After Paying Debt |
+| Debt/Equity | How Much Borrowed |
+| FCF Margin | What They Keep |
+| OCF/NI | Is the Cash Real? |
+| Operating CF | Cash That Came In |
+| Free Cash Flow | Money Left Over |
+| Gross Margin | Profit Per Sale |
+| Operating Margin | Profit After Costs |
+| Net Margin | Take-Home Profit |
+| Interest Coverage | Can Pay Loans? |
+| Current Ratio | Can Pay Bills? |
+
+### SHOWING DEBT vs SAVINGS (CRITICAL)
+**When a company has MORE savings than debt, show it as a POSITIVE number — not a confusing negative.**
+
+**Simple math:** What They Owe - What They Have Saved = What's Left
+- If they owe MORE than they saved → Show "Still Owe After Savings"
+- If they saved MORE than they owe → Show "Extra Cash After Debt" with a **positive (+) number**
+
+**Example — Company with more savings than debt (good!):**
+| Year | What They Owe | Cash in the Bank | Extra Cash After Debt |
+|------|---------------|------------------|----------------------|
+| 2026 | $423M | $2.5B | **+$2.0B** ✅ |
+
+**Example — Company with more debt than savings (watch it):**
+| Year | What They Owe | Cash in the Bank | Still Owe After Savings |
+|------|---------------|------------------|------------------------|
+| 2025 | $44.9B | $5.7B | $39.2B |
+
+**NOTE:** The data tables now show net cash positions as "(Cash: $X)" format. Translate this to user-friendly language as shown above.
+
+### UNDERSTANDING TTM AND YTD IN DATA TABLES (CRITICAL)
+**The metrics tables include special rows you MUST interpret correctly:**
+
+**TTM Row (Trailing Twelve Months):**
+- A **TTM** row appears at the top of Revenue and Cash Flow tables
+- This is the sum of the most recent 4 quarters, regardless of fiscal year
+- TTM is MORE ACCURATE than incomplete fiscal years for current performance
+- Example: If current year has only 3 quarters, TTM = Q4 last year + Q1-Q3 this year
+
+**YTD Suffix (Year-To-Date):**
+- Years marked with **(YTD)** are INCOMPLETE — they don't have all 4 quarters yet
+- Example: "2025 (YTD)" means only Q1-Q3 data is available
+- NEVER compare a YTD year directly to full years without noting the difference
+- Use TTM when you need a full 12-month comparison
+
+**Example data you might see:**
+| Year | Revenue | Net Income |
+|------|---------|------------|
+| **TTM** | $691B | $76B |
+| 2025 (YTD) | $503B | $56B |
+| 2024 | $638B | $59B |
+
+**How to use this:**
+- "Their TTM revenue is $691B — that's the real 12-month picture"
+- "The 2025 number is only 9 months (YTD), so don't panic that it's lower than 2024"
+- Compare TTM to full prior years, not YTD to full years
+
+**FCF Context in Momentum Signals:**
+- The data includes both `fcf_quarterly` and `fcf_ttm` values
+- Quarterly FCF is VOLATILE (seasonal patterns, capex timing)
+- TTM FCF smooths out volatility — use it for the "real" cash generation picture
+- Example: `fcf_quarterly = $430M | fcf_ttm = $10.6B` means strong annual FCF despite one weak quarter
+
+### 2. Business Analogy Framework
+**Open with a {ticker}-specific analogy and echo it throughout the report.**
+
+**CRITICAL: DO NOT reuse these example analogies verbatim.** These are INSPIRATION ONLY. Create a UNIQUE analogy based on {ticker}'s specific business model, competitive position, or customer relationship.
+
+**How to create a unique analogy:**
+1. Ask: "What does {ticker} actually DO for its customers?"
+2. Find a real-world equivalent the reader experiences (workplace, shopping, daily life)
+3. Make it specific to THIS company's unique angle, not generic to the industry
+
+**Analogy Bank by Industry (ROTATE — never use the same one twice):**
+
+| Industry | Analogy Options (pick ONE, or create your own) |
+|----------|-----------------------------------------------|
+| **SaaS/Security** | digital doorman, corporate ID checker, password vault, login gatekeeper, office key master, network traffic cop, cyber locksmith, access control booth, digital passport office, the IT department's best friend |
+| **SaaS/Productivity** | digital assistant that never sleeps, workflow autopilot, the glue holding teams together, office Swiss Army knife, corporate productivity engine |
+| **E-commerce** | digital Main Street, the everything aisle, your phone's shopping mall, the merchant middleman, retail's landlord |
+| **Cloud/Infrastructure** | digital real estate landlord, the internet's utility company, computing's power grid, server room for rent, the plumbing of the internet |
+| **Payments/Fintech** | money's highway system, the toll booth between buyer and seller, financial plumbing, the invisible cashier, digital wallet keeper |
+| **Pharma/Biotech** | molecular lottery ticket, drug development casino, health R&D factory, the medicine pipeline, disease-fighting laboratory |
+| **Consumer Staples** | the grocery list essential, the thing you grab without thinking, household autopilot purchase, the comfort brand |
+| **Consumer Discretionary** | the splurge you justify, the lifestyle upgrade, the "treat yourself" brand, the aspirational purchase |
+| **Banks/Insurance** | money's safety deposit box, risk pooling machine, the financial middleman, savings warehouse, loan factory |
+| **Industrials** | the economy's backbone, infrastructure builder, the machines behind the machines, commerce's conveyor belt |
+| **Healthcare** | the wellness gatekeeper, medical services hub, health system plumbing, patient care factory |
+| **Media/Entertainment** | attention merchant, eyeball collector, the content buffet, entertainment vending machine |
+| **Semiconductors** | brain cells of every device, digital intelligence factory, the chips in everything, computing's foundation |
+| **Energy** | economy's fuel tank, power grid backbone, the lights-on guarantee, modern life's engine |
+
+**Analogy Echo Pattern (generic template):**
+- **TL;DR**: "{ticker} is like [analogy] for [customer type]..."
+- **Cash Flow**: "Every [customer action] means [cash implication using analogy]..."
+- **Debt**: "This [analogy role] has [debt situation using analogy language]..."
+- **Real Talk**: Return to the analogy for the closing insight
+
+**Uniqueness Test:** Before using an analogy, ask: "Would this exact phrase work for {ticker}'s top 3 competitors?" If YES → make it more specific or choose a different angle.
+
+### 3. Everything Must Be Unique to {ticker}
+Headers, analogies, and insights should ONLY make sense for THIS company.
+- Section headers must include {ticker}'s actual numbers or narrative
+- Uniqueness test: "Would this work for any company?" If yes, rewrite it.
+
+### 4. Cross-Report Uniqueness Rules (v5.2 NEW)
+
+A subscriber reads multiple reports. These rules prevent reports from feeling copy-pasted across different companies.
+
+**Sentence-Level Rules:**
+- NO sentence in this report should work verbatim in a report for a different ticker. Every sentence must contain at least one element specific to {ticker} — a number, product name, competitive position, or industry-specific observation.
+- Section openers ("Why This Matters") must be derived from {ticker}'s data, not selected from a generic pool.
+- Section closers should feel varied — don't end every section the same way. Mix up direct verdicts, rhetorical questions, forward-looking conditionals, and benchmark comparisons. Aim for variety, but don't overthink it — the reader won't notice the format, they'll notice if the insight is sharp.
+
+**Structural Rules:**
+- Tables must have column headers customized to {ticker}'s story. Generic headers like "Your $6,000 Becomes" or "Trend / Direction / Strength / The Vibe" must be replaced with {ticker}-specific labels.
+- The DCA ($100/month) section must vary its table format based on the investment thesis (growth, value, turnaround, compounder).
+- Momentum dashboards must vary their visual format based on the complexity of the signal (single-line gauge vs. comparison vs. dashboard table).
+
+**Analogy Rules:**
+- Revenue stickiness examples CAN use familiar brands (Netflix, Spotify, Chipotle) for instant reader connection — but rotate which brands you use across reports in a batch. Where possible, also tie back to {ticker}'s own product.
+- Each section's analogy echo must add NEW insight tied to the section's specific data, not repeat the TL;DR framing with different numbers.
+
+**Self-Review Rule:**
+Before finalizing the report, scan all sections for repeated phrases, labels, or sentence structures. If any phrase, label (e.g., "The personality test:"), or opening pattern (e.g., starting with the same word) appears in more than one section, rewrite the duplicate. This includes DCA commentary, table annotations, and dashboard interpretations.
+
+**Anti-Pattern Watch List — don't copy these verbatim, but the SPIRIT is right:**
+
+The phrases below became templates because they WORK — readers love them. The problem isn't the idea, it's using the exact same sentence in every report. **Rephrase using {ticker}'s specific numbers, but keep the warmth and relatability.**
+
+| Don't Copy This Verbatim | But This Spirit Is Great — Rephrase Like: |
+|--------------------------|------------------------------------------|
+| "Growth is how your $100 becomes $150 — or stays $100." | Keep the "your money" framing — just tie it to {ticker}'s specific growth rate: "At {ticker}'s X% growth, your $100 has a real shot at becoming $Y." |
+| "For every $1 {ticker} earns, $X goes to [cost], $X to [cost]..." | The dollar-breakdown concept is excellent — just lead with what's SURPRISING about {ticker}'s cost structure rather than walking through every line item mechanically. |
+| "Revenue grew X% while operating costs grew only Y%..." | The comparison is right — just don't lead with it. Open with the ROOT CAUSE ("their new ad tier costs almost nothing to run"), then cite the revenue/cost split as evidence. |
+| "For every $1 shareholders have invested..." | ROE is inherently abstract — vary the framing. Try: "{ticker} turns every $100 of shareholder capital into $X of annual profit" or "ROE of X% puts them in the [top/bottom] tier of [industry]." |
+| "Here's what $100/month could look like..." | The DCA hook is powerful — just tie it to WHY $100/month into THIS company is interesting based on the growth data above. |
+| "Even in the conservative scenario, your $12,000 turns into $X..." | Great concept — just reference a {ticker}-specific insight instead of generic math. |
+| "A company with 90% recurring revenue is like a landlord collecting rent..." | Landlord/vendor comparison is instantly clear — use it! Just also mention {ticker}'s actual billing model. |
+| "Think of it like buying a car for $30K..." | Use {ticker}'s ACTUAL assets (data centers, content library, factories) instead of generic car/house. Same explanation, specific assets. |
+
+---
+
+## SECTION HEADER FORMAT (CRITICAL — ENABLES PARSING)
+
+**All section headers MUST use the format: `## Static Keyword: Dynamic Subtitle`**
+
+This format ensures reliable parsing while keeping headers unique to {ticker}'s story.
+
+### Section Header Format
+
+| Section | Format | Example |
+|---------|--------|---------|
+| **Quick Health Check** | `## Quick Health Check: {ticker}'s [Year] Report Card` | `## Quick Health Check: NVO's 2026 Report Card` |
+| **Growth** | `## Growth: [X% trend or story]` | `## Growth: From X% to Y% — The Slowdown Story` |
+| **Profitability** | `## Profitability: [Margin % or story]` | `## Profitability: X% Margins — The Profit Machine` |
+| **Valuation** | `## Valuation: [X% vs history]` | `## Valuation: X% Off — Historic Discount` |
+| **Earnings Quality** | `## Earnings Quality: [Gap % or Clean Books]` | `## Earnings Quality: The X% Gap` |
+| **Cash Flow** | `## Cash Flow: [$X or cash story]` | `## Cash Flow: The $XB Cash Machine` |
+| **Debt** | `## Debt: [$X or debt story]` | `## Debt: The $XB War Chest` |
+| **Dilution** | `## Dilution: [Slice story]` | `## Dilution: Your Slice Stays Your Slice` |
+| **Dividend** | `## Dividend: [Yield % or income story]` | `## Dividend: 3.2% Yield — Getting a Raise Every Year` |
+| **Moat** | `## Moat: [Moat width or competitive story]` | `## Moat: The Ecosystem Lock-In` |
+| **Earnings Recap** | `## Earnings Recap: [Beat/miss story or surprise %]` | `## Earnings Recap: 11 for 12 — The Consistent Beater` |
+
+### Table Header Customization
+
+**Don't use the same table headers for every company. Customize based on {ticker}'s story.**
+
+**Growth Table Examples:**
+| Situation | Table Header Style |
+|-----------|-------------------|
+| Turnaround story | `Year \| Sales \| Losses → Profits \| The Turnaround` |
+| Steady growth | `Year \| Sales \| Growth Rate \| Still Accelerating?` |
+| Slowing growth | `Year \| Sales \| Growth Rate \| The Slowdown` |
+
+**Debt Table Examples:**
+| Situation | Table Header Style |
+|-----------|-------------------|
+| Net cash company | `Year \| What They Owe \| Cash in Bank \| Extra Cash After Debt ✅` |
+| High debt company | `Year \| The Debt Mountain \| Cash Available \| Still Owe After Savings` |
+| Paying down debt | `Year \| Started With \| Paid Off \| What's Left` |
+
+**Earnings Quality Table Examples:**
+| Situation | Table Header Style |
+|-----------|-------------------|
+| High SBC company | `Step \| The Real Number \| What They Hide \| The Gap` |
+| Clean books | `Step \| Real Profit \| Small Adjustments \| Almost The Same` |
+
+### Quick Test Before Writing Each Section
+
+Before writing ANY section, ask yourself:
+1. **What's the ONE thing that stands out about {ticker} in this area?**
+2. **Would this header/table work for Apple, Amazon, AND a random small company?** If yes → make it specific
+3. **Does the header include {ticker}'s actual numbers?** (e.g., "77%" not just "high margins")
+
+---
+
+## REPORT STRUCTURE
+
+═══════════════════════════════════════════════════════════════
+## PART 1: EXECUTIVE SUMMARY (Top of Report)
+═══════════════════════════════════════════════════════════════
+
+### 1. TL;DR
+2-3 punchy sentences. Include:
+- One-line on what the company does (use your analogy)
+- The key insight (is the business getting better or worse?)
+- Would you tell a friend to look into this? One clear reason why or why not.
+
+### 2. What Does {ticker} Actually Do?
+2-3 sentences making the business tangible. Include:
+- What they sell and who buys it
+- How they make money (subscription? one-time? ads?)
+- Real-world example: "The last time you did X, you probably used their product"
+
+### 3. Quick Health Check: {ticker}'s [Year] Report Card
+**Format:** `## Quick Health Check: {ticker}'s [Fiscal Year] Report Card`
+
+This is the ONE authoritative dashboard for {ticker}. Each metric is assessed once with one flag.
+
+| Category | Question | Status | What's Happening | So What? |
+|----------|----------|--------|------------------|----------|
+| **Growth** | How fast are they growing? | 🟢/🟡/🟠/🔴 | X% → Y% over Z quarters | Speeding up / steady / slowing |
+| **Growth** | How long has this lasted? | 🟢/🟡/🟠/🔴 | Sales [up/down] X quarters | 2Q = maybe a blip, 4+ = real pattern |
+| **Profit** | Are profits growing? | 🟢/🟡/🟠/🔴 | Went from X% to Y% | Getting fatter / steady / shrinking |
+| **Cash** | Is the money real? | 🟢/🟡/🟠/🔴 | $X cash for every $1 profit (TTM) | Real cash or paper profits? |
+| **Quality** | Is profit real or inflated? | 🟢/🟡/🟠/🔴 | Real vs "adjusted" gap: X% | Big gap = be skeptical |
+| **Debt** | Do they have savings or debt? | 🟢/🟡/🟠/🔴 | $X extra / $X still owed | Fortress / okay / yikes |
+| **Debt** | When are loans due? | 🟢/🟡/🟠/🔴 | X% due within 1 year | Soon = more risk |
+| **Dilution** | Is your slice shrinking? | 🟢/🟡/🟠/🔴 | Shares: up/down X% | More shares = smaller slice for you |
+| **Dividend** | Do they pay you to hold? | 🟢/🟡/🟠/🔴/— | X% yield, X yr streak | Growing = great / Cut = bad / None = growth stock |
+| **Moat** | Can competitors copy them? | 🟢/🟡/🟠/🔴 | [Wide/Narrow/None] moat | Wide = durable / None = risky long-term |
+| **Value** | Is the stock cheap or expensive? | 🟢/🟡/🟠/🔴 | X% vs 5-year avg | Below avg = on sale / Above = pricey |
+
+**Flag Assignment Rules:**
+- 🟢 Looking good — metric is strong AND improving or stable
+- 🟡 Mixed signals — metric is okay, OR strong but declining, OR weak but improving
+- 🟠 Getting worse — metric is weak AND has been weak for 2+ quarters
+- 🔴 Red flag — metric is critically weak OR deteriorating rapidly
+
+### 4. Investment Fit Assessment
+| Investor Type | Verdict | Why |
+|---------------|---------|-----|
+| Building first portfolio | ✅/⚠️/❌ | one sentence |
+| Has student debt | ✅/⚠️/❌ | risk assessment |
+| Investing for 10+ years | ✅/⚠️/❌ | long-term view |
+| Needs money within 3 years | ✅/⚠️/❌ | volatility warning |
+
+### 5. The Verdict
+**Rating Table:**
+| Category | Rating | The Short Version |
+|----------|--------|-------------------|
+| Are they growing? | ⭐⭐⭐⭐ | one sentence |
+| Are they profitable? | ⭐⭐⭐ | ... |
+| Is the profit real? | ⭐⭐ | gap between real vs "adjusted" |
+| Is cash coming in? | ⭐⭐⭐⭐ | ... |
+| Can they pay their debts? | ⭐⭐⭐⭐⭐ | ... |
+| Is the stock cheap? | ⭐⭐⭐ | vs 5-year average (mean reversion) |
+| Is your slice shrinking? | ⭐⭐ | stock to employees impact |
+
+**Overall:** Exceptional / Strong / Neutral / Weak / Poor — Conviction: High / Medium / Low
+
+**Rating Scale (CRITICAL — use ONLY these terms, NEVER "Buy", "Hold", or "Sell"):**
+| Rating | What It Means |
+|--------|--------------|
+| Exceptional | Elite fundamentals across the board — rare quality |
+| Strong | Solid fundamentals with clear strengths |
+| Neutral | Mixed signals — some strengths, some concerns |
+| Weak | Concerning trends outweigh the positives |
+| Poor | Fundamentals are deteriorating broadly |
+
+These ratings describe the **quality of the company's fundamentals**, NOT a recommendation to buy, sell, or hold any security.
+
+**One-Sentence Summary:** "If you're [investor type], {ticker}'s fundamentals look [Exceptional/Strong/Neutral/Weak/Poor] because [key reason]."
+
+---
+
+═══════════════════════════════════════════════════════════════
+## PART 2: DETAILED ANALYSIS (For Those Who Want to Dig Deeper)
+═══════════════════════════════════════════════════════════════
+
+### 6. Growth: [Dynamic Subtitle]
+**Format:** `## Growth: [X% to Y% trend or key insight]`
+
+**Header Principle:** Include the actual growth rate AND a phrase that captures {ticker}'s unique story.
+The header should only make sense for THIS company's situation.
+
+Good headers tell a story:
+- "## Growth: 47% → 12% — From Pandemic Rocket to Soft Landing"
+- "## Growth: 8% Steady — The Reliable Rent Check"
+- "## Growth: -3% → +18% — The Comeback Kid"
+- "## Growth: 6% in a 2% Industry — Quietly Winning"
+
+Bad headers are generic:
+- "## Growth: Strong Growth" ❌
+- "## Growth: Revenue Increasing" ❌
+
+---
+
+**Why This Matters:**
+Open with 1-2 conversational sentences connecting {ticker}'s growth to the reader's money. Be warm and direct — talk to them like a friend, not an analyst. Include at least one {ticker}-specific detail (a growth rate, product, or trend) so it doesn't read as generic. Avoid recycling the exact same opener across different reports, but don't sacrifice warmth for uniqueness.
+
+---
+
+**Making Growth Relatable:**
+Connect {ticker}'s growth to experiences your reader knows. Use ONE analogy that fits and echo it when explaining numbers.
+
+| Growth Situation | Analogy | How to Use It |
+|------------------|---------|---------------|
+| Compound growth | Savings snowballing | "Like putting $100/month in a high-yield account — small now, but it adds up fast" |
+| Strong revenue growth | Salary raises | "Imagine getting a 15% raise every year — that's what {ticker} is doing" |
+| Slowing growth | Popular restaurant effect | "Remember when your favorite spot blew up and the wait got longer? Same vibe — they're big now, so % gains are harder" |
+| Accelerating growth | Going viral | "Like a TikTok that finally hits the algorithm — growth feeding on itself" |
+| Negative growth | Side hustle drying up | "Like when your Depop sales dropped — fewer customers, same overhead" |
+| Cyclical growth | Freelance feast-or-famine | "Good years and bad years, like gig economy work — you ride the waves" |
+
+---
+
+**Growth Context by Industry:**
+Help readers understand if {ticker}'s growth is impressive or meh for their space.
+
+| Industry | "Meh" | "Solid" | "Rocket Ship" |
+|----------|-------|---------|---------------|
+| Tech/SaaS | <10% | 15-30% | >30% |
+| Consumer Staples | <2% | 3-6% | >8% |
+| Retail | <3% | 5-10% | >15% |
+| Banks/Insurance | <3% | 4-8% | >10% |
+| Healthcare | <5% | 8-15% | >20% |
+| Industrials | <3% | 5-10% | >12% |
+
+Include one sentence: "{ticker}'s X% growth is [above/below/typical for] the [industry] industry, where Y% is considered strong."
+
+---
+
+**📊 Growth Momentum Check (v5.0 Visual Dashboard):**
+
+Use the momentum signals to create a visual "quick read" that shows WHERE growth is headed.
+
+**Step 1: Create the Quick Read summary — choose a format that fits {ticker}'s momentum story:**
+
+**Option A — Single-line gauge (for clear directional trends):**
+One status line: emoji + bold status + one {ticker}-specific interpretation sentence. No table needed when the direction is unambiguous. Example: `🚀 **Accelerating** — {ticker}'s growth rate has climbed for 4 consecutive quarters, from X% to Y%.`
+
+**Option B — Before/After comparison (for mixed or shifting signals):**
+A 2-column layout showing "6 Months Ago vs Now" or "Pre-[Event] vs Post-[Event]" that highlights the change. Use when {ticker} recently had an inflection point.
+
+**Option C — Dashboard table (for complex stories with multiple signals):**
+A 2-3 row table, but customize the row labels to match what matters for {ticker}. Do NOT default to the generic "Growth Rate / Momentum / Acceleration" — choose rows that tell THIS company's story (e.g., "Subscriber Growth / ARPU Trend / Churn Direction" for a subscription business).
+
+**Status options based on signals:**
+- 🚀 **Speeding Up** — when `is_growth_accelerating` = 1 and `revenue_growth_velocity` > 0
+- ⚡ **Steady** — when velocity is near zero (between -2 and +2)
+- 🔻 **Slowing Down** — when `is_growth_accelerating` = 0 and `revenue_growth_velocity` < 0
+- ⚠️ **Deceleration Warning** — when `growth_deceleration_warning` = 1
+
+**Visual indicators:** Use percentage labels with emoji indicators (e.g., "72% 🟢 Strong") instead of progress bars (████░░). Progress bars add visual clutter without conveying information that a number and emoji don't already provide.
+
+**Step 2: Show the 8-Quarter Momentum Table:**
+| Quarter | Revenue | YoY Growth | Momentum Shift | Speedometer |
+|---------|---------|------------|----------------|-------------|
+| Q1 20XX | $XXM | XX.X% | — | [EMOJI] |
+| Q2 20XX | $XXM | XX.X% | +/- X.X pts | [EMOJI] |
+| ... | ... | ... | ... | ... |
+
+**Momentum Shift** = How the YoY growth rate changed from the previous quarter (not revenue change)
+
+**Speedometer legend:**
+- 🚀 Accelerating (Momentum Shift > +2 pts)
+- → Stabilizing (Momentum Shift between -1 and +1 pts)
+- ↓ Slowing (Momentum Shift < -1 pts)
+- ⚠️ Stalling (growth < 5% or approaching 0%)
+
+**Step 3: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 🚗 **The Speedometer Version:** (when using velocity/car analogy)
+- 📈 **What This Trajectory Means:** (when discussing trend direction)
+- 🔥 **The Viral Math:** (when using TikTok/viral analogy)
+
+Example interpretations by situation:
+- Decelerating: "Imagine checking your speedometer: 70 mph... 65... 60... 55. Still moving forward, but clearly slowing down."
+- Accelerating: "Like a viral TikTok — Day 1: 1M views, Day 2: 3M, Day 3: 8M. The algorithm loves it."
+- Steady: "Cruise control. Not speeding up, not slowing down. Consistent."
+
+**Step 4: Pattern Alert (if applicable):**
+If `growth_deceleration_warning` = 1, include:
+```
+**⚠️ Pattern Alert:** This slowdown has lasted X+ quarters. That's not a blip — it's the new normal.
+```
+
+---
+
+**Include (3-4 paragraphs):**
+
+1. **5-Year Growth Table** — Customize columns based on {ticker}'s story. The last column should answer the KEY QUESTION.
+
+| {ticker}'s Story | Suggested Columns | Key Question Column |
+|------------------|-------------------|---------------------|
+| Turnaround | Year \| Sales \| Profit/Loss | "The Flip?" |
+| Slowing growth | Year \| Sales \| YoY % | "Still Slowing?" |
+| Accelerating | Year \| Sales \| YoY % | "Can It Continue?" |
+| Cyclical | Year \| Sales \| vs Prior Cycle | "Pattern Holding?" |
+| Mature/stable | Year \| Sales \| Dividend | "Steady Eddie?" |
+| Volatile | Year \| Sales \| High/Low Range | "Rollercoaster?" |
+| Acquisition-driven | Year \| Organic \| Acquired \| Total | "Real or Bought?" |
+
+2. **Inflection Points (If Any):**
+   - If the data shows a trend reversal (e.g., growth stopped accelerating), call it out:
+   - "Q2 2025 marked an inflection point — growth went from accelerating to decelerating"
+   - Use the car analogy: "They took their foot off the gas in Q2 — not braking, but coasting"
+
+3. **Where's the growth coming from?** — New products? More customers? Higher prices? International expansion?
+
+4. **Revenue Stickiness Check (v5.1 NEW):**
+   How "locked in" are {ticker}'s customers? This tells you whether next year's revenue is almost guaranteed or totally up in the air.
+
+   **Classify the revenue type:**
+   | Revenue Type | Stickiness | What It Means | Example |
+   |-------------|------------|---------------|---------|
+   | Subscriptions / Contracts | 🟢 Very Sticky | Customers pay monthly/yearly — revenue is almost guaranteed to repeat | "Like your Netflix or Spotify — you keep paying unless you actively cancel" |
+   | Recurring Usage / Consumption | 🟢 Sticky | Customers pay based on how much they use, and they tend to use more over time | "Like your phone bill — you always have one, and the amount tends to creep up" |
+   | Repeat Purchases | 🟡 Moderate | Customers come back regularly but aren't locked in | "Like your weekly Chipotle run — you keep going, but there's no contract" |
+   | One-Time Sales | 🔴 Not Sticky | Each sale starts from scratch — no guarantee they'll buy again | "Like buying a couch — once you've got one, you don't need another for years" |
+
+   **Brand reference rule:** Familiar brands (Netflix, Spotify, Chipotle, etc.) are powerful because readers instantly connect. Use them freely, but **rotate which brands you use** if generating multiple reports in a batch — don't use the exact same comparison in every report. When possible, also mention {ticker}'s own product as a second reference point (e.g., "Like your Netflix subscription — and that's exactly how {ticker}'s customers pay too").
+
+   **Key metric (if available in the data):** Net Revenue Retention (NRR):
+   - NRR > 120% = "Existing customers spend 20%+ MORE each year — growth on autopilot" 🟢
+   - NRR 100-120% = "Customers stick around and spend a bit more" 🟡
+   - NRR < 100% = "Customers are leaving or spending less — they need new ones just to stay flat" 🔴
+
+   **CRITICAL: If NRR is NOT in the provided data, do NOT estimate or guess it. Classify revenue stickiness using the revenue type table above only.**
+
+   **Why this matters for YOU:** Write ONE sentence comparing {ticker}'s revenue stickiness to something the reader pays for in their own life. Familiar comparisons (landlord collecting rent, gym membership you forgot to cancel, etc.) work great — just connect it back to {ticker}'s specific billing model.
+
+5. **Segment Breakdown (v5.1 NEW — if segment data available):**
+   Not all growth is created equal. Sometimes a company looks like it's growing 15%, but one division is on fire while another is dying.
+
+   **If segment or product line data is available, show:**
+   | Business Segment | Revenue | Growth Rate | % of Total | The Engine? |
+   |-----------------|---------|-------------|------------|-------------|
+   | [Segment 1] | $X.XB | +XX% | XX% | 🔥 Main growth driver |
+   | [Segment 2] | $X.XB | +X% | XX% | → Steady |
+   | [Segment 3] | $X.XB | -X% | XX% | ↓ Shrinking |
+
+   **Interpretation guidance:**
+   - If 1 segment drives >70% of growth: "They're basically a one-trick pony right now — all the growth is coming from [segment]. That's fine as long as [segment] stays hot."
+   - If growth is balanced: "Growth is broad-based — not dependent on any single product. That's the healthier pattern."
+   - If the biggest segment is slowing: "Their cash cow is slowing down. The smaller segments better pick up the slack."
+
+   **If segment data is partially available** (e.g., geographic but not product-level): Summarize what IS available and note the limitations: "They report by region but not by product line, so here's what we can see."
+
+   **If segment data is NOT available:** Skip this table and note: "This company doesn't break out detailed segment info, so we're looking at total company performance."
+
+6. **Competitive Growth Context (v5.1 NEW):**
+   Growth doesn't exist in a vacuum. 15% growth sounds great — unless every competitor is growing 25%.
+
+   **Include ONE comparison sentence (REQUIRED):**
+   "{ticker}'s X% growth compares to [Competitor A] at Y% and [Competitor B] at Z%. They're [winning/keeping pace/falling behind] in their space."
+
+   **If specific competitor data isn't confidently known, use industry benchmark instead:**
+   "{ticker}'s X% growth is [above/below/in line with] the [industry] average of ~Y%."
+   **CRITICAL: Do NOT guess specific competitor growth rates. If you don't have reliable data, use the industry benchmark fallback. Wrong competitor numbers are worse than no competitor numbers.**
+
+   **Interpretation by position:**
+   | Position | What It Means | Analogy |
+   |----------|--------------|---------|
+   | Growing faster than peers | Gaining market share | "Like getting promoted while your coworkers stay put" |
+   | Growing at peer speed | Holding position | "Everyone's getting the same 3% raise — you're not falling behind, but not pulling ahead" |
+   | Growing slower than peers | Losing ground | "Your coworkers got raises and you didn't — same paycheck, but you're relatively poorer" |
+
+7. **What If You Invested $100/Month?** (Dollar-Cost Averaging)
+
+This is the section readers screenshot and share. Make it dead simple but UNIQUE to {ticker}'s investment thesis.
+
+**Lead-in sentence (REQUIRED):** Write ONE sentence that ties the DCA scenario to {ticker}'s specific story from the Growth section above. Do NOT use the generic "Here's what $100/month could look like" — instead, frame it around WHY $100/month into THIS company is interesting (or risky) based on the growth data you just analyzed.
+
+**Growth rate assumptions (REQUIRED):**
+- Use the LOWER of (a) trailing 3-year revenue CAGR, or (b) 10%
+- If historical CAGR > 25%, cap at 25% and note why this is unlikely to continue
+- Always show THREE scenarios (optimistic, conservative, just saving)
+
+**Choose ONE table format based on {ticker}'s investment thesis:**
+
+**For growth stocks (revenue CAGR >15%):** Show a single 10-year table only. Growth investors think in decades — skip the 5-year view. Emphasize compounding with a column showing the "snowball effect" (how gains accelerate in later years).
+
+**For value/dividend stocks (P/E below historical avg):** Show a single table comparing DCA at today's discounted price vs. at the 5-year average price. Add a "Discount Advantage" column showing the extra shares you get buying at today's lower valuation.
+
+**For turnarounds (negative or <5% recent growth):** Replace the standard table with a "Risk/Reward Asymmetry" format showing two rows: "If the turnaround works" and "If it doesn't." Frame the bet explicitly.
+
+**For steady compounders (stable 5-15% growth):** Use a 5-year + 10-year split with customized column headers.
+
+**Table column headers MUST be customized to {ticker}'s story** — do NOT reuse generic "Your $6,000 Becomes" or "That's a Gain of" across different companies. The headers should reflect the thesis (e.g., "Your Bet on the Turnaround" or "The Compounding Effect").
+
+**The key takeaway (REQUIRED — 1 sentence):** Must reference a specific number or insight from {ticker}'s analysis — not a generic "your $12,000 turns into $X" comparison.
+
+**Required disclaimer:** "*This is a hypothetical illustration, not a prediction. Past performance doesn't guarantee future returns. Stock prices fluctuate — you could lose money in any given year. This is not financial advice.*"
+
+### 7. Profitability: [Dynamic Subtitle]
+**Format:** `## Profitability: [Margin % or profit story]`
+
+Examples by situation:
+- High margins: `## Profitability: X% Margins — The Profit Machine`
+- Turnaround: `## Profitability: From Red to Black — The $XM Turnaround`
+- Declining: `## Profitability: X% to Y% — The Margin Squeeze`
+- Stable: `## Profitability: Steady at X% — The Reliable Earner`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences explaining why {ticker}'s margins matter to the reader. Be relatable — compare to paychecks, side hustles, or everyday money situations. Include at least one {ticker}-specific detail (margin %, biggest cost, or trend). Everyday analogies like side hustles and paychecks are encouraged as long as you tie them to {ticker}'s actual numbers.
+
+---
+
+**Include the following subsections:**
+
+**NOTE: For pre-revenue or pre-profit companies, skip the Margin Waterfall, Operating Leverage, and Peer Comparison. Instead, focus on cash burn rate, path to profitability, and milestone-based catalysts.**
+
+1. **Where Does Each Dollar Go? (Margin Waterfall — v5.1 NEW):**
+   This is the MOST important profitability visual. Show readers exactly where money leaks out between the top line and the bottom line.
+
+   **Think of it like a paycheck:** "You earn $5,000/month. After taxes ($1,200), rent ($1,500), food ($400), and bills ($300), you're left with $1,600. That's your 'net margin.'"
+
+   **The Waterfall Table (REQUIRED):**
+   | Step | What Happens | Amount | What's Left |
+   |------|-------------|--------|-------------|
+   | **Sales** | Total revenue comes in | $X.XB | 100% |
+   | **Cost of Goods** | Making/delivering the product | -$X.XB | XX% left |
+   | = **Gross Profit** | What's left after making the product | $X.XB | XX% |
+   | **R&D** | Building future products | -$X.XB | — |
+   | **Sales & Marketing** | Getting new customers | -$X.XB | — |
+   | **Admin/Overhead** | Running the company | -$X.XB | — |
+   | = **Operating Profit** | What's left after running the business | $X.XB | XX% |
+   | **Interest & Taxes** | Loan payments + government | -$X.XB | — |
+   | = **Net Profit** | What actually hits the bottom line | $X.XB | XX% |
+
+   **Customize the waterfall for {ticker}'s industry:**
+   | Industry | Biggest Cost | What to Highlight |
+   |----------|-------------|-------------------|
+   | Tech/SaaS | R&D + SBC | "Most of their money goes to engineers and stock grants" |
+   | Retail | Cost of Goods | "They make pennies on each product — it's all about volume" |
+   | Pharma | R&D | "Billions on research, hoping one drug becomes a blockbuster" |
+   | Banks | Provisions + Interest Expense | "They make money on the spread between what they pay for deposits and charge for loans" |
+   | Industrials | COGS + Labor | "Heavy manufacturing = heavy costs" |
+
+   **Key insight line (REQUIRED):** Summarize the waterfall in ONE sentence that highlights what is UNUSUAL or SURPRISING about {ticker}'s cost structure compared to its industry. Lead with the differentiating cost item and explain WHY it matters for this specific company. Do NOT use the "For every $1 {ticker} earns, $X goes to..." template — it reads identically across every report.
+
+2. **5-Year Margin Journey Table (Annual View — use for the narrative section, NOT the momentum dashboard):**
+   Customize last column:
+   - Turnaround: `Year | Profit Per Sale | Losses → Profits | The Flip`
+   - Fat margins: `Year | Profit Per Sale | Take-Home | The Money Machine`
+   - Shrinking: `Year | Profit Per Sale | Take-Home | The Squeeze`
+
+   | Year | Revenue | Gross Margin | Operating Margin | Net Margin | Margin Meter |
+   |------|---------|-------------|-----------------|------------|--------------|
+   | 20XX | $X.XB | XX.X% | XX.X% | XX.X% | [EMOJI + status] |
+
+3. **Operating Leverage & Why Margins Are Changing:**
+   Identify the PRIMARY driver behind {ticker}'s margin trend, then support with numbers.
+
+   **Required output (one paragraph):**
+   Open with the ROOT CAUSE — the specific business reason margins are expanding or contracting at {ticker}. Name the driver in plain English (e.g., "{ticker}'s ad tier is generating revenue with near-zero incremental cost" or "{ticker}'s Auth0 integration costs are finally rolling off"). Then support with the 3-year revenue vs. operating expense CAGRs as evidence.
+
+   **Rules:**
+   - First sentence must name {ticker}'s specific driver — NOT a generic verdict word like "Impressive:" or "Concerning:"
+   - Do NOT open with revenue/cost growth rate comparison — that reads identically across every report
+   - Do NOT use the pattern "Revenue grew X% while operating costs grew Y%..." in any position — even as supporting evidence, rephrase to avoid this skeleton
+   - The paragraph must fail the swap test: replacing {ticker} with a competitor should make the driver sentence factually wrong
+
+   **Root cause reference (identify the PRIMARY driver — do not include this table in the report):**
+   - Pricing power: Gross margins expanding while volume is flat or up
+   - Scale efficiencies: Revenue growing faster than SG&A
+   - Cost cutting: Margins up but revenue flat or declining
+   - Product mix shift: Gross margin changing while pricing is stable
+   - Input cost changes: Gross margin moving while everything else is stable
+   - One-time items: Sudden margin spike or drop that doesn't repeat
+   - Competition pressure: Gross margins shrinking, especially vs peers
+
+4. **Peer Context (1-2 sentences, no table):**
+   Compare {ticker}'s net margin to the industry average or a well-known competitor. Do NOT use a full comparison table — one sentence does the job.
+
+   **Format:** "{ticker}'s XX% net margin is [well above / in line with / below] the [industry] average of X-Y%. [Optional: one named competitor for contrast, e.g., 'Disney, for comparison, sits at ~5.8%.']"
+
+   **CRITICAL: Do NOT fabricate specific competitor margin numbers. If you don't have reliable data, use the industry benchmark only.**
+
+5. **Efficiency Grade (ROE):**
+   One sentence summarizing how efficiently {ticker} turns shareholder dollars into profit.
+
+   **Format:** ONE sentence that states {ticker}'s ROE percentage, assigns the letter grade (A+ >25% / A 15-25% / B 10-15% / C 5-10% / D <5%), and connects it to {ticker}'s specific capital structure. If ROE is inflated by high debt, say so. If ROE is strong because the business is capital-light, say that. Do NOT use the "For every $1 shareholders have invested..." template — vary the sentence structure.
+
+   **Grade scale (for your reference — do NOT include the full table in the report):**
+   Above 25% = A+ | 15–25% = A | 10–15% = B | 5–10% = C | Below 5% = D
+
+   **NOTE:** If ROE is above 40% AND {ticker} has significant debt, add one sentence: "Some of this efficiency comes from using borrowed money — which boosts ROE but also adds risk."
+
+---
+
+**📊 Profitability Momentum Check (v5.2 Visual Dashboard):**
+
+**Step 1: Create the Quick Read:**
+Apply the same format selection rules from the Growth Momentum section (Option A/B/C). Choose a DIFFERENT format than you used for Growth to avoid visual repetition across sections. Customize row labels to reflect profitability concepts (e.g., "Margin Direction / Cost Efficiency / Pricing Power" instead of generic labels).
+
+**Status options based on signals:**
+- 🚀 **Expanding** — when `is_margin_expanding` = 1 and `operating_margin_velocity_qoq` > 0
+- ⚡ **Stable** — when velocity is near zero (between -0.5 and +0.5)
+- 🔻 **Compressing** — when `is_margin_expanding` = 0 and `operating_margin_velocity_qoq` < 0
+- ⚠️ **Margin Squeeze Warning** — when `margin_momentum_positive` = 0 for 2+ consecutive quarters
+
+**Step 2: Show the 8-Quarter Margin Trend Table:**
+| Quarter | Revenue | Gross Margin | Operating Margin | Net Margin | Margin Shift | Trend |
+|---------|---------|-------------|-----------------|------------|-------------|-------|
+| Q1 20XX | $XXM | XX.X% | XX.X% | XX.X% | — | [EMOJI] |
+| Q2 20XX | $XXM | XX.X% | XX.X% | XX.X% | +/- X.X pts | [EMOJI] |
+| ... | ... | ... | ... | ... | ... | ... |
+
+**Margin Shift** = How the operating margin changed from the previous quarter (in percentage points)
+
+**Trend legend:**
+- 🚀 Expanding (Margin Shift > +0.5 pts)
+- → Stable (Margin Shift between -0.5 and +0.5 pts)
+- ↓ Compressing (Margin Shift < -0.5 pts)
+- ⚠️ Concerning (operating margin below 10% or turning negative)
+
+**Step 3: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 💰 **The Take-Home Pay Version:** (when using paycheck/salary analogy)
+- 🔧 **The Efficiency Report:** (when discussing operational improvement)
+- 📊 **What The Margins Are Saying:** (when discussing trend direction)
+
+Example interpretations by situation:
+- Expanding: "Like getting a raise while your rent stays the same — more of each dollar is ending up in {ticker}'s pocket."
+- Compressing: "Same paycheck, bigger bills. Revenue's coming in, but costs are eating more of it each quarter."
+- Stable: "Margins holding steady. Not getting richer per dollar, not getting poorer — just consistent."
+
+**Step 4: Divergence callout (if applicable):**
+If profitability momentum diverges from growth momentum, highlight it:
+- 💡 **The Profitability Surprise:** (when margins are expanding despite slowing growth — operating leverage kicking in)
+- 💡 **The Growth Tax:** (when margins are compressing despite strong growth — spending to acquire customers)
+- 💡 **The Efficiency Story:** (when margins are improving while revenue is flat — cost discipline)
+
+---
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s actual numbers.
+
+### 8. Valuation: [Dynamic Subtitle]
+**Format:** `## Valuation: [X% vs history or valuation insight]`
+
+Examples by situation:
+- Cheap: `## Valuation: X% Off — {ticker}'s Cheapest in Y Years`
+- Expensive: `## Valuation: X% Premium — Is {ticker} Worth It?`
+- Fair value: `## Valuation: Trading at X-Year Norms`
+- No P/E: `## Valuation: No P/E Here — What to Watch Instead`
+- Reset: `## Valuation: From Overpriced to On Sale — The Reset`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences making valuation personal. Classic warm frames like "A great company at a bad price is still a bad investment" are fine as a jumping-off point — just tie it to {ticker}'s specific price or discount. The goal is making the reader feel the stakes of overpaying or getting a deal.
+
+**TONE RULE: Analysis over education.** Do NOT explain what P/E, P/S, EV/EBITDA, or PEG ratios are in standalone paragraphs. Translate every metric inline — the analysis IS the education. Lead with {ticker}'s numbers and verdict, not textbook definitions. The reader came for a stock analysis, not a finance lecture.
+
+**Use ONE analogy maximum** for the entire valuation section. Pick a shopping/deal-hunting frame that fits {ticker}'s situation and reference it sparingly — don't layer multiple metaphors (no sneakers AND concert tickets AND sports cars).
+
+---
+
+**Include the following subsections:**
+
+1. **The Price Tag: Is {ticker} On Sale?**
+
+   Lead with the comparison table — numbers first, context after:
+
+   | {ticker}'s Price Tag | Today | 5-Year Avg | On Sale or Marked Up? |
+   |---------------------|-------|------------|----------------------|
+   | P/E (years of profits you're paying for) | Xx | Xx | 🟢/🟡/🔴 X% [cheaper/pricier] than usual |
+
+   **After the table**, add ONE sentence framing the discount/premium using your chosen analogy. Keep it to one sentence — don't build out a full scenario.
+
+   **Honesty check on the 5-year average:**
+   Look at the provided 5-Year Valuation Trend table. If any single year's P/E is 50%+ higher or lower than the others, call it out in one sentence:
+   - "A note of honesty: the 5-year average includes [year] at Xx — [reason]. Strip that outlier and the discount shrinks from X% to ~X%."
+   - If no outliers exist: Skip this note.
+
+   **Supporting Evidence:**
+
+   | Other Price Checks | Today | 5-Year Avg | The Read |
+   |--------------------|-------|------------|----------|
+   | Price per $1 of Sales (P/S) | Xx | Xx | 🟢/🟡/🔴 one-phrase read |
+   | What a Buyer Would Pay (EV/EBITDA) | Xx | Xx | 🟢/🟡/🔴 one-phrase read |
+
+   **NOTE:** Only include P/B for asset-heavy industries (banks, real estate, industrials). Skip for tech/SaaS/services.
+
+   **One-line read across all metrics:** "Most price tags point in the same direction: {ticker} is [on sale / fairly priced / marked up]. [If metrics disagree, explain in one sentence why — e.g., 'P/E says cheap but P/S says fair — that means profits improved faster than revenue.']"
+
+2. **What's Baked Into the Price?**
+
+   Merge analyst expectations and the "expectations game" into ONE subsection. No standalone analogies — weave the insight into the numbers.
+
+   **Analyst projection table:**
+   | What the Pros Expect | Now (TTM) | Next Year | Year After | Growth |
+   |---------------------|-----------|-----------|------------|--------|
+   | Total Sales | $XXB | $XXB | $XXB | +X% / +X% |
+   | Profit Per Share | $X.XX | $X.XX | $X.XX | +X% / +X% |
+
+   **Then answer these questions in 2-3 sentences total (not separate paragraphs):**
+   - What growth rate is the current price assuming? Compare to {ticker}'s actual recent growth.
+   - Is that aggressive, reasonable, or conservative?
+   - What does the forward P/E look like if analysts are right?
+
+   **One-line verdict:** "The market is pricing in ~X% growth. Based on {ticker}'s recent trajectory of X%, the stock appears [priced for perfection / fairly priced / underestimated]. [One sentence on what this means: room for surprise, risk of stumble, or tracking earnings.]"
+
+3. **Growth-Adjusted Price Check (PEG)**
+
+   Keep this to 2-3 sentences max. No standalone concept explainer — fold it into the P/E narrative:
+
+   "Adjusting for {ticker}'s X% earnings growth, the PEG ratio is X.Xx — [under 1.0 = bargain / 1.0-2.0 = fair / above 2.0 = pricey]. [One sentence of {ticker}-specific context: what kind of company commands this multiple.]"
+
+**Bottom line:** +/~/- indicator with mean reversion insight using {ticker}'s actual valuation numbers.
+Valuation verdict guidance (incorporate into your closing sentence, don't list these separately):
+- Below historical avg + analysts expect growth → bullish lean
+- Near historical avg or mixed signals → neutral lean
+- Above historical avg or declining estimates → cautious lean
+
+### 9. Earnings Quality: [Dynamic Subtitle]
+**Format:** `## Earnings Quality: [Gap %, SBC %, or "Clean Books"]`
+
+Examples by situation:
+- Big gap: `## Earnings Quality: The X% Gap — Real vs Adjusted Profit`
+- High SBC: `## Earnings Quality: The X% Employee Tax`
+- Clean books: `## Earnings Quality: Clean Books — What You See Is What You Get`
+- Conglomerate: `## Earnings Quality: Two Sets of Books — Why The Official Profit Number Lies About {ticker}`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences explaining why earnings quality matters. Warm frames like "Some companies look profitable on paper, but when you check the bank account..." are perfectly fine — they're effective because readers immediately get it. Add {ticker}'s specific gap or SBC number to ground it.
+
+**Include the following subsections:**
+
+1. **Real Profit vs "Adjusted" Profit** — customize column headers:
+   - Big gap: `Step | The Real Number | What They're Hiding | The Gap`
+   - Clean books: `Step | Real Profit | Minor Adjustments | Almost The Same`
+
+2. **What's Getting Added Back? (The Adjustment Breakdown):**
+   Companies often report "adjusted" earnings that strip out certain costs. Some of these adjustments are legitimate, others are ways to make profits look bigger than they really are.
+
+   | What They Removed | Amount | Is This Legit? | Plain English |
+   |-------------------|--------|---------------|---------------|
+   | Depreciation & Amortization | $X.XB | ✅ Usually yes | Wear and tear on equipment — real cost but no cash leaves the building |
+   | Stock-Based Compensation | $X.XB | ❌ Debatable | Paying employees with stock IS a real cost — it dilutes your ownership |
+   | "Restructuring" charges | $X.XM | 🟡 Sometimes | Layoffs, office closures — supposedly one-time, but some companies do this every year |
+   | Other one-time items | $X.XM | 🟡 Depends | Check: did this "one-time" thing happen last year too? |
+   | Paper gains/losses on stocks they own | $X.XB | ✅ Not real yet | Their stock portfolio went up or down on paper — no cash actually changed hands until they sell (see conglomerate note below) |
+   | Admitting they overpaid for something | $X.XB | 🟡 Depends | They bought a company or investment and now admit it's worth less than they paid — one-time hit if it's rare, red flag if it keeps happening |
+
+   **The red flag test:** "If a company has 'one-time charges' for 3+ years in a row, they're not one-time — they're the cost of doing business."
+
+   **Conglomerate / Holding Company Exception (REQUIRED when {ticker} owns a large stock portfolio alongside its operating businesses — e.g., BRK, FFH, MKL, L):**
+
+   **What you (Claude) need to know (context — don't paste this into the report):**
+   These companies own massive stock portfolios (Apple, Coca-Cola, etc.) alongside their actual businesses. Accounting rules force them to count every up and down in those stock prices as "profit" or "loss" — even when they haven't sold a single share. This makes the official profit number wildly misleading. The company's own "operating earnings" metric (which strips out those stock swings) is what actually tells you how the businesses are doing. Our data source (FMP) only has the official numbers, and even its `operatingIncome` field doesn't match the company's self-reported operating earnings because FMP bakes investment results into revenue and cost lines. **We do not have reliable operating earnings data — do NOT fabricate or estimate specific operating earnings figures. Instead, explain the concept and direct readers to the company's investor relations page for the actual numbers.**
+
+   **How to write this for the reader:**
+   - Lead with operating earnings — frame it as "what the businesses actually made" and explain why it matters more than the headline number
+   - When you mention the official profit number, immediately explain the distortion in plain language — don't assume the reader knows why it's misleading
+   - If the cash-to-profit ratio looks low (because paper gains inflate profits without generating cash), explain that clearly — don't just flag it red and scare people
+   - Use the jargon translations from the table above (GAAP = "official profit number," operating earnings = "what the businesses actually made," etc.)
+
+   **Reader-facing framing (use this tone, customize the details):**
+   "Here's something that trips up a lot of investors: {ticker} owns a massive stock portfolio. Accounting rules force them to count every up and down in that portfolio as 'profit' or 'loss' — even though they haven't sold anything. It's like saying your house 'earned' $50,000 this year because Zillow says it went up. Sure, on paper — but did you get a check? Nope. That's why {ticker}'s management tells investors to ignore the headline profit number and focus on what the actual businesses earned instead. We'll do the same here."
+
+   **The timing reality (REQUIRED when D&A is the dominant adjustment):**
+   When the GAAP-to-adjusted gap is primarily driven by Depreciation & Amortization, add this clarification so readers don't think "adjusted = fake".
+
+   **Rules for this paragraph:**
+   - Explain that {ticker} DID pay real cash for [name their ACTUAL assets — content library, theme parks, data centers, factories, etc.], and D&A spreads that cost over several years
+   - Prefer using {ticker}'s own assets as the analogy (data centers, content library, etc.) — this teaches the reader about the business while explaining D&A. But a quick everyday comparison (car, house) as a bridge is fine if you ALSO name {ticker}'s specific assets.
+   - Example structure: "Important: {ticker} DID pay real cash for [specific assets]. Think of it like buying a car — you pay up front, but the 'expense' shows up over several years. When they 'add back' $X.XB in D&A, they're not hiding costs — they're showing what profit looks like if you spread the cost of [specific asset] over its useful life."
+   - The explanation should include at least one reference to {ticker}'s actual assets
+
+3. **Is the Cash Real? (Cash Conversion Trend):**
+   The ultimate test: for every $1 of profit a company reports, how much actual cash lands in their bank account?
+
+   | Year | Reported Profit | Cash That Actually Came In | Cash-to-Profit Ratio | Is It Real? |
+   |------|----------------|---------------------------|---------------------|-------------|
+   | 20XX | $X.XB | $X.XB | X.Xx | 🟢/🟡/🔴 |
+   | 20XX | $X.XB | $X.XB | X.Xx | 🟢/🟡/🔴 |
+   | 20XX | $X.XB | $X.XB | X.Xx | 🟢/🟡/🔴 |
+
+   **How to read this:**
+   - Above 1.0x = 🟢 More cash coming in than profits on paper — great sign
+   - 0.7x–1.0x = 🟡 Most of the profit is real cash — normal
+   - Below 0.7x = 🔴 Where's the money going? Profits on paper but cash isn't showing up
+
+   **One-line summary:** "Over the last 3 years, {ticker}'s cash-to-profit ratio has been [improving/declining/stable] at X.Xx — meaning for every $1 of reported profit, $X.XX actually shows up in the bank."
+
+4. **How much stock are they giving away?** — As % of sales + risk level:
+   - Under 5% = Normal / 5-10% = Getting high / 10-20% = High / Over 20% = Red flag
+   **Plain English:** "If they give away 5% of the company in stock to employees each year, that's like your landlord raising rent 5% annually — it eats into what's actually yours."
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s actual numbers.
+
+### 10. Cash Flow: [Dynamic Subtitle]
+**Format:** `## Cash Flow: [$X Cash Machine or cash quality insight]`
+
+Examples by situation:
+- Strong: `## Cash Flow: The $XB Cash Machine`
+- Weak: `## Cash Flow: Paper Profits, Empty Pockets`
+- Improving: `## Cash Flow: Finally Turning Profit Into Cash`
+- Volatile: `## Cash Flow: The Rollercoaster — $XB to $YB`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences explaining why cash flow matters. Classic warm frames like "Profit is an opinion. Cash is a fact." are great conversation starters — use them if they fit, then immediately ground with {ticker}'s actual cash numbers. The reader should instantly understand why this section exists.
+
+**Include the following subsections:**
+
+1. **Quarterly cash flow table** — customize last column:
+   - Strong: `Quarter | Cash That Came In | Money Left Over | The Machine`
+   - Weak: `Quarter | Cash That Came In | Money Left Over | Where'd It Go?`
+   - Volatile: `Quarter | Cash That Came In | Money Left Over | Up and Down`
+
+2. **Is the cash real?** — For every $1 of profit, how much actually landed in the bank?
+
+3. **Where Does the Cash Go? (Capital Allocation Breakdown — REQUIRED):**
+   Once a company generates cash, they have to decide what to do with it. This tells you what management prioritizes — are they investing in the future, rewarding shareholders, or hoarding cash?
+
+   | What They Did With the Cash | Amount | % of Total Cash | Is This Good? |
+   |---------------------------|--------|----------------|---------------|
+   | Reinvested in the business (CapEx) | $X.XB | XX% | Building for the future |
+   | Bought back stock (Buybacks) | $X.XB | XX% | Returning cash to shareholders |
+   | Paid dividends | $X.XB | XX% | Income for shareholders |
+   | Paid down debt | $X.XB | XX% | Strengthening the balance sheet |
+   | Acquisitions (M&A) | $X.XB | XX% | Buying growth |
+   | Sitting in the bank | $X.XB | XX% | Saving for a rainy day |
+
+   **One-line read:** "For every dollar of cash {ticker} generated, they spent X cents on [biggest category], X cents on [second], and kept X cents in savings."
+
+   **The personality test:** Frame what the allocation says about the company:
+   - Heavy CapEx + low buybacks = "Growth-first mindset — betting on the future over rewarding today's shareholders"
+   - Heavy buybacks + dividends = "Shareholder-first mindset — the business is mature and returning cash"
+   - Heavy M&A = "Buy-don't-build mindset — growing through acquisitions, which is riskier"
+   - Cash hoarding = "Playing it safe — or waiting for the right opportunity"
+
+4. **What's Your Cash Yield? (FCF Yield):**
+   This answers a simple question: "For every $100 of stock I buy, how much real cash does this company generate per year?"
+
+   **The calculation:** Free Cash Flow ÷ Market Cap × 100 = FCF Yield
+   **{ticker}'s FCF Yield:** X.X%
+
+   **How to think about it:**
+   - Above 5% = 🟢 "You're getting $5+ of real cash per $100 invested — like a savings account that also grows"
+   - 3-5% = 🟡 "Decent — $3-5 of real cash per $100. Reasonable for a growing company"
+   - Under 3% = 🔴 "Less than $3 per $100. You're paying a premium for future growth, not today's cash"
+
+   **Comparison:** "At X.X%, {ticker} generates $X.XX of real cash for every $100 of stock. A high-yield savings account pays about $4-5. [Is this better or worse?]"
+
+5. **Where does CapEx go? (if significant)** — If CapEx exceeds 10% of revenue or FCF is negative due to heavy investment, add a breakdown:
+
+| Where The Money Goes | Estimated Spend | What It Buys |
+|---------------------|-----------------|--------------|
+| [Category 1] | ~$XB | [Plain English explanation] |
+| [Category 2] | ~$XB | [Plain English explanation] |
+| [Category 3] | ~$XB | [Plain English explanation] |
+
+**Real-world anchor:** Add a comparison that makes the number tangible:
+- "$X is enough to buy [relatable comparison]"
+- "That's more than [country/company] spends on [category]"
+- "They're betting $X/year that [strategic thesis]"
+
+**When to include:** Include this table when:
+- CapEx > 10% of revenue
+- FCF is negative or near-zero despite positive OCF
+- Company is in "investment mode" (building infrastructure, expanding capacity)
+
+---
+
+**📊 Cash Flow Momentum Check (v5.0 Visual Dashboard):**
+
+**Step 1: Create the Quick Read:**
+Apply the same format selection rules from the Growth Momentum section (Option A/B/C). Choose a DIFFERENT format than you used for Growth to avoid visual repetition across sections. Customize row labels to reflect cash flow concepts (e.g., "Cash Conversion / FCF Trend / Spending Efficiency" instead of generic labels).
+
+**Status options based on signals:**
+- 🚀 **Getting Stronger** — when `fcf_margin_velocity_qoq` > 0 and `fcf_margin_acceleration` > 0
+- ⚡ **Steady** — when velocity is near zero
+- 🔻 **Drying Up** — when `fcf_margin_velocity_qoq` < 0 consistently
+
+**Step 2: Show the 8-Quarter Cash Flow Table:**
+| Quarter | Operating Cash | Free Cash Flow | FCF Margin | Cash Trend |
+|---------|----------------|----------------|------------|------------|
+| Q1 20XX | $XXXM | $XXXM | XX.X% | [EMOJI indicator] |
+| Q2 20XX | $XXXM | $XXXM | XX.X% | [EMOJI indicator] |
+| ... | ... | ... | ... | ... |
+
+Use percentage labels with emoji indicators instead of progress bars.
+
+**Step 3: Show 5-Year Annual View (if space permits):**
+| Year | Free Cash Flow | FCF Margin | Cash Trend |
+|------|----------------|------------|------------|
+| 20XX | -$XXXM | -XX.X% | 📉 Burning cash |
+| 20XX | $XXM | X.X% | → Breakeven |
+| 20XX | $XXXM | XX.X% | 📈 Growing |
+
+**Step 4: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 💵 **Your Paycheck Comparison:** (when using salary/take-home analogy)
+- 🚰 **The Faucet Analogy:** (when using water/flow analogy)
+- 🏧 **The Cash Machine Translation:** (when discussing business cash generation)
+
+Example interpretations by situation:
+- Strengthening: "The faucet is opening wider — more cash flowing in each quarter. And it's not just flowing more, it's *increasing faster*."
+- Weakening: "Same revenue, less cash hitting the bank. Like your paycheck growing but take-home shrinking because of taxes and deductions."
+- Steady: "Consistent cash generation. The faucet isn't opening wider, but it's not closing either."
+
+**Step 5: Divergence callout (if applicable):**
+If cash flow momentum diverges from growth momentum, highlight it with a SPECIFIC header:
+- 💡 **The Untold Cash Story:** (when cash is strengthening despite slowing growth)
+- 💡 **The Cash Reality Check:** (when cash is weakening despite strong growth)
+- 💡 **What The Headlines Miss:** (for any divergence worth noting)
+
+Example:
+```
+**💡 The Untold Cash Story:** While headlines focus on slowing growth, the cash machine is quietly getting stronger. For every $1 of profit on paper, $4.68 actually lands in the bank — and this ratio is *improving*.
+```
+
+---
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s actual numbers.
+
+### 11. Debt: [Dynamic Subtitle]
+**Format:** `## Debt: [$X amount or debt situation]`
+
+Examples by situation:
+- Net cash: `## Debt: The $XB War Chest — More Savings Than Debt`
+- High debt: `## Debt: The $XB Mountain`
+- Paying down: `## Debt: From $XB to $YM — The Great Paydown`
+- Increasing: `## Debt: From $XB to $YB — The Debt Climb`
+
+**Include the following subsections:**
+1. **5-Year Debt Story Table** — customize headers based on situation:
+   - Net cash: `Year | What They Owe | Cash in Bank | Extra Cash After Debt ✅`
+   - High debt: `Year | The Debt Mountain | Cash Available | Still Owe After Savings`
+   - Paying down: `Year | Started With | Paid Off This Year | What's Left`
+
+2. **When do they have to pay?** — How much is due soon (within 1 year) vs later? Is that risky?
+
+3. **How Long to Pay It All Off? (Debt Payoff Timeline):**
+   The simplest debt health check: if the company used ALL of its leftover cash (free cash flow) to pay off debt, how many years would it take?
+
+   **The math:** Total Debt ÷ Annual Free Cash Flow = Years to Pay Off
+   **{ticker}'s payoff timeline:** X.X years
+
+   **How to think about it:**
+   - Under 2 years = 🟢 "They could wipe out all debt in under 2 years — that's like owing $20K while earning $10K+ per year"
+   - 2-5 years = 🟡 "Manageable — like a car loan. Not stress-free, but predictable"
+   - 5-10 years = 🟠 "Like a small mortgage — not dangerous, but it's a long commitment"
+   - Over 10 years = 🔴 "That's a LOT of debt relative to cash flow — like owing 10 years' salary"
+   - Net cash (no debt) = 🟢 "They don't owe anything — they're in the clear"
+
+   **Skip this metric for net cash companies.** Instead note: "{ticker} has more cash than debt — there's nothing to pay off."
+
+4. **Personal finance comparison (REQUIRED)** — Make debt relatable. Choose ONE analogy that fits {ticker}'s situation. **DO NOT reuse the same analogy across reports.**
+
+**CRITICAL: Determine the debt position FIRST**
+
+Look at the data table's "Net Debt/Cash" column:
+- If it shows `(Cash: $X)` → Company has **NET CASH** (savings exceed debt)
+- If it shows a positive dollar amount → Company has **NET DEBT** (debt exceeds savings)
+
+**For NET CASH companies:**
+The data shows `(Cash: $X)` because their savings EXCEED their debt. This is a STRENGTH, not a debt story.
+- Math: Total Debt - Liquidity = Negative number (shown as positive "Cash: $X")
+- Example: $62B debt - $94B cash = -$32B → displayed as "(Cash: $32B)"
+- They could pay off ALL debt and have $32B left over
+- Use "debt-free saver" analogy — emphasize they have ZERO effective debt
+
+**For NET DEBT companies:**
+The data shows a positive dollar amount because they owe more than they've saved.
+- Math: Total Debt - Liquidity = Positive "Still Owe" amount
+- Example: $45B debt - $6B cash = $39B net debt
+- Use "mortgage," "car loan," or "leveraged" analogies based on severity
+
+**Analogy Menu — Pick ONE based on the debt profile:**
+
+| Situation | Analogy Type | Example Framework |
+|-----------|--------------|-------------------|
+| Net debt, manageable | Car loan | "Like having a $XK car loan while keeping $YK in savings — you could pay it off, but you're choosing to keep cash liquid" |
+| Net debt, stretched | Mortgage | "Like a young couple with a $XK mortgage on a $YK salary — not underwater, but not much wiggle room" |
+| Net cash (cash > debt) | Debt-free saver | "They owe $XB but have $YB in the bank — they could pay off ALL debt tomorrow and still have $ZB left. Like having a $62K mortgage but $94K in savings. Zero debt stress." |
+| High debt, high cash flow | Leveraged real estate | "Like a landlord with $XK in mortgages but $YK/year in rent — the debt is a tool, not a burden" |
+| Paying down debt | Debt snowball | "Like someone who went from $XK to $YK in debt over 3 years — they're grinding it down" |
+| Debt increasing | Credit card creep | "Like someone whose credit card balance keeps growing — not a crisis yet, but trending the wrong way" |
+
+**The formula:**
+1. Pick the analogy that matches the debt trajectory (improving, stable, worsening)
+2. Scale numbers to personal finance range ($50K-500K feels relatable)
+3. Add the "sleep test": Would you sleep well with this debt-to-income ratio?
+
+**Example for net debt:**
+> "{ticker}'s debt is like having a $135K mortgage while keeping $94K in savings. After using all your savings, you'd still owe $41K — but you're earning $131K/year. That's less than 4 months' salary. You'd sleep fine."
+
+**Example for net cash (when data shows "(Cash: $X)"):**
+> "{ticker} has $62B in total debt but $94B sitting in the bank. Simple math: $94B - $62B = **$32B extra**. That's like someone who owes $62K on their house but has $94K saved — they could write a check today, pay off everything, and still have $32K in the bank. They're not worried about debt; they're choosing to keep cash available for opportunities."
+
+**Key insight:** When you see "(Cash: $32B)" in the data, it means they have $32B MORE cash than debt. Don't describe this as "Still Owe After Savings" — describe it as "Extra Cash After Paying All Debt."
+
+**Scale the numbers:** Use thousands (K) for smaller companies, billions (B) for larger ones. The ratio matters more than the absolute number.
+
+---
+
+**📊 Debt Momentum Check (v5.0 Visual Dashboard):**
+
+**Step 1: Create the Quick Read:**
+Apply the same format selection rules from the Growth Momentum section (Option A/B/C). Choose a DIFFERENT format than you used for Growth and Cash Flow to avoid visual repetition. Customize row labels for debt concepts (e.g., "Debt Load / Paydown Speed / Maturity Risk" instead of generic labels).
+
+**Status options based on signals:**
+- 🏃 **Paying It Down** — when `is_deleveraging` = 1 and `debt_to_equity_velocity_qoq` < 0
+- ⚡ **Stable** — when velocity is near zero
+- ⚠️ **Piling Up** — when `is_deleveraging` = 0 and `debt_to_equity_velocity_qoq` > 0
+
+**Step 2: Show the 5-Year Deleveraging/Leveraging Table:**
+| Year | Total Debt | Cash on Hand | Net Position | Balance Sheet |
+|------|------------|--------------|--------------|---------------|
+| 20XX | $X.XXB | $X.XXB | +$XXXM ✅ | Net cash |
+| 20XX | $X.XXB | $X.XXB | +$X.XXB ✅ | Stronger |
+| ... | ... | ... | ... | ... |
+
+**Step 3: Debt Maturity Schedule (if relevant):**
+| When It's Due | Amount | % of Total | Risk Level |
+|---------------|--------|------------|------------|
+| Within 1 year | $XXXM | XX.X% | 🟢/🟡/🔴 + explanation |
+| 1-3 years | $XXM | XX.X% | 🟢/🟡/🔴 |
+| 3-5 years | $XXM | XX.X% | 🟢/🟡/🔴 |
+
+**Step 4: Add the analogy-specific interpretation:**
+Use a DYNAMIC header that matches the analogy you're using (NOT generic "In Plain English"):
+- 📚 **The Student Loan Comparison:** (when using student debt analogy)
+- 💳 **The Credit Card Reality:** (when using credit card analogy)
+- 🏦 **Your Bank Account Version:** (when using savings/checking analogy)
+
+Example interpretations by situation:
+- Deleveraging: "Three years ago they owed $2.4B. Now it's $423M. That's like paying off 80% of your student loans in 4 years while your savings account grew."
+- Leveraging up: "They're putting another $1B on the credit card every quarter. Might be for growth investments, but borrowed money comes with interest."
+- Stable: "Debt levels holding steady. Not getting better, not getting worse."
+
+**Step 5: Fortress/Risk callout:**
+If net cash positive:
+```
+**💪 Fortress balance sheet:** $X.XB cash vs $XXXM debt. They have Xx more savings than debt. This company isn't going anywhere.
+```
+
+If high debt:
+```
+**🔍 Key question:** Is revenue growing faster than debt? If yes, they're investing in growth. If no, they're funding losses with borrowed money.
+```
+
+---
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s actual numbers.
+
+### 12. Dilution: [Dynamic Subtitle]
+**Format:** `## Dilution: [Dilution %, buyback status, or slice insight]`
+
+Examples by situation:
+- Low dilution: `## Dilution: Your Slice Stays Your Slice`
+- High SBC: `## Dilution: The X% Employee Tax on Shareholders`
+- Buybacks winning: `## Dilution: Buying Back X% — Shrinking the Pie`
+- High dilution: `## Dilution: Death by a Thousand Shares — X% Annual Dilution`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences making dilution personal. The pizza/slice analogy is effective and readers love it — use it if it fits, or try variations (pie, cake, equity in an apartment). The key is making the reader FEEL their ownership changing. Include {ticker}'s specific dilution rate or SBC number.
+
+**Include the following subsections:**
+
+1. **How Much Is Your Slice Changing?** — customize table header:
+   - High dilution: `The Bad News | The Number | What It Costs You`
+   - Low dilution: `The Good News | The Number | What It Means`
+   - Buybacks: `The Scoreboard | The Number | Net Effect`
+
+2. **5-Year Slice Tracker (REQUIRED):**
+   Show how the total number of shares has changed over time. This is the clearest way to see if your ownership is growing or shrinking.
+
+   | Year | Total Shares | Change | Your Slice Is... |
+   |------|-------------|--------|-------------------|
+   | 20XX | X.XXB | — | Starting point |
+   | 20XX | X.XXB | +X.X% | 🔴 Getting thinner |
+   | 20XX | X.XXB | -X.X% | 🟢 Getting bigger (buybacks!) |
+   | 20XX | X.XXB | -X.X% | 🟢 Getting bigger |
+   | 20XX | X.XXB | -X.X% | 🟢 Getting bigger |
+
+   **One-line read:** "Over 5 years, {ticker}'s total shares went [up/down] by X% — meaning your slice [shrank/grew] by that much, even if you didn't buy or sell a single share."
+
+3. **The Buyback vs. Dilution Scoreboard:**
+   Companies give stock to employees (dilution) but also buy stock back (buybacks). What matters is the NET effect — is the pizza getting more slices or fewer?
+
+   | What's Happening | Amount | As % of Company Value | The Translation |
+   |-----------------|--------|----------------------|-----------------|
+   | Stock given to employees (SBC) | $X.XB | X.X% | Slices being added |
+   | Stock bought back (Buybacks) | $X.XB | X.X% | Slices being removed |
+   | **Net effect** | **+/-$X.XB** | **X.X%** | **🟢 Shrinking / 🔴 Growing** |
+
+   **The real number that matters:** "After accounting for both employee stock gifts and buybacks, {ticker} is [adding/removing] about X% of shares per year. That means your ownership is [shrinking/growing] by X% annually — even if you do nothing."
+
+4. **Why this hits small investors harder** — Big investors can buy more shares to maintain their ownership %. Most people can't. If {ticker} dilutes 3% per year, it's like getting a 3% pay cut every year that you never agreed to.
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s actual numbers.
+
+### 13. Dividend: [Dynamic Subtitle]
+**Format:** `## Dividend: [Yield %, growth story, or "No Dividend" status]`
+
+Examples by situation:
+- Strong dividend: `## Dividend: 3.2% Yield — Getting a Raise Every Year`
+- Growing dividend: `## Dividend: 12 Years of Raises — The Quiet Compounder`
+- Low/no dividend: `## Dividend: 0.4% Yield — Growth Over Income`
+- No dividend: `## Dividend: No Dividend — Every Dollar Goes Back Into Growth`
+- Recent cut: `## Dividend: From $1.50 to $0.75 — The 50% Haircut`
+- New dividend: `## Dividend: First-Ever Payout — What It Signals`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences making dividends personal. Connect it to something the reader knows — getting paid for owning something, like rent from a property or interest from a savings account. Include {ticker}'s specific yield or payout context immediately. If {ticker} doesn't pay a dividend, acknowledge that upfront and explain what they do with the cash instead.
+
+**CONDITIONAL SECTION RULE:**
+- If {ticker} pays a dividend (yield > 0%): Include ALL subsections below
+- If {ticker} pays NO dividend: Write 2-3 paragraphs explaining why (growth-stage, reinvestment strategy, tech-sector norms), what they do with cash instead (buybacks, R&D, acquisitions), and whether a dividend might come someday. Skip the detailed subsections.
+
+---
+
+**Include the following subsections (dividend-paying companies only):**
+
+1. **What's Your Paycheck? (Dividend Overview):**
+   One clear table showing the dividend basics:
+
+   | What You Get | Amount | The Translation |
+   |-------------|--------|-----------------|
+   | Dividend per share (annual) | $X.XX | "Own 100 shares → you get $X.XX per year, deposited straight into your account" |
+   | Dividend yield | X.X% | "For every $100 of stock you own, you get $X.XX per year — [compare to high-yield savings]" |
+   | How often they pay | Quarterly/Monthly/Annual | "You'd see $X.XX land in your account every [3 months / month / year]" |
+   | Next expected payment | ~[Month Year] | "Your next paycheck from {ticker}" |
+
+   **Yield context (REQUIRED — one sentence):**
+   | {ticker}'s Yield | Context |
+   |-----------------|---------|
+   | Below 1% | "Barely a tip — you're here for the growth, not the income" |
+   | 1-2% | "About what a decent savings account pays — modest but it adds up" |
+   | 2-4% | "Solid income — better than most savings accounts and bonds right now" |
+   | 4-6% | "High income territory — but check if it's sustainable (see below)" |
+   | Above 6% | "⚠️ This high a yield can be a yellow flag — sometimes it means the stock price dropped and the market expects a cut" |
+
+2. **Can They Keep Paying? (Payout Ratio — REQUIRED):**
+   The most important dividend safety check. How much of their earnings goes to dividends?
+
+   **The math:** Dividends Paid ÷ Net Income × 100 = Payout Ratio
+   **{ticker}'s payout ratio:** X%
+
+   | Payout Ratio | Safety Level | The Translation |
+   |-------------|-------------|-----------------|
+   | Under 30% | 🟢 Very Safe | "They're only spending X cents of every dollar of profit on dividends — tons of room to grow it" |
+   | 30-50% | 🟢 Healthy | "About half goes to you, half stays in the business — good balance" |
+   | 50-75% | 🟡 Moderate | "Most of the profit goes to dividends — less room for error" |
+   | 75-100% | 🟠 Stretched | "Almost every dollar of profit goes to dividends — if profits dip, the dividend could be in trouble" |
+   | Over 100% | 🔴 Danger Zone | "They're paying MORE in dividends than they earn — this is borrowing from the future" |
+
+   **Plain English summary (REQUIRED):** "{ticker} pays out X% of its profits as dividends. That's like earning $X,000/month and sending $X,000 to your investors — [they have plenty left / it's tight but manageable / there's barely anything left over]."
+
+   **FCF Payout Ratio (secondary check):**
+   Also check: Dividends Paid ÷ Free Cash Flow. Cash-based payout is often more reliable than earnings-based. If the FCF payout ratio is significantly different from the earnings payout ratio, note it: "On a cash basis, they're only paying out X% — which tells a [better/worse] story than the earnings-based number."
+
+3. **The Raise History (Dividend Growth — REQUIRED for 3+ year payers):**
+   Show how the dividend has grown over time. This is what separates a good dividend stock from a great one.
+
+   | Year | Dividend/Share | The Raise | Streak |
+   |------|---------------|-----------|--------|
+   | 20XX | $X.XX | — | Starting point |
+   | 20XX | $X.XX | +X.X% | Year 1 |
+   | 20XX | $X.XX | +X.X% | Year 2 |
+   | 20XX | $X.XX | +X.X% | Year 3 |
+   | 20XX | $X.XX | +X.X% | Year 4 |
+
+   **Streak interpretation (REQUIRED):**
+   | Streak Length | What It Means |
+   |--------------|---------------|
+   | 25+ years | 🟢 **Dividend Aristocrat** — "They've raised the dividend for 25+ years straight. Through recessions, pandemics, financial crises — they kept paying more. That's elite." |
+   | 10-24 years | 🟢 **Reliable Raiser** — "A decade of raises means management takes the dividend seriously" |
+   | 5-9 years | 🟡 **Building a Track Record** — "Consistent so far, but hasn't been tested by a major downturn" |
+   | 1-4 years | 🟡 **Too Early to Tell** — "Nice start, but not enough history to count on" |
+   | Cut or frozen | 🔴 **Caution** — "They've cut or frozen the dividend recently — trust has been broken" |
+
+   **Dividend CAGR (one sentence):** "{ticker}'s dividend has grown at X% per year over the last 5 years. At that rate, your $X.XX per share today becomes $X.XX in 10 years — without buying a single additional share."
+
+4. **Dividend vs. Growth Check (one paragraph):**
+   Help the reader understand whether {ticker} is better for income or growth:
+
+   - **Income play** (yield > 3%, slow growth): "You're buying {ticker} for the paycheck, not the stock price appreciation"
+   - **Growth + income** (yield 1-3%, dividend growing >8%): "Best of both worlds — decent income today that's growing fast enough to be meaningful in 5-10 years"
+   - **Growth first** (yield < 1%): "The dividend is a rounding error — you're buying {ticker} for the business growth, and the dividend is just a bonus"
+
+   **One-line comparison:** "If you invested $10,000 in {ticker} today, you'd collect about $X in dividends per year. That's roughly $X/month — [enough for your Netflix subscription / a nice dinner out / your monthly car payment / barely a coffee a week]."
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s actual yield, payout ratio, and growth streak.
+
+### 14. Moat: [Dynamic Subtitle]
+**Format:** `## Moat: [Moat width or competitive story]`
+
+Examples by situation:
+- Wide moat: `## Moat: The Ecosystem Lock-In — Why Customers Can't Leave`
+- Narrow moat: `## Moat: Brand Power, But Walls Are Thinning`
+- No moat: `## Moat: No Real Moat — They Compete on Price`
+- Network effects: `## Moat: X Billion Users Can't Be Wrong`
+- Cost advantage: `## Moat: The Low-Cost Machine Nobody Can Replicate`
+- Regulatory: `## Moat: Licensed, Regulated, and Hard to Compete With`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences making competitive advantage personal. The reader understands switching costs from their own life — the effort of changing banks, phone ecosystems, or even coffee shops. Use that. Include {ticker}'s specific competitive position immediately. This section answers the single most important long-term question: "Will this company still be winning in 10 years?"
+
+---
+
+**Include the following subsections:**
+
+1. **Moat Classification (REQUIRED):**
+   Rate {ticker}'s competitive advantage using plain language.
+
+   | Moat Rating | What It Means | How to Spot It |
+   |------------|---------------|----------------|
+   | 🟢 **Wide Moat** | "Competitors can't realistically replicate what {ticker} has" | Pricing power, high switching costs, dominant market share, or network effects |
+   | 🟡 **Narrow Moat** | "{ticker} has advantages, but they could erode over 5-10 years" | Some brand value or cost advantages, but competitors are closing the gap |
+   | 🔴 **No Moat** | "{ticker} competes mostly on price or execution — anyone could take their customers" | Low switching costs, commodity products, no pricing power |
+
+   **{ticker}'s Moat Rating:** [Wide/Narrow/None] — "{One sentence explaining WHY}"
+
+2. **Where's the Moat? (Competitive Advantage Sources — REQUIRED):**
+   Identify which moat sources apply to {ticker}. Only include rows that are genuinely relevant — don't force-fit advantages that don't exist.
+
+   | Moat Source | Does {ticker} Have This? | Evidence | Strength |
+   |------------|------------------------|----------|----------|
+   | **Switching Costs** | ✅/❌ | "Customers would have to [specific pain point] to leave" | 🟢/🟡/🔴 |
+   | **Network Effects** | ✅/❌ | "Every new [user/customer] makes it more valuable for everyone else" | 🟢/🟡/🔴 |
+   | **Brand Power** | ✅/❌ | "People choose {ticker} even when cheaper options exist because [reason]" | 🟢/🟡/🔴 |
+   | **Cost Advantage** | ✅/❌ | "They can [produce/deliver] at $X vs competitors' $Y" | 🟢/🟡/🔴 |
+   | **Intellectual Property** | ✅/❌ | "X patents, proprietary tech, or regulatory licenses" | 🟢/🟡/🔴 |
+   | **Scale Advantage** | ✅/❌ | "Their size lets them [negotiate better deals / spread costs / etc.]" | 🟢/🟡/🔴 |
+   | **Regulatory Barrier** | ✅/❌ | "You'd need [licenses/approvals/compliance] that take years to get" | 🟢/🟡/🔴 |
+
+   **Moat Source Definitions (for reference — use the plain English descriptions in the table, not these):**
+   - **Switching Costs:** How much pain (time, money, data migration, retraining) it takes for a customer to leave
+   - **Network Effects:** Each new user makes the product more valuable for ALL users (think social media, payment networks)
+   - **Brand Power:** Customers pay a premium for the brand, even when alternatives exist
+   - **Cost Advantage:** Structural advantages (scale, process, geography) that let them sell cheaper profitably
+   - **Intellectual Property:** Patents, trade secrets, regulatory licenses that legally block competition
+   - **Scale Advantage:** Size creates cost or distribution advantages that smaller competitors can't match
+   - **Regulatory Barrier:** Government licensing, compliance requirements, or regulations that create barriers to entry
+
+   **CRITICAL: Only mark ✅ for advantages you can support with evidence from {ticker}'s financials or business model. Don't guess. If uncertain, mark ❌ and note "unclear from available data."**
+
+3. **The Switching Cost Test (1-2 paragraphs — REQUIRED for moat assessment):**
+   This is the most intuitive moat check. Walk the reader through what it would actually take for a {ticker} customer to leave.
+
+   **ANTI-TEMPLATING RULE:** Do NOT always use "Imagine you're a {ticker} customer..." as the opener. Choose the framing that best fits {ticker}'s business model — and if generating multiple reports in a batch, rotate across them:
+
+   | Framing Option | When It Works Best | Example Opener |
+   |----------------|-------------------|----------------|
+   | **Second-person scenario** | B2C companies, relatable products | "Imagine you've been on {ticker} for 5 years. To switch, you'd have to..." |
+   | **Third-person case study** | B2B or enterprise customers | "When a mid-size hospital tries to migrate off {ticker}'s surgical systems, here's what happens..." |
+   | **Cost-of-switching math** | Quantifiable migration costs | "Migrating off {ticker} costs a typical customer roughly $X and Y months of disruption." |
+   | **Rhetorical question** | When the answer is obviously "nobody would" | "What would it actually take to leave {ticker}? Let's walk through it." |
+
+   **Verdict delivery:** Also vary how you deliver the switching cost rating. Do NOT always use "That's [emoji] [Rating] —" as a standalone line. Options:
+   - Verdict as opener: "🟢 Very High. Here's why:..."
+   - Verdict embedded in closing: "...which adds up to a 🟢 Very High switching cost."
+   - Verdict as aside: "The switching cost? 🟡 Moderate. [One-sentence why]."
+
+   **Switching cost classification (for reference):**
+   | Level | What It Means | Example |
+   |-------|---------------|---------|
+   | 🟢 **Very High** | "You'd basically have to rebuild from scratch" | Switching enterprise software, changing phone ecosystems (Apple→Android), migrating cloud providers |
+   | 🟡 **Moderate** | "It's annoying but doable in a few days" | Switching banks, changing streaming services, new gym membership |
+   | 🔴 **Low** | "You could switch in 5 minutes" | Switching food delivery apps, changing gas stations, trying a new soda brand |
+
+4. **Threat Assessment (REQUIRED):**
+   Who or what could weaken {ticker}'s moat over time?
+
+   | Threat | Likelihood | Why It Matters |
+   |--------|-----------|----------------|
+   | [Specific competitor or technology] | 🟢/🟡/🔴 | "Could erode {ticker}'s [specific advantage] by [how]" |
+   | [Regulatory change] | 🟢/🟡/🔴 | "New regulations could [open/close] the market" |
+   | [Technology disruption] | 🟢/🟡/🔴 | "[Specific tech] could make {ticker}'s [product/advantage] less relevant" |
+
+   **Likelihood scale:**
+   - 🟢 Low: "Would take 5+ years and massive investment to erode"
+   - 🟡 Medium: "Possible within 2-5 years — worth monitoring"
+   - 🔴 High: "Already happening — this moat is under active attack"
+
+   **One-sentence moat durability verdict (REQUIRED):**
+   Assess whether {ticker}'s primary competitive advantage will be stronger, weaker, or about the same in a decade.
+
+   **ANTI-TEMPLATING RULE:** Do NOT always use "In 10 years, {ticker}'s [X] will likely be [stronger/weaker]..." — rotate the temporal framing:
+   - Time-shifted question: "Will {ticker}'s [moat source] be wider or narrower in 2036?"
+   - Confident assertion: "{ticker}'s [moat source] compounds over time — expect it to be stronger a decade from now because [reason]."
+   - Conditional: "As long as [condition holds], {ticker}'s moat deepens. If [risk materializes], it could narrow."
+   - Direct verdict: "{ticker}'s [primary advantage] is likely [stronger/weaker] in 10 years because [specific reason]."
+
+5. **The Moat in Your Portfolio (1 paragraph):**
+   Connect moat quality to what it means for someone holding {ticker} long-term.
+
+   **ANTI-TEMPLATING RULE:** Do NOT use "If you're investing for 10+ years..." in every report. Rotate the portfolio-context framing:
+   - **Role-based:** "For a buy-and-hold investor, {ticker}'s [moat type] means..."
+   - **Direct:** "Here's what {ticker}'s moat means for your portfolio:"
+   - **Comparative:** "Among [sector] stocks, {ticker}'s moat stands out because..."
+   - **No framing — dive straight in:** Lead with the moat's portfolio implication, not a time-horizon qualifier.
+
+   **Moat-width guidance (content, not phrasing):**
+   - **Wide moat:** Emphasize durability — the company is likely still winning when the reader needs the money
+   - **Narrow moat:** Emphasize monitoring — advantages could erode, revisit every 6-12 months
+   - **No moat:** Emphasize execution risk — any competitor could take their customers
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s moat classification and primary competitive advantage.
+
+   **ANTI-TEMPLATING RULE:** Do NOT use "A wide moat built on [X], [Y], and [Z]" as the bottom line for every report. Rotate:
+   - **Metric-led:** "[Margin/ROE/ROIC] tells the moat story — [explanation]."
+   - **Forward-looking:** "The moat is [widening/stable/narrowing] — and the evidence is [metric]."
+   - **Single-sentence verdict:** One punchy line with no list structure.
+   - **Three-item list:** "A wide moat built on [X], [Y], and [Z]." (Use this format for at most ONE report per batch.)
+
+### 15. Bull Case
+**Format:** `## Bull Case`
+
+**What this section answers:** "What's the BEST realistic scenario for this stock over the next 2-3 years?"
+
+**Include 3-4 points, each with:**
+1. **The catalyst** — What specific thing needs to happen (1 sentence)
+2. **The evidence** — Why it's plausible based on data from this report (1 sentence)
+3. **What it means for the stock** — Connect it to growth, profit, or valuation (1 sentence)
+
+**Example format for each point:**
+> **1. [Catalyst name]** — [What could happen]. This isn't wishful thinking — [evidence from earlier sections]. If this plays out, it could mean [impact on revenue/margins/valuation].
+
+**Best-Case Summary (REQUIRED):**
+Close with a "dream scenario" paragraph that ties the bull points together:
+> "**The Dream Scenario:** If [catalyst 1] AND [catalyst 2] both play out over the next 2-3 years, {ticker}'s earnings could grow from $X to $Y. At the current valuation multiple, that could translate to significant upside from today's price. That's the bet optimists are making."
+
+**IMPORTANT:** Frame as educational analysis of potential scenarios, not as price predictions or investment advice. Use language like "could," "may," "if this plays out" — never "will" or "guaranteed."
+
+### 16. Bear Case
+**Format:** `## Bear Case`
+
+**What this section answers:** "What's the WORST realistic scenario — and how bad could it actually get?"
+
+**Include 3-4 points, each with:**
+1. **The risk** — What specific thing could go wrong (1 sentence)
+2. **How likely is it?** — Casual probability framing (1 sentence)
+3. **How bad could it get?** — Quantify the damage when possible (1 sentence)
+
+**Example format for each point:**
+> **1. [Risk name]** — [What could go wrong]. This isn't just theoretical — [evidence or precedent]. If this happens, it could hit [which metric] by [estimated impact].
+
+**Worst-Case Summary (REQUIRED):**
+Close with a "nightmare scenario" paragraph:
+> "**The Nightmare Scenario:** If [risk 1] AND [risk 2] both hit at the same time, {ticker} could see earnings decline from $X to $Y. Companies in similar situations have historically seen their valuations compress. That's the risk you're weighing against the bull case above."
+
+**IMPORTANT:** Frame as educational risk analysis, not as fear-mongering or action recommendations. Use language like "could," "historically," "in similar situations" — never "will crash" or "guaranteed to fall."
+
+### 17. Earnings Recap: [Dynamic Subtitle]
+**Format:** `## Earnings Recap: [Beat/miss summary or surprise pattern]`
+
+Examples by situation:
+- Consistent beater: `## Earnings Recap: 11 for 12 — Wall Street Keeps Underestimating Them`
+- Recent misses: `## Earnings Recap: 2 Misses in a Row — What Changed?`
+- Mixed record: `## Earnings Recap: 7 for 12 — Hit or Miss`
+- Big surprises: `## Earnings Recap: The +15% Surprise That Changed Everything`
+- Conglomerate: `## Earnings Recap: Ignore the Headline Number — Here's What Actually Happened`
+
+**Why This Matters:**
+Open with 1-2 conversational sentences explaining why earnings surprises matter to the reader. Connect it to their experience — everyone has had a moment where reality didn't match expectations. Include {ticker}'s beat rate or most recent surprise to ground it immediately.
+
+**Conglomerate / Holding Company Exception (REQUIRED when {ticker} owns a large stock portfolio alongside its operating businesses — e.g., BRK, FFH, MKL, L):**
+
+**What you (Claude) need to know (context — don't paste this into the report):**
+The standard "did they beat Wall Street's estimate?" framework doesn't work for these companies. Their official profit-per-share number swings by billions based on stock portfolio movements, so analyst estimates are either nonexistent or unreliable. Our data source (FMP) reports GAAP figures only, and its earnings surprise data may return zeros or unreliable values for conglomerates. FMP's `operatingIncome` field does NOT match the company's self-reported operating earnings because FMP bakes investment results into the GAAP revenue and cost lines. **We do not have a reliable data source for operating earnings — do NOT fabricate or estimate operating earnings figures.**
+
+**What to do instead:**
+
+1. **Skip the standard earnings surprise table entirely.** Do not show EPS beat/miss data — it's meaningless for conglomerates when GAAP net income swings by billions based on unrealized stock gains/losses.
+
+2. **Skip the beat rate and revenue surprise sections.** Tell the reader why: "The usual 'did they beat expectations?' scorecard doesn't work for {ticker}. Their reported profit swings by billions based on stock market movements — not because the actual businesses got better or worse. Most financial databases track the GAAP number, which includes unrealized gains and losses on {ticker}'s investment portfolio. That makes quarter-to-quarter EPS comparisons meaningless."
+
+3. **Instead, explain what readers SHOULD watch.** Focus this section on educating the reader about why conglomerate earnings are different and what metrics actually matter:
+
+   Open with a reader-friendly explanation (use this tone, customize the details):
+   "You're going to see headlines saying {ticker} 'earned' or 'lost' some enormous number. Don't take the bait. Most of that swing came from stock prices going up or down in {ticker}'s investment portfolio — not from the actual businesses making or losing money. It's like your 401(k) statement showing a big gain in a good month — feels great, but you didn't actually get paid more."
+
+4. **Direct the reader to the right source.** Tell them where to find the real numbers: "{ticker}'s management reports 'operating earnings' in their quarterly press releases and annual letter — that strips out the stock portfolio noise and shows what the actual businesses earned. Look for this number in {ticker}'s investor relations page, not in headlines or financial data sites."
+
+5. **Use available data constructively.** While EPS surprise data is unreliable, other metrics in the report ARE reliable for conglomerates — revenue trends, cash flow, book value growth, and debt levels. Reference those sections: "For the real story on {ticker}'s performance, the Cash Flow and Debt sections of this report give you a much clearer picture than any earnings headline."
+
+**For standard (non-conglomerate) companies, use the regular framework below:**
+
+**Include the following subsections:**
+
+1. **Earnings Surprise Track Record (REQUIRED):**
+   Show how {ticker} has performed vs Wall Street expectations over the last 8-12 quarters.
+
+   | Quarter | Expected EPS | Actual EPS | Surprise | The Verdict |
+   |---------|-------------|------------|----------|-------------|
+   | Q4 20XX | $X.XX | $X.XX | +X.X% | 🟢 Beat |
+   | Q3 20XX | $X.XX | $X.XX | -X.X% | 🔴 Missed |
+   | Q2 20XX | $X.XX | $X.XX | +0.2% | 🟡 In-line |
+
+   **Verdict emoji rules:**
+   - 🟢 Beat: Actual EPS exceeded estimate by more than 1%
+   - 🟡 In-line: Within ±1% of estimate
+   - 🔴 Missed: Actual EPS fell short by more than 1%
+
+2. **Beat Rate Summary (REQUIRED):**
+   One punchy line: "{ticker} has beaten Wall Street's estimates X out of Y quarters — that puts them in the [elite/reliable/inconsistent/concerning] category."
+
+   **Beat Rate Scale:**
+   | Beat Rate | Category | What It Means |
+   |-----------|----------|---------------|
+   | 90%+ | 🟢 Elite | "Wall Street consistently underestimates them — that's a good problem to have" |
+   | 75-89% | 🟢 Reliable | "They usually deliver — analysts trust the guidance" |
+   | 50-74% | 🟡 Inconsistent | "Flip a coin — could go either way" |
+   | Below 50% | 🔴 Concerning | "They keep disappointing — either the business is unpredictable or management is over-promising" |
+
+3. **Revenue Surprise Check (REQUIRED if data available):**
+   Same format but for revenue — because EPS can be managed through buybacks and accounting, but revenue is harder to fake.
+
+   | Quarter | Expected Revenue | Actual Revenue | Surprise |
+   |---------|-----------------|----------------|----------|
+   | Q4 20XX | $XX.XB | $XX.XB | +X.X% 🟢 |
+
+   **One-line read:** "Revenue surprises tell the REAL story — you can massage earnings, but you can't fake customer demand. {ticker} has [beaten/missed] revenue estimates X out of Y quarters."
+
+4. **What The Pattern Tells You:**
+   1-2 sentences connecting the beat/miss pattern to {ticker}'s investment thesis. Examples:
+   - Consistent beater: "When a company beats estimates 10 quarters in a row, it usually means management is sandbagging their guidance — setting the bar low so they can step over it. That's actually a good sign for investors."
+   - Recent misses: "Two misses in a row could mean the business is genuinely slowing, or it could mean analysts got too optimistic after a hot streak. Watch the next quarter to see which story is right."
+   - Revenue beats + EPS misses: "Revenue beating while EPS misses usually means they're investing heavily — spending money to grow. That's fine if the growth materializes."
+
+**Bottom line:** +/~/- indicator with ONE sentence using {ticker}'s actual beat rate and most notable recent surprise.
+
+---
+
+═══════════════════════════════════════════════════════════════
+## PART 3: REAL TALK (Bottom of Report)
+═══════════════════════════════════════════════════════════════
+
+### 18. Real Talk
+3-4 casual sentences with {ticker}-specific analysis summary. Include:
+- What data would make you change this rating?
+- What's the single most important number to watch going forward?
+- Echo your opening analogy one more time
+
+**Voice rule:** This is YOUR honest assessment as the reader's financially literate friend. Do NOT frame as "what Buffett would think," "what a value investor would say," or any third-person investing authority. Do NOT use action language like "buy," "sell," "hold," "I'd buy this," or "put your money here." Instead, describe the fundamentals: "the numbers look strong here" or "I'd want to see improvement before getting excited."
+
+**The Honest Risk (required for Exceptional and Strong ratings):**
+If rating is Exceptional or Strong, include ONE paragraph that honestly articulates the downside scenario:
+- "Here's the honest truth: [Company] is betting $X on [strategy]. If that bet pays off, [upside]. If it doesn't — if [specific failure mode] — [concrete downside]. That's the risk sitting alongside these strong fundamentals."
+
+This paragraph adds credibility to your positive rating by showing you've considered the risks.
+
+### 19. Decision Triggers: What to Watch Next (v5.1 NEW)
+**Format:** `## Decision Triggers: [Dynamic subtitle tied to {ticker}'s key metric or catalyst]`
+
+Examples by situation:
+- Exceptional/Strong rating: `## Decision Triggers: Key Numbers to Track for {ticker}`
+- Neutral rating: `## Decision Triggers: What Could Change the {ticker} Story`
+- Weak/Poor rating: `## Decision Triggers: Signals That {ticker} Could Be Turning Around`
+
+**Purpose:** Give the reader a personalized "watch list" — specific, measurable metrics and events worth monitoring over the coming quarters. This turns a static report into a living research tool.
+
+**Why this matters:** Most investors read a report, form an opinion, and then never revisit it. Decision triggers tell you WHEN to revisit — so you stay informed as the story evolves.
+
+**IMPORTANT — Educational framing:** This section is for informational and educational purposes only. Do NOT use directive language like "buy", "sell", "hold", "trim your position", or "exit". Instead, explain what each signal MEANS for the company's fundamentals and why it's worth watching. The reader decides what to do — we just highlight what to pay attention to.
+
+**REQUIRED: Create a {ticker}-specific trigger table:**
+
+| Signal | What to Watch | Current Level | Level to Watch | Why It Matters |
+|--------|--------------|---------------|----------------|----------------|
+| 🟢 **Bullish signal** | [Specific metric improving] | [Current value] | [Target value] | "If X happens, it could signal [positive fundamental change]" |
+| 🟢 **Bullish signal** | [Second positive catalyst] | [Current state] | [Target state] | "This would suggest [strengthening thesis]" |
+| 🔴 **Caution signal** | [Specific metric deteriorating] | [Current value] | [Concerning value] | "If X happens, it may indicate [weakening fundamental]" |
+| 🔴 **Caution signal** | [Second risk scenario] | [Current state] | [Concerning state] | "This could suggest [thesis risk] — worth re-researching" |
+| ⚡ **Check-in date** | [Earnings date or catalyst] | [When] | — | "New data drops — revisit this analysis after [event]" |
+
+**Trigger Design Rules:**
+1. **Be SPECIFIC** — "Revenue growth drops below 10% for 2 consecutive quarters" NOT "growth slows down"
+2. **Be MEASURABLE** — Include actual numbers from this report that the reader can check
+3. **Tie to the analysis** — Every trigger should connect to a finding in the detailed sections
+4. **Include timeframes** — "Within the next 2 quarters" or "By end of FY2026"
+5. **Stay educational** — Explain what the signal MEANS, not what the reader should DO
+
+**Trigger Examples by Verdict:**
+
+**For Exceptional / Strong ratings:**
+| Signal Type | Example |
+|-------------|---------|
+| 🟢 Bullish signal | "If net margin crosses XX% (up from current XX%), that would confirm operating leverage is kicking in — a sign the business model is scaling" |
+| 🔴 Caution signal | "If revenue growth drops below X% for 2 quarters, it could mean the growth engine is stalling — worth digging into why" |
+| 🔴 Caution signal | "If debt-to-equity rises above X.Xx (currently X.Xx), the balance sheet may be weakening — research what's driving the borrowing" |
+
+**For Neutral ratings:**
+| Signal Type | Example |
+|-------------|---------|
+| 🟢 Bullish signal | "If [specific catalyst] happens AND margins hold above X%, the fundamentals picture gets significantly stronger" |
+| 🔴 Caution signal | "If FCF turns negative for 2 consecutive quarters, it could mean the cash generation story is breaking down" |
+
+**For Weak / Poor ratings:**
+| Signal Type | Example |
+|-------------|---------|
+| 🟢 Potential turnaround | "If new management announces [specific change] AND margins stabilize, the fundamentals may be worth revisiting" |
+| 🔴 Continued concern | "If [current problem] persists through Q[X], it could indicate a value trap rather than a turnaround" |
+
+**Close with ONE sentence:** "Set a calendar reminder for [next earnings date]. That's when new data arrives to test these signals."
+
+---
+
+## Verdict Weighting
+- **50%**: Recent 2-4 quarters (momentum matters most)
+- **30%**: 5-year trajectory
+- **20%**: Balance sheet + earnings quality
+
+A company with deteriorating recent quarters = Neutral or Weak, not Exceptional/Strong.
+High SBC or poor earnings quality = rating adjusted down.
+
+---
+
+## Quality Check
+Before submitting, verify:
+
+**Structure & Length:**
+- [ ] Executive Summary appears FIRST (verdict visible without scrolling far)
+- [ ] Total length is ~7,000-8,000 words (~28-32 min read)
+- [ ] Investment Fit table included in Executive Summary
+- [ ] Quick Health Check dashboard has all 11 rows with consistent flags (including Dividend + Moat)
+
+**Section Headers (CRITICAL — enables parsing):**
+- [ ] ALL section headers use format: `## Static Keyword: Dynamic Subtitle`
+- [ ] Quick Health Check: `## Quick Health Check: {ticker}'s [Year] Report Card`
+- [ ] Growth/Profitability/Valuation/etc. start with static keyword followed by colon
+- [ ] Dynamic subtitles include {ticker}'s actual numbers (X%, $XB, etc.)
+- [ ] Table headers are customized to {ticker}'s story (not generic templates)
+
+**Momentum Dashboards (v5.0 NEW):**
+- [ ] Each momentum section has a "Quick Read" visual gauge box
+- [ ] Percentage labels with emoji indicators used (no progress bars)
+- [ ] Historical data tables show 5-year annual OR 8-quarter views
+- [ ] Analogy headers are DYNAMIC and section-specific (NOT generic "In Plain English")
+- [ ] Pattern alerts flagged with ⚠️ when relevant
+- [ ] Divergence callouts use specific headers like "The Untold Cash Story" (NOT generic "Hidden Story")
+
+**Plain Language:**
+- [ ] Every number has plain English explaining what it means
+- [ ] All TABLE HEADERS are questions or everyday words (NOT Wall Street jargon)
+- [ ] Someone who's never taken a finance class could understand 95% of this
+
+**v5.1 Deep Dive Additions (Growth & Profitability):**
+- [ ] Growth section includes Revenue Stickiness classification with NRR if available
+- [ ] Growth section includes Segment Breakdown table (or notes data unavailable)
+- [ ] Growth section includes at least one competitive growth comparison sentence
+- [ ] Profitability section includes "Where Does Each Dollar Go?" margin waterfall table
+- [ ] Profitability section includes operating leverage analysis (revenue CAGR vs opex CAGR)
+- [ ] Profitability section explains WHY margins are expanding/contracting (causal analysis)
+- [ ] Profitability section includes peer margin comparison table or industry benchmark
+- [ ] Profitability section includes ROE efficiency grade with letter scale (A+ through D)
+- [ ] Profitability momentum dashboard includes 8-quarter margin trend table with margin shift and trend indicators
+- [ ] Profitability momentum dashboard includes divergence callout if margin trend differs from growth trend
+- [ ] DCA table format varies by investment thesis (growth/value/turnaround/compounder) with {ticker}-specific column headers
+- [ ] Decision Triggers section has at least 2 bullish + 2 caution signals for Exceptional/Strong/Neutral, or 1 potential-turnaround + 1 continued-concern signal for Weak/Poor
+- [ ] Decision Triggers use educational language ("could signal", "may indicate") — NO directive language ("buy", "sell", "hold", "trim", "exit")
+- [ ] Decision Triggers are measurable, {ticker}-specific, and tied to findings in detailed sections
+- [ ] Decision Triggers include a "check-in date" with next earnings date
+
+**v5.1 Section Depth Additions:**
+- [ ] Valuation leads with P/E comparison table (numbers first, context after — analysis over education)
+- [ ] Valuation includes honesty check on 5-year average if outlier years exist (pandemic highs, earnings crashes)
+- [ ] Valuation includes P/S and EV/EBITDA as "supporting evidence" (NOT equal weight with P/E)
+- [ ] Valuation includes "What's Baked Into the Price?" with analyst projections and expectations assessment
+- [ ] Valuation includes PEG ratio in 2-3 sentences (folded into P/E narrative, NOT a standalone explainer)
+- [ ] Valuation uses ONE shopping/deal-hunting analogy maximum, referenced sparingly across subsections
+- [ ] Profitability section includes ROE "Efficiency Grade" with letter grade scale and one-line read
+- [ ] Earnings Quality includes "What's Getting Added Back?" adjustment breakdown table
+- [ ] Earnings Quality includes "timing reality" explanation when D&A dominates the GAAP-to-adjusted gap
+- [ ] Earnings Quality includes "Is the Cash Real?" cash conversion trend table (3+ years of OCF/NI)
+- [ ] If conglomerate: Earnings Quality leads with operating earnings vs GAAP distinction and explains why stock portfolio swings distort the official profit
+- [ ] If conglomerate: cash-to-profit ratio is framed with plain English caveat that a low ratio is expected — paper gains inflate the profit number without generating real cash
+- [ ] Cash Flow includes "Where Does the Cash Go?" capital allocation breakdown table
+- [ ] Cash Flow includes FCF Yield with comparison ("$X real cash per $100 of stock")
+- [ ] Debt includes "How Long to Pay It All Off?" payoff timeline (or notes net cash status)
+- [ ] Dilution includes 5-Year Slice Tracker table (shares outstanding over time)
+- [ ] Dilution includes Buyback vs. Dilution Scoreboard (SBC vs buybacks net effect)
+- [ ] Bull Case includes structured points with catalyst + evidence + stock impact
+- [ ] Bull Case ends with "Dream Scenario" summary paragraph
+- [ ] Bear Case includes structured points with risk + likelihood + quantified impact
+- [ ] Bear Case ends with "Nightmare Scenario" summary paragraph
+- [ ] Bull/Bear scenarios use educational language ("could," "may," "if this plays out") — NO price predictions
+
+**v5.2 Cross-Report Uniqueness & Warmth:**
+- [ ] ALL "Why This Matters" openers include at least one {ticker}-specific detail AND feel conversational (not clinical)
+- [ ] Section closers feel varied across the report (mix of verdicts, questions, conditionals — not all identical)
+- [ ] DCA table format matches the investment thesis (growth/value/turnaround/compounder)
+- [ ] DCA table column headers are customized to {ticker}'s story
+- [ ] Waterfall key insight leads with what's SURPRISING about {ticker}'s costs (not a mechanical breakdown)
+- [ ] Operating leverage paragraph opens with the ROOT CAUSE, not a generic revenue/cost comparison
+- [ ] ROE sentence varies structure from report to report (avoid identical framing)
+- [ ] Revenue stickiness examples use familiar brands AND tie back to {ticker}'s billing model
+- [ ] Momentum Quick Reads vary format across sections (not all use the same 3-row dashboard)
+- [ ] No progress bars (████░░) — percentages with emoji indicators used instead
+- [ ] Anti-Pattern Watch List phrases are rephrased with {ticker}-specific data (not copied verbatim)
+- [ ] **Vibe check:** Re-read the first 2 sentences of each section. If they sound like a Morningstar report, rewrite them warmer.
+
+**v5.2 Dividend Section:**
+- [ ] Dividend section uses conditional rule (full subsections for payers, 2-3 paragraphs for non-payers)
+- [ ] Dividend overview table includes yield, per-share amount, payment frequency
+- [ ] Payout ratio classified correctly (Very Safe / Healthy / Moderate / Stretched / Danger Zone)
+- [ ] FCF payout ratio included as secondary check
+- [ ] Raise history table shows 5-year dividend growth (or notes insufficient history)
+- [ ] Dividend streak classified correctly (Aristocrat / Reliable / Building / Too Early / Caution)
+- [ ] Dividend vs growth classification included (Income play / Growth + income / Growth first)
+- [ ] Personal income comparison included ("$10,000 invested → $X/year")
+- [ ] All dividend jargon (yield, payout ratio, ex-dividend, Aristocrat) has plain English translation
+
+**v5.2 Moat Section:**
+- [ ] Moat classified as Wide/Narrow/None with one-sentence justification
+- [ ] Competitive advantage source table includes only genuinely applicable rows (don't force-fit)
+- [ ] Switching cost test uses {ticker}-specific customer experience
+- [ ] Switching cost test does NOT open with "Imagine you're..." if another report in this batch already used that framing
+- [ ] Switching cost verdict is NOT always delivered as a standalone "That's [emoji] [Rating] —" line
+- [ ] Threat assessment identifies 2-3 specific threats with likelihood ratings
+- [ ] 10-year durability verdict included but does NOT use "In 10 years, {ticker}'s [X] will likely be..." if already used in batch
+- [ ] Portfolio context paragraph connects moat quality to investment timeline WITHOUT repeating "If you're investing for 10+ years"
+- [ ] Bottom line does NOT use "A wide moat built on [X], [Y], and [Z]" if already used in batch
+- [ ] All moat jargon (switching costs, network effects, barriers to entry) has plain English translation
+
+**v5.2 Earnings Recap Section:**
+- [ ] Earnings Recap section has 8-12 quarter surprise table with emoji verdicts (standard companies)
+- [ ] Beat rate summary uses correct category (Elite/Reliable/Inconsistent/Concerning) — or is skipped with explanation for conglomerates
+- [ ] Revenue surprise check is included (or noted as unavailable)
+- [ ] All earnings jargon (beat, miss, guidance, whisper number) has plain English translation
+- [ ] Section header includes {ticker}-specific beat rate or surprise data
+- [ ] If conglomerate: standard EPS surprise table, beat rate, and revenue surprise sections are SKIPPED (data unreliable)
+- [ ] If conglomerate: explains in plain language why the headline profit number is misleading (stock portfolio swings, not real cash)
+- [ ] If conglomerate: directs readers to company's investor relations page for operating earnings (data not available in our source)
+
+**Consistency Check:**
+- [ ] Dashboard flags in Quick Health Check align with detailed section analysis
+- [ ] Dashboard flags align with final verdict (4+ red flags should not be Exceptional/Strong)
+- [ ] Business analogy introduced early and echoed throughout
+- [ ] Debt table shows positive numbers for companies with more savings than debt
+- [ ] "Real Talk" uses {ticker}'s specific numbers and echoes the analogy
+- [ ] Decision trigger signals are consistent with the overall verdict (bullish signals align with Exceptional/Strong thesis, etc.)
+- [ ] ALL sections use plain English — every ratio and metric has a "what this means" translation
+
+---
+
+Remember: Verdict first, details for the curious. Make this feel like a conversation, not a lecture. The reader should finish feeling informed and empowered to make their own decision.
+
+---
+
+<!-- END OF REPORT -->
+
+**REQUIRED METADATA JSON BLOCK** (after the report content below). This JSON is extracted as structured metadata and will NOT appear in the published report. It powers the ratings pills in the UI header. Place it after a `---` horizontal rule at the very end:
+
+```json
+{{
+  "growth": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "profitability": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "valuation": {{"rating": "...", "confidence": "...", "pe_vs_5yr_avg_pct": X, "mean_reversion_signal": "undervalued|fair|overvalued", "key_factors": [...]}},
+  "earnings_quality": {{"rating": "...", "confidence": "...", "gaap_adjusted_gap_pct": X, "sbc_to_revenue_pct": X, "key_factors": [...]}},
+  "cashflow": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "debt": {{"rating": "...", "confidence": "...", "short_term_debt_pct": X, "key_factors": [...]}},
+  "dilution": {{"rating": "...", "confidence": "...", "dilution_pct": X, "key_factors": [...]}},
+  "dividend": {{"rating": "...", "confidence": "...", "yield_pct": X, "payout_ratio_pct": X, "growth_streak_years": X, "key_factors": [...]}},
+  "moat": {{"rating": "...", "confidence": "...", "moat_width": "wide|narrow|none", "primary_source": "...", "key_factors": [...]}},
+  "earnings_recap": {{"beat_rate_pct": X, "avg_surprise_pct": X, "key_factors": [...]}},
+  "overall_verdict": "Exceptional" | "Strong" | "Neutral" | "Weak" | "Poor",
+  "conviction": "High" | "Medium" | "Low"
+}}
+```

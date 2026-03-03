@@ -67,7 +67,7 @@ def research_aggregate(income_statements, balance_sheets, cash_flows):
     ]
     CASHFLOW_FLOW_METRICS = [
         'operatingCashFlow', 'freeCashFlow', 'capitalExpenditure',
-        'dividendsPaid', 'commonStockRepurchased'
+        'commonDividendsPaid', 'commonStockRepurchased'
     ]
 
     # Group by fiscal year (try fiscalYear first, then calendarYear, then parse from date)

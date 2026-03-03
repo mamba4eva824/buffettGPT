@@ -1,8 +1,18 @@
 """
 Section Parser for Investment Research Reports
 
-Parses v4.8 and v5.1 report formats into individual sections for DynamoDB storage.
+Parses v4.8, v5.1, and v5.2 report formats into individual sections for DynamoDB storage.
 Handles dynamic headers with ticker-specific numbers and narratives.
+
+v5.2 changes vs v5.1:
+- Added: Dividend (§13) in Part 2 — dividend yield, payout ratio, sustainability
+- Added: Moat (§14) in Part 2 — competitive advantages, switching costs, durability
+- Added: Earnings Recap (§17) in Part 2 — latest quarter earnings analysis
+- Bull Case renumbered from §13 to §15
+- Bear Case renumbered from §14 to §16
+- Real Talk renumbered from §15 to §18
+- Decision Triggers renumbered from §16 to §19
+- Part 2 now has 12 sections (was 9), Part 3 still has 2 sections
 
 v5.1 changes vs v4.8:
 - Removed: Warning Signs (§15) and 6-Point Vibe Check (§16) — redundant with Quick Health Check
@@ -74,17 +84,25 @@ SECTION_DEFINITIONS: List[Tuple[str, str, int, int, str, str]] = [
     (r'^#{2,3}\s*(?:11\.\s+|Debt:)', '11_debt', 11, 2, 'bank', 'Debt'),
     # Dilution - matches "### 12. Your Slice Stays", "## Dilution:"
     (r'^#{2,3}\s*(?:12\.\s+|Dilution:)', '12_dilution', 12, 2, 'pie-chart', 'Dilution'),
-    # Bull Case - matches "### 13. Bull Case", "## Bull Case"
-    (r'^#{2,3}\s*(?:13\.\s+)?Bull Case', '13_bull', 13, 2, 'trending-up', 'Bull Case'),
-    # Bear Case - matches "### 14. Bear Case", "## Bear Case"
-    (r'^#{2,3}\s*(?:14\.\s+)?Bear Case', '14_bear', 14, 2, 'trending-down', 'Bear Case'),
+    # Dividend - matches "## Dividend:", "### 13. Dividend:" (v5.2, keyword-only to avoid collision with old 13. Bull Case)
+    (r'^#{2,3}\s*(?:13\.\s+)?Dividend:', '13_dividend', 13, 2, 'coins', 'Dividend'),
+    # Moat - matches "## Moat:", "### 14. Moat:" (v5.2, keyword-only to avoid collision with old 14. Bear Case)
+    (r'^#{2,3}\s*(?:14\.\s+)?Moat:', '14_moat', 14, 2, 'shield', 'Moat'),
+    # Bull Case - matches "### 13. Bull Case", "### 15. Bull Case", "## Bull Case"
+    # (v5.2 uses §15, v5.1 uses §13 — both supported)
+    (r'^#{2,3}\s*(?:(?:13|15)\.\s+)?Bull Case', '15_bull', 15, 2, 'trending-up', 'Bull Case'),
+    # Bear Case - matches "### 14. Bear Case", "### 16. Bear Case", "## Bear Case"
+    # (v5.2 uses §16, v5.1 uses §14 — both supported)
+    (r'^#{2,3}\s*(?:(?:14|16)\.\s+)?Bear Case', '16_bear', 16, 2, 'trending-down', 'Bear Case'),
+    # Earnings Recap - matches "### 15. Earnings Recap:", "### 17. Earnings Recap:", "## Earnings Recap:" (v5.2)
+    (r'^#{2,3}\s*(?:(?:15|17)\.\s+)?Earnings Recap:', '17_recap', 17, 2, 'bar-chart-2', 'Earnings Recap'),
 
     # Part 3: Real Talk
-    # Matches "### 15. Real Talk", "### 17. Real Talk", "## Real Talk"
-    # (v5.1 uses §15, v4.8 uses §17 — both supported)
-    (r'^#{2,3}\s*(?:(?:15|17)\.\s+)?Real Talk', '15_realtalk', 15, 3, 'message-circle', 'Real Talk'),
-    # Decision Triggers - matches "### 16. Decision Triggers:", "## Decision Triggers:" (v5.1)
-    (r'^#{2,3}\s*(?:16\.\s+)?Decision Triggers', '16_triggers', 16, 3, 'crosshair', 'Decision Triggers'),
+    # Matches "### 15. Real Talk", "### 16. Real Talk", "### 17. Real Talk", "### 18. Real Talk", "## Real Talk"
+    # (v5.2 uses §18, v5.1 uses §15, v4.8 uses §17 — all supported)
+    (r'^#{2,3}\s*(?:(?:15|16|17|18)\.\s+)?Real Talk', '18_realtalk', 18, 3, 'message-circle', 'Real Talk'),
+    # Decision Triggers - matches "### 16. Decision Triggers:", "### 17. Decision Triggers:", "### 19. Decision Triggers:", "## Decision Triggers:" (v5.1+)
+    (r'^#{2,3}\s*(?:(?:16|17|19)\.\s+)?Decision Triggers', '19_triggers', 19, 3, 'crosshair', 'Decision Triggers'),
 ]
 
 
@@ -145,6 +163,20 @@ def parse_report_sections(report_content: str, ticker: str) -> List[ParsedSectio
     # Sort by display order to ensure consistent ordering
     sections.sort(key=lambda s: s.display_order)
 
+    # Strip trailing JSON ratings block from the last section (typically 19_triggers)
+    if sections:
+        last = sections[-1]
+        stripped_content = _strip_trailing_json_block(last.content)
+        if stripped_content != last.content:
+            sections[-1] = ParsedSection(
+                section_id=last.section_id,
+                title=last.title,
+                content=stripped_content,
+                display_order=last.display_order,
+                part=last.part,
+                icon=last.icon
+            )
+
     return sections
 
 
@@ -170,6 +202,29 @@ def _clean_title(title: str, fallback: str) -> str:
     cleaned = cleaned.strip()
 
     return cleaned if cleaned else fallback
+
+
+def _strip_trailing_json_block(content: str) -> str:
+    """
+    Strip a trailing ```json {...} ``` block from section content.
+
+    The ratings JSON block is appended at the end of reports and ends up in
+    the last section's content (typically 19_triggers). This removes it so
+    users don't see raw JSON in the report.
+
+    Only strips JSON blocks at the END of content to avoid removing
+    legitimate JSON examples in the middle of a section.
+    """
+    # Match a ```json block followed only by optional whitespace at the end
+    pattern = r'\n*---\s*\n*```json\s*\{[\s\S]*?\}\s*```\s*$'
+    cleaned = re.sub(pattern, '', content)
+    if cleaned != content:
+        return cleaned.strip()
+
+    # Fallback: ```json block at end without --- separator
+    pattern = r'\n*```json\s*\{[\s\S]*?\}\s*```\s*$'
+    cleaned = re.sub(pattern, '', content)
+    return cleaned.strip()
 
 
 def _clean_section_content(content: str) -> str:
@@ -361,7 +416,7 @@ def calculate_total_word_count(sections: List[ParsedSection]) -> int:
     return sum(s.word_count for s in sections)
 
 
-# Icon mapping for frontend display (v5.1 section IDs)
+# Icon mapping for frontend display (v5.2 section IDs)
 SECTION_ICONS = {
     '01_tldr': 'lightning',
     '02_business': 'building',
@@ -375,10 +430,13 @@ SECTION_ICONS = {
     '10_cashflow': 'cash',
     '11_debt': 'bank',
     '12_dilution': 'pie-chart',
-    '13_bull': 'trending-up',
-    '14_bear': 'trending-down',
-    '15_realtalk': 'message-circle',
-    '16_triggers': 'crosshair',
+    '13_dividend': 'coins',
+    '14_moat': 'shield',
+    '15_bull': 'trending-up',
+    '16_bear': 'trending-down',
+    '17_recap': 'bar-chart-2',
+    '18_realtalk': 'message-circle',
+    '19_triggers': 'crosshair',
 }
 
 

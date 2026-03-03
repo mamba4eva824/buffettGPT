@@ -2,13 +2,13 @@
 
 **AI-Powered Investment Research Platform Built on Warren Buffett Principles**
 
-A full-stack serverless application that generates institutional-quality investment research reports using multi-agent AI orchestration. Specialized expert agents analyze debt health, cash flow quality, and growth sustainability, then a supervisor synthesizes their insights through a Buffett/Graham value investing lens.
+A full-stack serverless application that generates investment research reports written for millennials, Gen Z, and non-financial professionals — applying Buffett/Graham value investing principles in plain, jargon-free language. Users can ask follow-up questions on any report section for deeper analysis powered by conversational AI.
 
 ---
 
 ## Key Features
 
-- **Multi-Agent Research**: Three specialized expert agents (Debt, Cashflow, Growth) analyze different dimensions of a company's fundamentals, coordinated by a Supervisor agent
+- **Accessible Investment Research**: 5-year fundamental analysis covering debt health, cash flow quality, and growth sustainability — written in plain English for everyday investors
 - **Comprehensive Reports**: 16-section investment research reports with executive summaries, valuation deep-dives, and actionable ratings
 - **Follow-Up Q&A**: Conversational follow-up on any report section powered by Bedrock session memory
 - **Subscription Tiers**: Free and Plus tiers with Stripe billing, token usage tracking, and anniversary-based billing periods

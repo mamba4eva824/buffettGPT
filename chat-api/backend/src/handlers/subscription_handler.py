@@ -36,11 +36,19 @@ logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
 # Environment variables
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 USERS_TABLE = os.environ.get('USERS_TABLE') or f'buffett-{ENVIRONMENT}-users'
+WAITLIST_TABLE = os.environ.get('WAITLIST_TABLE') or f'waitlist-{ENVIRONMENT}-buffett'
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+
+# Referral tier thresholds (must match waitlist_handler.py REFERRAL_TIERS)
+REFERRAL_TRIAL_TIERS = [
+    {'threshold': 5, 'trial_days': 90},  # 3 Months Free Plus
+    {'threshold': 3, 'trial_days': 30},  # 1 Month Free Plus
+]
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb')
 users_table = dynamodb.Table(USERS_TABLE)
+waitlist_table = dynamodb.Table(WAITLIST_TABLE)
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -156,13 +164,21 @@ def handle_create_checkout(user_id: str, email: str, event: Dict[str, Any]) -> D
             # Store customer ID on user record
             _update_user_customer_id(user_id, customer_id)
 
+    # Look up referral rewards from waitlist table
+    trial_days = 0
+    extra_metadata = {}
+    if email:
+        trial_days, extra_metadata = _get_referral_trial_days(email)
+
     try:
         result = create_checkout_session(
             user_id=user_id,
             user_email=email,
             success_url=success_url,
             cancel_url=cancel_url,
-            customer_id=customer_id
+            customer_id=customer_id,
+            trial_period_days=trial_days if trial_days > 0 else None,
+            extra_metadata=extra_metadata if extra_metadata else None
         )
 
         # Update last_checkout_at for rate limiting
@@ -370,6 +386,62 @@ def _update_user_customer_id(user_id: str, customer_id: str) -> None:
         )
     except ClientError as e:
         logger.warning(f"Failed to update user customer ID: {str(e)}")
+
+
+def _get_referral_trial_days(email: str) -> tuple:
+    """
+    Look up referral rewards from the waitlist table.
+
+    Checks if the user's email has earned referral rewards (3+ referrals = 30 days,
+    5+ referrals = 90 days) and hasn't already claimed them.
+
+    The actual claim (setting referral_claimed_at) happens in the webhook handler
+    on checkout.session.completed, NOT here. This prevents abandoned checkouts
+    from burning referral rewards.
+
+    Args:
+        email: User's email to look up in waitlist table
+
+    Returns:
+        Tuple of (trial_days, extra_metadata) where trial_days is 0/30/90
+        and extra_metadata contains referral source info for the webhook
+    """
+    try:
+        response = waitlist_table.get_item(Key={'email': email})
+        waitlist_entry = response.get('Item')
+
+        if not waitlist_entry:
+            logger.info(f"No waitlist entry found for email during checkout")
+            return 0, {}
+
+        referral_count = int(waitlist_entry.get('referral_count', 0))
+        referral_claimed_at = waitlist_entry.get('referral_claimed_at')
+
+        # Already claimed — no trial
+        if referral_claimed_at:
+            logger.info(f"Referral reward already claimed at {referral_claimed_at}")
+            return 0, {}
+
+        # Determine trial days based on referral count (highest tier first)
+        trial_days = 0
+        for tier in REFERRAL_TRIAL_TIERS:
+            if referral_count >= tier['threshold']:
+                trial_days = tier['trial_days']
+                break
+
+        if trial_days > 0:
+            logger.info(f"Referral reward eligible: {referral_count} referrals = {trial_days}-day trial")
+            return trial_days, {
+                'referral_trial_days': str(trial_days),
+                'referral_source': 'waitlist',
+                'referral_email': email,
+            }
+
+        return 0, {}
+
+    except ClientError as e:
+        logger.warning(f"Failed to look up referral status: {str(e)}")
+        return 0, {}
 
 
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:

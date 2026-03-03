@@ -16,6 +16,8 @@ FMP Endpoints called per ticker (via report_generator.prepare_data):
 
 Usage:
     python -m investment_research.batch_generation.prepare_batch_data
+    python -m investment_research.batch_generation.prepare_batch_data --index sp100
+    python -m investment_research.batch_generation.prepare_batch_data --index sp100 --delay 0.2
     python -m investment_research.batch_generation.prepare_batch_data --output custom.json
     python -m investment_research.batch_generation.prepare_batch_data --tickers AAPL,MSFT,NVDA
 """
@@ -24,6 +26,7 @@ import argparse
 import json
 import sys
 import os
+import time
 from datetime import datetime
 from typing import List, Optional
 
@@ -31,13 +34,16 @@ from typing import List, Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
 from investment_research.report_generator import ReportGenerator
-from investment_research.index_tickers import DJIA_TICKERS
+from investment_research.index_tickers import get_index_tickers
+from src.utils.feature_extractor import decimal_to_float
 
 
 def prepare_all_data(
-    output_file: str = "djia_30_batch_data.json",
+    output_file: str = None,
     tickers: Optional[List[str]] = None,
-    prompt_version: float = 4.8
+    prompt_version: float = 5.1,
+    index: str = "djia",
+    delay: float = 0.0
 ) -> dict:
     """
     Fetch FMP data for all specified tickers and save to JSON.
@@ -51,13 +57,17 @@ def prepare_all_data(
         Dict mapping ticker -> prepared data
     """
     if tickers is None:
-        tickers = DJIA_TICKERS
+        tickers = get_index_tickers(index)
+
+    # Auto-generate output filename from index if not specified
+    if output_file is None:
+        output_file = f"{index.lower()}_{len(tickers)}_batch_data.json"
 
     generator = ReportGenerator(prompt_version=prompt_version)
     all_data = {}
 
     print("=" * 60)
-    print("  DJIA Batch Data Preparation")
+    print(f"  {index.upper()} Batch Data Preparation")
     print("=" * 60)
     print()
     print(f"Tickers to process: {len(tickers)}")
@@ -75,10 +85,8 @@ def prepare_all_data(
             all_data[ticker] = {
                 "metrics_context": data["metrics_context"],
                 "features": data.get("features", {}),
-                "raw_financials_summary": {
-                    "quarters": len(data.get("raw_financials", {}).get("income_statement", [])),
-                    "has_valuation": bool(data.get("valuation_data")),
-                },
+                "raw_financials": decimal_to_float(data.get("raw_financials", {})),
+                "currency_info": decimal_to_float(data.get("currency_info", {})),
                 "prepared_at": datetime.now().isoformat(),
                 "prompt_version": prompt_version
             }
@@ -86,6 +94,10 @@ def prepare_all_data(
         except Exception as e:
             print(f"✗ {e}")
             all_data[ticker] = {"error": str(e), "prepared_at": datetime.now().isoformat()}
+
+        # Rate limit delay between tickers
+        if delay > 0 and i < len(tickers):
+            time.sleep(delay)
 
     # Save to JSON
     with open(output_file, "w") as f:
@@ -122,6 +134,12 @@ Examples:
     # Fetch data for all 30 DJIA companies
     python -m investment_research.batch_generation.prepare_batch_data
 
+    # Fetch data for S&P 100 companies
+    python -m investment_research.batch_generation.prepare_batch_data --index sp100
+
+    # S&P 100 with rate limiting delay
+    python -m investment_research.batch_generation.prepare_batch_data --index sp100 --delay 0.2
+
     # Custom output file
     python -m investment_research.batch_generation.prepare_batch_data --output my_data.json
 
@@ -131,19 +149,31 @@ Examples:
     )
     parser.add_argument(
         "--output",
-        default="djia_30_batch_data.json",
-        help="Output JSON file path (default: djia_30_batch_data.json)"
+        default=None,
+        help="Output JSON file path (default: auto-generated from index)"
     )
     parser.add_argument(
         "--tickers",
         type=str,
-        help="Comma-separated list of tickers (default: all DJIA)"
+        help="Comma-separated list of tickers (default: all tickers in selected index)"
     )
     parser.add_argument(
         "--prompt-version",
         type=float,
-        default=4.8,
-        help="Prompt version for ReportGenerator (default: 4.8)"
+        default=5.1,
+        help="Prompt version for ReportGenerator (default: 5.1)"
+    )
+    parser.add_argument(
+        "--index",
+        type=str,
+        default="djia",
+        help="Index to use for tickers (default: djia). Options: djia, sp100, sp500"
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.0,
+        help="Delay in seconds between tickers for rate limiting (default: 0.0)"
     )
 
     args = parser.parse_args()
@@ -156,7 +186,9 @@ Examples:
     prepare_all_data(
         output_file=args.output,
         tickers=tickers,
-        prompt_version=args.prompt_version
+        prompt_version=args.prompt_version,
+        index=args.index,
+        delay=args.delay
     )
 
 

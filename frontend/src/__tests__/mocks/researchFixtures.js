@@ -18,8 +18,9 @@ export const MOCK_TOC = [
   { section_id: '12_dilution', title: 'Dilution: Buying Back 3% — Shrinking the Pie', part: 2, icon: 'pie-chart', word_count: 400, display_order: 8 },
   { section_id: '13_bull', title: 'Bull Case', part: 2, icon: 'trending-up', word_count: 350, display_order: 9 },
   { section_id: '14_bear', title: 'Bear Case', part: 2, icon: 'trending-down', word_count: 350, display_order: 10 },
-  { section_id: '15_realtalk', title: 'Real Talk', part: 3, icon: 'message-circle', word_count: 500, display_order: 11 },
-  { section_id: '16_triggers', title: 'Decision Triggers: Key Numbers to Track', part: 3, icon: 'crosshair', word_count: 400, display_order: 12 },
+  { section_id: '15_recap', title: 'Earnings Recap: 10 for 12 — The Consistent Beater', part: 2, icon: 'bar-chart-2', word_count: 450, display_order: 11 },
+  { section_id: '15_realtalk', title: 'Real Talk', part: 3, icon: 'message-circle', word_count: 500, display_order: 12 },
+  { section_id: '16_triggers', title: 'Decision Triggers: Key Numbers to Track', part: 3, icon: 'crosshair', word_count: 400, display_order: 13 },
 ];
 
 // Mock Ratings
