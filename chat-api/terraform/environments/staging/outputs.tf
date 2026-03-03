@@ -36,7 +36,7 @@ output "investment_research_function_url" {
 
 output "analysis_followup_function_url" {
   description = "Analysis followup Lambda function URL"
-  value       = module.lambda.analysis_followup_function_url
+  value       = module.lambda.analysis_followup_url
 }
 
 # ================================================
