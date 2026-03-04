@@ -24,7 +24,7 @@ ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 # - INVESTMENT_REPORTS_V2_TABLE (not INVESTMENT_REPORTS_TABLE)
 # - METRICS_HISTORY_CACHE_TABLE (not METRICS_HISTORY_TABLE)
 REPORTS_TABLE = os.environ.get('INVESTMENT_REPORTS_V2_TABLE', f'investment-reports-v2-{ENVIRONMENT}')
-METRICS_TABLE = os.environ.get('METRICS_HISTORY_CACHE_TABLE', f'metrics-history-cache-{ENVIRONMENT}')
+METRICS_TABLE = os.environ.get('METRICS_HISTORY_CACHE_TABLE', f'metrics-history-{ENVIRONMENT}')
 
 # Log table names at module load for debugging
 logger.info(f"tool_executor initialized: REPORTS_TABLE={REPORTS_TABLE}, METRICS_TABLE={METRICS_TABLE}")

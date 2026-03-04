@@ -214,7 +214,7 @@ jobs:
           VITE_WEBSOCKET_URL=
           VITE_RESEARCH_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
           VITE_RESEARCH_LAMBDA_URL=${{ needs.deploy-infrastructure.outputs.research_function_url }}
-          VITE_ANALYSIS_FOLLOWUP_URL=${{ needs.deploy-infrastructure.outputs.research_function_url }}followup
+          VITE_ANALYSIS_FOLLOWUP_URL=${{ needs.deploy-infrastructure.outputs.followup_function_url }}
           VITE_ENVIRONMENT=staging
           VITE_ENABLE_DEBUG_LOGS=false
           VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
