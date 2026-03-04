@@ -23,6 +23,11 @@ on:
         required: false
         default: false
         type: boolean
+      build_analysis_followup:
+        description: 'Build Analysis Followup Docker Lambda'
+        required: false
+        default: false
+        type: boolean
       build_all_docker:
         description: 'Build ALL Docker Lambdas (overrides individual selections)'
         required: false
@@ -74,6 +79,7 @@ jobs:
       investment_research_changed: ${{ steps.changes.outputs.investment_research }}
       # NOTE: prediction_ensemble_changed removed (2025-01) - archived
       followup_action_changed: ${{ steps.changes.outputs.followup_action }}
+      analysis_followup_changed: ${{ steps.changes.outputs.analysis_followup }}
       any_docker_changed: ${{ steps.changes.outputs.any_docker }}
 
     steps:
@@ -91,17 +97,21 @@ jobs:
             IR_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/investment_research/" && echo "true" || echo "false")
             # NOTE: prediction_ensemble removed (2025-01) - archived
             FA_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/followup_action/" && echo "true" || echo "false")
+            AF_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/analysis_followup/" && echo "true" || echo "false")
           else
             IR_CHANGED="false"
             FA_CHANGED="false"
+            AF_CHANGED="false"
           fi
 
           echo "investment_research=$IR_CHANGED" >> $GITHUB_OUTPUT
           echo "followup_action=$FA_CHANGED" >> $GITHUB_OUTPUT
-          echo "any_docker=$([[ $IR_CHANGED == 'true' || $FA_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "analysis_followup=$AF_CHANGED" >> $GITHUB_OUTPUT
+          echo "any_docker=$([[ $IR_CHANGED == 'true' || $FA_CHANGED == 'true' || $AF_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
           echo "Investment Research changed: $IR_CHANGED"
           echo "Followup Action changed: $FA_CHANGED"
+          echo "Analysis Followup changed: $AF_CHANGED"
 
   build-backend:
     name: Build Backend Lambda Functions
@@ -254,7 +264,8 @@ jobs:
       needs.detect-changes.outputs.any_docker_changed == 'true' ||
       inputs.build_all_docker == true ||
       inputs.build_investment_research == true ||
-      inputs.build_followup_action == true
+      inputs.build_followup_action == true ||
+      inputs.build_analysis_followup == true
     strategy:
       fail-fast: false  # Continue building other Lambdas if one fails
       matrix:
@@ -273,6 +284,12 @@ jobs:
             change_output: followup_action_changed
             manual_input: build_followup_action
             has_health_endpoint: false  # Action group Lambda, no HTTP endpoint
+          - name: analysis-followup
+            dockerfile_dir: chat-api/backend/lambda/analysis_followup
+            ecr_repo: buffett/analysis-followup
+            change_output: analysis_followup_changed
+            manual_input: build_analysis_followup
+            has_health_endpoint: false
 
     steps:
       - name: Check if this Lambda should be built
@@ -282,8 +299,10 @@ jobs:
           BUILD_ALL: ${{ inputs.build_all_docker }}
           BUILD_IR: ${{ inputs.build_investment_research }}
           BUILD_FA: ${{ inputs.build_followup_action }}
+          BUILD_AF: ${{ inputs.build_analysis_followup }}
           IR_CHANGED: ${{ needs.detect-changes.outputs.investment_research_changed }}
           FA_CHANGED: ${{ needs.detect-changes.outputs.followup_action_changed }}
+          AF_CHANGED: ${{ needs.detect-changes.outputs.analysis_followup_changed }}
         run: |
           # Build if:
           # 1. build_all_docker is true, OR
@@ -308,6 +327,10 @@ jobs:
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: manual input selected"
           fi
+          if [[ "$LAMBDA_NAME" == "analysis-followup" && "$BUILD_AF" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: manual input selected"
+          fi
 
           # Check if path changed (push event)
           if [[ "$LAMBDA_NAME" == "investment-research" && "$IR_CHANGED" == "true" ]]; then
@@ -316,6 +339,10 @@ jobs:
           fi
           # NOTE: prediction-ensemble removed (2025-01) - archived
           if [[ "$LAMBDA_NAME" == "followup-action" && "$FA_CHANGED" == "true" ]]; then
+            SHOULD_BUILD="true"
+            echo "Building $LAMBDA_NAME: path changed"
+          fi
+          if [[ "$LAMBDA_NAME" == "analysis-followup" && "$AF_CHANGED" == "true" ]]; then
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: path changed"
           fi
@@ -462,6 +489,7 @@ jobs:
           echo "Docker Lambda Builds:"
           echo "  Investment Research changed: ${{ needs.detect-changes.outputs.investment_research_changed }}"
           echo "  Followup Action changed: ${{ needs.detect-changes.outputs.followup_action_changed }}"
+          echo "  Analysis Followup changed: ${{ needs.detect-changes.outputs.analysis_followup_changed }}"
           echo "  Build job result: ${{ needs.build-docker-lambdas.result }}"
           echo ""
           echo "Smoke Tests: ${{ needs.smoke-tests.result }}"
