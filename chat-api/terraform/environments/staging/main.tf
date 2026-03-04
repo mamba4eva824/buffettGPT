@@ -153,6 +153,13 @@ module "lambda" {
   common_tags = local.common_tags
   kms_key_arn = module.core.kms_key_arn
 
+  # CORS: allow staging CloudFront domain + localhost for local dev
+  cors_allowed_origins = [
+    module.cloudfront.cloudfront_url,
+    "http://localhost:3000",
+    "http://localhost:5173",
+  ]
+
   # Followup Action Lambda (Bedrock action group handler)
   create_followup_action_lambda = true
   followup_action_image_tag     = "latest"
