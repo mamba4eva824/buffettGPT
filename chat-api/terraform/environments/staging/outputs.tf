@@ -29,6 +29,11 @@ output "research_api_endpoint" {
   value       = module.api_gateway.research_api_endpoint
 }
 
+output "analysis_api_base_url" {
+  description = "Analysis REST API base URL (for frontend VITE_RESEARCH_API_URL)"
+  value       = module.api_gateway.analysis_api_base_url
+}
+
 # ================================================
 # Lambda Outputs
 # ================================================

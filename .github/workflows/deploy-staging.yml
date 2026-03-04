@@ -73,6 +73,7 @@ jobs:
 
     outputs:
       http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
+      analysis_api_base_url: ${{ steps.terraform-output.outputs.analysis_api_base_url }}
       research_function_url: ${{ steps.terraform-output.outputs.research_function_url }}
       followup_function_url: ${{ steps.terraform-output.outputs.followup_function_url }}
       landing_s3_bucket: ${{ steps.terraform-output.outputs.landing_s3_bucket }}
@@ -170,6 +171,7 @@ jobs:
         working-directory: chat-api/terraform/environments/staging
         run: |
           HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
+          ANALYSIS_API_BASE=$(terraform output -raw analysis_api_base_url 2>/dev/null || echo "")
           RESEARCH_URL=$(terraform output -raw investment_research_function_url 2>/dev/null || echo "")
           FOLLOWUP_URL=$(terraform output -raw analysis_followup_function_url 2>/dev/null || echo "")
           LANDING_BUCKET=$(terraform output -raw landing_s3_bucket_name 2>/dev/null || echo "")
@@ -177,6 +179,7 @@ jobs:
           APP_CF_URL=$(terraform output -raw cloudfront_url 2>/dev/null || echo "")
 
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "analysis_api_base_url=$ANALYSIS_API_BASE" >> $GITHUB_OUTPUT
           echo "research_function_url=$RESEARCH_URL" >> $GITHUB_OUTPUT
           echo "followup_function_url=$FOLLOWUP_URL" >> $GITHUB_OUTPUT
           echo "landing_s3_bucket=$LANDING_BUCKET" >> $GITHUB_OUTPUT
@@ -212,7 +215,7 @@ jobs:
           cat > .env.staging << EOF
           VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
           VITE_WEBSOCKET_URL=
-          VITE_RESEARCH_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
+          VITE_RESEARCH_API_URL=${{ needs.deploy-infrastructure.outputs.analysis_api_base_url }}
           VITE_RESEARCH_LAMBDA_URL=${{ needs.deploy-infrastructure.outputs.research_function_url }}
           VITE_ANALYSIS_FOLLOWUP_URL=${{ needs.deploy-infrastructure.outputs.followup_function_url }}
           VITE_ENVIRONMENT=staging
