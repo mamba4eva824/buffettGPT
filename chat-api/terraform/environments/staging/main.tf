@@ -146,10 +146,6 @@ module "lambda" {
   function_env_vars   = local.lambda_function_env_vars
   log_retention_days  = 14 # 2 week retention for staging
 
-  reserved_concurrency = {
-    analysis_followup = 10
-  }
-
   common_tags = local.common_tags
   kms_key_arn = module.core.kms_key_arn
 

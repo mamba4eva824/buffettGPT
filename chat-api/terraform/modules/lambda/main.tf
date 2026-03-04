@@ -18,12 +18,7 @@ locals {
       memory_size = 256
       description = "AI search handler with streaming support"
     }
-    analysis_followup = {
-      handler     = "analysis_followup.lambda_handler"
-      timeout     = 60
-      memory_size = 256
-      description = "Follow-up question handler with session memory"
-    }
+    # analysis_followup: Migrated to Docker (analysis_followup_docker.tf)
     stripe_webhook_handler = {
       handler     = "stripe_webhook_handler.lambda_handler"
       timeout     = 30

@@ -93,6 +93,13 @@ variable "bedrock_model_id" {
   default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
+# Analysis Follow-Up Docker Variables
+variable "analysis_followup_image_tag" {
+  description = "Docker image tag for analysis follow-up Lambda"
+  type        = string
+  default     = "latest"
+}
+
 # Investment Research Variables
 variable "investment_research_image_tag" {
   description = "Docker image tag for investment research Lambda"

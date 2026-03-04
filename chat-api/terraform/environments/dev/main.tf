@@ -163,10 +163,6 @@ module "lambda" {
   function_env_vars   = local.lambda_function_env_vars
   log_retention_days  = 7  # Short retention for dev
 
-  reserved_concurrency = {
-    analysis_followup = 10  # Increased for production traffic
-  }
-
   common_tags = local.common_tags
 
   # KMS key for DynamoDB encryption
