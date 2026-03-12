@@ -98,7 +98,7 @@ DynamoDB V2 Storage (section-per-item) → Frontend Display
 |-----------|------------|
 | **Frontend** | React 18, Vite 5, Tailwind CSS |
 | **Backend** | Python 3.11, AWS Lambda |
-| **AI** | AWS Bedrock (Claude Haiku 4.5), Claude Opus 4 (report generation) |
+| **AI** | AWS Bedrock (Claude Haiku 4.5), Claude Opus 4.6 (report generation) |
 | **Database** | DynamoDB (on-demand) |
 | **Payments** | Stripe (Free/Plus tiers, webhooks) |
 | **Auth** | Google OAuth 2.0, JWT |
@@ -118,7 +118,7 @@ buffett_chat_api/
 │   │   ├── src/
 │   │   │   ├── handlers/                  # Lambda functions
 │   │   │   │   ├── action_group_handler.py # Bedrock action group handler
-│   │   │   │   ├── analysis_followup.py   # Follow-up Q&A agent
+│   │   │   │   ├── analysis_followup.py   # Follow-up Q&A agent (Docker Lambda)
 │   │   │   │   ├── auth_callback.py       # Google OAuth callback
 │   │   │   │   ├── auth_verify.py         # JWT authorizer
 │   │   │   │   ├── conversations_handler.py # Chat history CRUD
@@ -130,6 +130,7 @@ buffett_chat_api/
 │   │   ├── investment_research/           # Report generation engine
 │   │   │   ├── report_generator.py        # Core report generation
 │   │   │   ├── section_parser.py          # Markdown → sections
+│   │   │   ├── multi_agent/              # Multi-agent orchestration
 │   │   │   ├── prompts/                   # Prompt templates (v5.1)
 │   │   │   └── batch_generation/          # Parallel batch CLI
 │   │   ├── layer/                         # Lambda layer dependencies
@@ -141,11 +142,11 @@ buffett_chat_api/
 │       └── modules/
 │           ├── core/                      # KMS, IAM
 │           ├── dynamodb/                  # DynamoDB tables
-│           ├── lambda/                    # Lambda deployment
+│           ├── lambda/                    # Lambda deployment (zip + Docker)
 │           ├── api-gateway/               # HTTP API routes
 │           ├── auth/                      # OAuth infrastructure
 │           ├── bedrock/                   # Agents + guardrails
-│           ├── cloudfront-static-site/    # CDN + S3 hosting
+│           ├── cloudfront-static-site/    # CDN + S3 hosting (app + landing)
 │           ├── email/                     # Email service (Resend)
 │           ├── stripe/                    # Payment infrastructure
 │           ├── sqs/                       # SQS queues
@@ -156,13 +157,20 @@ buffett_chat_api/
 │   └── src/
 │       ├── components/
 │       │   ├── research/                  # Investment report UI
-│       │   └── waitlist/                  # Waitlist landing page
+│       │   ├── MobileDrawer.jsx           # Mobile navigation drawer
+│       │   ├── SubscriptionManagement.jsx # Stripe subscription UI
+│       │   └── TokenUsageDisplay.jsx      # Token usage tracking
 │       ├── contexts/                      # React contexts
 │       ├── hooks/                         # Custom React hooks
 │       ├── api/                           # API client utilities
 │       └── App.jsx                        # Main application
-├── docs/
-│   └── referral/                          # Referral system documentation
+├── docs/                                  # MkDocs documentation site
+│   ├── api/                               # API reference
+│   ├── architecture/                      # Architecture docs
+│   ├── infrastructure/                    # Infrastructure guides
+│   ├── investment-research/               # Report generation docs
+│   ├── stripe/                            # Stripe integration docs
+│   └── referral/                          # Referral system docs
 ├── CLAUDE.md                              # Development rules & procedures
 └── MVP_IMPLEMENTATION_GUIDE.md            # Implementation status tracker
 ```
