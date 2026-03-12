@@ -20,56 +20,46 @@ A full-stack serverless application that generates investment research reports w
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                             Buffett                                  │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌──────────┐     ┌────────────────────────────────────────────┐    │
-│  │ Frontend  │────▶│         API Gateway (HTTP API v2)          │    │
-│  │ (React)   │     └────────────────────────────────────────────┘    │
-│  └──────────┘                        │                               │
-│                         ┌────────────┼────────────┐                  │
-│                         ▼            ▼            ▼                  │
-│                   ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│                   │   Auth   │ │   Chat   │ │ Billing  │           │
-│                   │ Lambdas  │ │ Lambdas  │ │ Lambdas  │           │
-│                   └──────────┘ └──────────┘ └──────────┘           │
-│                                      │                               │
-│                    ┌─────────────────┼─────────────────┐            │
-│                    ▼                 ▼                  ▼            │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
-│  │   Debt Expert    │  │  Cashflow Expert  │  │  Growth Expert   │  │
-│  │  (Claude Haiku 4.5)  │  │  (Claude Haiku 4.5)   │  │  (Claude Haiku 4.5)  │  │
-│  └──────────────────┘  └──────────────────┘  └──────────────────┘  │
-│                    │                 │                  │            │
-│                    └─────────────────┼──────────────────┘            │
-│                                      ▼                               │
-│                       ┌──────────────────────────┐                  │
-│                       │    Supervisor Agent       │                  │
-│                       │    (Claude Haiku 4.5)         │                  │
-│                       │  Buffett/Graham Synthesis │                  │
-│                       └──────────────────────────┘                  │
-│                                      │                               │
-│                    ┌─────────────────┼─────────────────┐            │
-│                    ▼                 ▼                  ▼            │
-│               ┌─────────┐    ┌────────────┐    ┌────────────┐      │
-│               │DynamoDB │    │  S3 + CDN  │    │   Stripe   │      │
-│               │ Tables  │    │ CloudFront │    │  Billing   │      │
-│               └─────────┘    └────────────┘    └────────────┘      │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              Buffett                                    │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌──────────────┐    ┌──────────────────────────────────────────────┐  │
+│  │   Frontend   │───▶│           API Gateway (HTTP API v2)          │  │
+│  │  (React 18)  │◀──▶│          + Lambda Function URLs             │  │
+│  │   Vite + TW  │    └──────────────────────────────────────────────┘  │
+│  └──────────────┘                        │                              │
+│         │               ┌────────────────┼────────────────┐             │
+│         │               ▼                ▼                ▼             │
+│         │         ┌──────────┐    ┌────────────┐    ┌──────────┐       │
+│         │         │   Auth   │    │  Research  │    │ Billing  │       │
+│         │         │ Lambdas  │    │  Lambdas   │    │ Lambdas  │       │
+│         │         └──────────┘    └────────────┘    └──────────┘       │
+│         │                               │                               │
+│         │              ┌────────────────┼────────────────┐              │
+│         │              ▼                                 ▼              │
+│         │   ┌─────────────────────┐          ┌────────────────────┐    │
+│         │   │  Report Streaming   │          │  Follow-Up Agent   │    │
+│         │   │  (SSE via FastAPI)  │          │  (Docker Lambda)   │    │
+│  SSE    │   └─────────────────────┘          └────────────────────┘    │
+│  Stream │              │                              │                 │
+│    ◀────┘    Reads from DynamoDB              Bedrock Agent + Action   │
+│                        │                       Group (Claude Haiku 4.5)     │
+│                        │                              │                 │
+│  ┌─────────────────────┼──────────────────────────────┘                │
+│  │                     │                                                │
+│  ▼                     ▼                     ▼                ▼        │
+│  ┌──────────┐   ┌────────────┐        ┌────────────┐  ┌────────────┐  │
+│  │ DynamoDB │   │  S3 + CDN  │        │   Stripe   │  │  Bedrock   │  │
+│  │ 9 Tables │   │ CloudFront │        │  Billing   │  │  (Claude)  │  │
+│  └──────────┘   └────────────┘        └────────────┘  └────────────┘  │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Agent Ensemble
+### Report Generation Pipeline
 
-| Agent | Role | Key Metrics |
-|-------|------|-------------|
-| **Debt Expert** | Balance sheet health and leverage | Debt/Equity, Interest Coverage, Current Ratio, Net Debt/EBITDA |
-| **Cashflow Expert** | Cash generation quality | FCF, FCF Margin, FCF/Net Income, CapEx Efficiency |
-| **Growth Expert** | Earnings quality and sustainability | Revenue Growth, EPS Growth, ROE, ROIC, Margins |
-| **Supervisor** | Synthesis with Buffett principles | Weighs expert opinions, considers business type, produces final verdict |
-
-### Data Pipeline
+Reports are generated offline using Claude Code (Claude Opus 4.6) and stored in DynamoDB. The frontend streams pre-generated reports via SSE.
 
 ```
 FMP API (Financial Data)
@@ -81,14 +71,35 @@ Feature Extraction (80+ metrics, velocity, acceleration)
 Metrics Cache (DynamoDB, 7 categories × N quarters)
     │
     ▼
-Expert Agent Analysis (3 agents in parallel)
+Claude Code (Opus 4.6) → 16-Section Report
     │
     ▼
-Supervisor Synthesis → 16-Section Report
-    │
-    ▼
-DynamoDB V2 Storage (section-per-item) → Frontend Display
+DynamoDB V2 Storage (section-per-item) → SSE Stream → Frontend
 ```
+
+### Follow-Up Q&A Pipeline
+
+Users ask questions about reports via the Follow-Up Agent, a Docker-based Lambda that invokes a Bedrock Agent with action groups.
+
+```
+User Question → Follow-Up Lambda (Docker) → Bedrock Agent (Claude Haiku 4.5)
+                                                       │
+                                              Action Group Lambda
+                                              (getReportSection,
+                                               getReportRatings,
+                                               getMetricsHistory)
+                                                       │
+                                                   DynamoDB
+```
+
+### Agent Ensemble (Report Generation)
+
+| Agent | Role | Key Metrics |
+|-------|------|-------------|
+| **Debt Expert** | Balance sheet health and leverage | Debt/Equity, Interest Coverage, Current Ratio, Net Debt/EBITDA |
+| **Cashflow Expert** | Cash generation quality | FCF, FCF Margin, FCF/Net Income, CapEx Efficiency |
+| **Growth Expert** | Earnings quality and sustainability | Revenue Growth, EPS Growth, ROE, ROIC, Margins |
+| **Supervisor** | Synthesis with Buffett principles | Weighs expert opinions, considers business type, produces final verdict |
 
 ---
 
