@@ -1,0 +1,15 @@
+{
+  "description": "Ralph Wiggum plugin stop hook for self-referential loops",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/christopherweinreich/Documents/Projects/buffett_chat_api/.claude/plugins/ralph-wiggum/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
