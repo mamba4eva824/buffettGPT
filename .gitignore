@@ -110,7 +110,6 @@ credentials.json
 # =============================================================================
 .vscode/
 .idea/
-.claude/
 .cursor/
 *.swp
 *.swo
@@ -205,8 +204,11 @@ dev.err
 # Deep Value Insights (development data and models)
 deep_value_insights/
 
-# Claude/AI IDE context files (contain internal dev notes)
-**/CLAUDE.md
+# Claude Code - allow .claude/ and CLAUDE.md for mobile access
+# Keep local settings and OS files ignored
+.claude/settings.local.json
+.claude/.DS_Store
+.claude/**/.DS_Store
 
 # Terraform plan files (may contain sensitive info)
 tfplan*
@@ -320,7 +322,6 @@ node_modules/
 # IDE and editor files
 .vscode/
 .idea/
-.claude/
 .cursor/
 *.swp
 *.swo
