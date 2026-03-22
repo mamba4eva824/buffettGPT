@@ -180,7 +180,7 @@ resource "aws_dynamodb_table" "sp500_aggregates" {
     var.common_tags,
     {
       Name    = "${var.project_name}-${var.environment}-sp500-aggregates"
-      Purpose = "S&P 500 sector and index-level aggregate analytics"
+      Purpose = "SP500 sector and index-level aggregate analytics"
       TTL     = "7 days"
     }
   )
