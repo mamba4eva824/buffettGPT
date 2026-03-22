@@ -6,6 +6,37 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Valuation Multiples + Historical P/E Tracking (2026-03-22)
+
+**Added**
+- TTM valuation data: P/E, EV/EBITDA, EV/Sales, EV/FCF, market cap, enterprise value for 490 tickers
+- Historical annual valuations: 5-6 years of P/E, EV/EBITDA per ticker mapped to quarterly items
+- `fetch_sp500_valuations.py` — FMP TTM key-metrics fetcher
+- `fetch_sp500_historical_valuations.py` — FMP annual key-metrics fetcher (5+ years)
+- 9 new metrics in METRIC_MAP: pe_ratio, ev_to_ebitda, ev_to_sales, ev_to_fcf, price_to_fcf, market_cap, enterprise_value, earnings_yield, fcf_yield
+- Valuation metrics in sector aggregates (median P/E, EV/EBITDA per sector)
+- Pre-computed rankings for cheapest P/E and EV/EBITDA
+- `sort` parameter on getTopCompanies (asc/desc) for "cheapest by P/E" queries
+
+**Bug Fixes**
+- Fixed `__init__.py` to handle missing `anthropic` module (try/except import)
+- Fixed JWT auth to use Secrets Manager (`JWT_SECRET_ARN`) instead of env var
+- Fixed Lambda to use non-streaming response (Python 3.11 generator limitation)
+- Fixed CORS to allow localhost:8000
+- Fixed frontend to parse double-encoded Lambda Function URL response
+- Fixed aggregator `ProjectionExpression` to include `market_valuation`
+- Fixed `compareCompanies` and `getCompanyProfile` to include `market_valuation` category
+- Updated tests for non-streaming handler path
+
+**Queries Now Supported**
+- "What is NVDA's P/E ratio?" — returns 35.0x with sector context
+- "Top 10 cheapest stocks by P/E" — ascending sort, pre-computed ranking
+- "Compare tech vs healthcare valuations" — sector median P/E and EV/EBITDA
+- "NVDA P/E over 5 years — discount?" — historical trend with 6 annual data points
+- "Is AAPL trading at a premium to its historical EV/EBITDA?" — historical comparison
+
+---
+
 ### Phase 4: API Gateway + Plus Subscription Gating (2026-03-22)
 
 **Added**
