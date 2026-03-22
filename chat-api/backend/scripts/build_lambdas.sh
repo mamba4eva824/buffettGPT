@@ -35,6 +35,10 @@ FUNCTIONS=(
     "stripe_webhook_handler"
     "subscription_handler"
     "waitlist_handler"
+    "sp500_pipeline"
+    "sp500_backfill"
+    "earnings_calendar_checker"
+    "sp500_aggregator"
 )
 
 # Build each function
@@ -65,6 +69,14 @@ for FUNCTION in "${FUNCTIONS[@]}"; do
     # Copy any shared utilities if they exist
     if [ -d "${SRC_DIR}/shared" ]; then
         cp -r "${SRC_DIR}/shared" "${TEMP_DIR}/"
+    fi
+
+    # Copy investment_research module for sp500 pipeline functions
+    INVEST_DIR="${BACKEND_DIR}/investment_research"
+    if [[ "${FUNCTION}" == sp500_* || "${FUNCTION}" == "earnings_calendar_checker" ]]; then
+        if [ -d "${INVEST_DIR}" ]; then
+            cp -r "${INVEST_DIR}" "${TEMP_DIR}/"
+        fi
     fi
 
     # Create the zip file (excluding requirements.txt since dependencies are in Lambda Layer)

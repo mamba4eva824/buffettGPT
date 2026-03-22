@@ -42,6 +42,30 @@ locals {
       memory_size = 256
       description = "Waitlist signup and referral tracking API"
     }
+    sp500_pipeline = {
+      handler     = "sp500_pipeline.lambda_handler"
+      timeout     = 900
+      memory_size = 512
+      description = "S&P 500 data ingestion pipeline - processes all tickers sequentially"
+    }
+    sp500_backfill = {
+      handler     = "sp500_backfill.lambda_handler"
+      timeout     = 900
+      memory_size = 512
+      description = "S&P 500 one-time backfill from local JSON data"
+    }
+    earnings_calendar_checker = {
+      handler     = "earnings_calendar_checker.lambda_handler"
+      timeout     = 60
+      memory_size = 256
+      description = "FMP earnings calendar checker for data refresh scheduling"
+    }
+    sp500_aggregator = {
+      handler     = "sp500_aggregator.lambda_handler"
+      timeout     = 300
+      memory_size = 512
+      description = "S&P 500 sector and index-level aggregate computation"
+    }
   }
 }
 

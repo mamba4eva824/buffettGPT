@@ -90,6 +90,19 @@ output "metrics_history_cache_table_arn" {
 }
 
 # ================================================
+# S&P 500 Aggregates Table (ACTIVE)
+# ================================================
+output "sp500_aggregates_table_name" {
+  description = "Name of the S&P 500 aggregates table"
+  value       = aws_dynamodb_table.sp500_aggregates.name
+}
+
+output "sp500_aggregates_table_arn" {
+  description = "ARN of the S&P 500 aggregates table"
+  value       = aws_dynamodb_table.sp500_aggregates.arn
+}
+
+# ================================================
 # Token Usage Table (ACTIVE)
 # ================================================
 output "token_usage_table_name" {
@@ -134,6 +147,7 @@ output "table_summary" {
     investment_research = {
       investment_reports_v2 = aws_dynamodb_table.investment_reports_v2.name
       metrics_history_cache = aws_dynamodb_table.metrics_history_cache.name
+      sp500_aggregates      = aws_dynamodb_table.sp500_aggregates.name
     }
     token_tracking = {
       token_usage = aws_dynamodb_table.token_usage.name
