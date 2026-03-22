@@ -17,6 +17,7 @@ import SectionCard from "./components/research/SectionCard.jsx";
 import ResearchLayout from "./components/research/ResearchLayout.jsx";
 import { useCompanySearch } from "./hooks/useCompanySearch.js";
 import ValueInsights from "./components/value-insights/ValueInsights.jsx";
+import MarketIntelligence from "./components/market-intelligence/MarketIntelligence.jsx";
 
 // Lazy-loaded waitlist page (code-split)
 const WaitlistPage = lazy(() => import("./components/waitlist/WaitlistPage.jsx"));
@@ -183,7 +184,7 @@ function ChatApp() {
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
   const [showInvestmentResearch, setShowInvestmentResearch] = useState(false);
-  const [appMode, setAppMode] = useState('chat'); // 'chat' | 'value-insights'
+  const [appMode, setAppMode] = useState('chat'); // 'chat' | 'value-insights' | 'market-intelligence'
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const isConnecting = false; // Simplified - no connection waiting needed for analysis mode
@@ -1501,7 +1502,7 @@ function ChatApp() {
                 )}
               </div>
 
-              {/* Mode pill toggle — Chat / Value Insights */}
+              {/* Mode pill toggle — Chat / Value Insights / Market Intelligence */}
               <div className="flex items-center bg-sand-200 dark:bg-warm-800 rounded-full p-1 gap-1">
                 <button
                   onClick={() => setAppMode('chat')}
@@ -1522,6 +1523,16 @@ function ChatApp() {
                   }`}
                 >
                   Value Insights
+                </button>
+                <button
+                  onClick={() => setAppMode('market-intelligence')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                    appMode === 'market-intelligence'
+                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
+                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
+                  }`}
+                >
+                  Market Intel
                 </button>
               </div>
 
@@ -1549,7 +1560,12 @@ function ChatApp() {
             </div>
 
             {/* Dynamic Layout Based on Mode */}
-            {appMode === 'value-insights' ? (
+            {appMode === 'market-intelligence' ? (
+              /* MARKET INTELLIGENCE MODE */
+              <div className="flex-1 overflow-hidden">
+                <MarketIntelligence />
+              </div>
+            ) : appMode === 'value-insights' ? (
               /* VALUE INSIGHTS MODE */
               <div className="flex-1 overflow-hidden">
                 <ValueInsights />
