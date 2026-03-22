@@ -66,6 +66,12 @@ locals {
       memory_size = 512
       description = "S&P 500 sector and index-level aggregate computation"
     }
+    market_intel_chat = {
+      handler     = "market_intel_chat.lambda_handler"
+      timeout     = 120
+      memory_size = 512
+      description = "Market Intelligence chat - converse_stream with 9 tools"
+    }
   }
 }
 

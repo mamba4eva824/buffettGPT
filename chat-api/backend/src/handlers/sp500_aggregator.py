@@ -70,13 +70,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Step 4: Compute index-level aggregate
     index_item = _compute_index_aggregate(latest_data, sector_items)
 
-    # Step 5: Write to DynamoDB
-    all_items = sector_items + [index_item]
+    # Step 5: Compute pre-computed rankings for key metrics
+    ranking_items = _compute_rankings(latest_data, SP500_SECTORS)
+    logger.info(f"Computed {len(ranking_items)} ranking items")
+
+    # Step 6: Write to DynamoDB
+    all_items = sector_items + [index_item] + ranking_items
     _write_aggregates(all_items)
 
     elapsed = time.time() - start
     result = {
         'sectors_computed': len(sector_items),
+        'rankings_computed': len(ranking_items),
         'tickers_covered': len(latest_data),
         'elapsed_seconds': round(elapsed, 1),
         'computed_at': datetime.now().isoformat(),
@@ -395,6 +400,81 @@ def _compute_index_aggregate(
         'computed_at': now.isoformat(),
         'expires_at': int(now.timestamp()) + (7 * 24 * 60 * 60),
     }
+
+
+# Metrics to pre-compute rankings for (most commonly queried)
+RANKING_METRICS = [
+    ('revenue_profit', 'revenue', False),              # Top by revenue (descending)
+    ('revenue_profit', 'net_margin', False),            # Top by net margin
+    ('revenue_profit', 'operating_margin', False),      # Top by operating margin
+    ('revenue_profit', 'revenue_growth_yoy', False),    # Top by revenue growth
+    ('revenue_profit', 'roe', False),                   # Top by ROE
+    ('cashflow', 'fcf_margin', False),                  # Top by FCF margin
+    ('debt_leverage', 'debt_to_equity', True),          # Lowest D/E (ascending)
+    ('valuation', 'roic', False),                       # Top by ROIC
+    ('dividend', 'dividend_yield', False),              # Top by dividend yield
+    ('earnings_events', 'eps_surprise_pct', False),     # Best earnings beats
+    ('earnings_events', 'eps_surprise_pct', True),      # Worst earnings misses
+    ('earnings_quality', 'sbc_to_revenue_pct', True),   # Lowest SBC (ascending)
+]
+
+
+def _compute_rankings(
+    latest_data: Dict[str, Dict],
+    sectors: Dict[str, Dict],
+    top_n: int = 50
+) -> List[Dict]:
+    """
+    Compute pre-computed rankings for key metrics.
+
+    Stores as RANKING items in sp500-aggregates:
+      PK: "RANKING", SK: metric_name (e.g., "fcf_margin", "eps_surprise_pct_worst")
+
+    Each item contains the top 50 companies sorted by that metric.
+    """
+    now = datetime.now()
+    ranking_items = []
+
+    for category, metric, ascending in RANKING_METRICS:
+        values = []
+        for ticker, data in latest_data.items():
+            val = _extract_metric(data, category, metric)
+            if val is not None:
+                company_info = sectors.get(ticker, {})
+                values.append({
+                    'ticker': ticker,
+                    'name': company_info.get('name', ticker),
+                    'sector': company_info.get('sector', 'Unknown'),
+                    'value': round(val, 4),
+                })
+
+        # Sort
+        values.sort(key=lambda x: x['value'], reverse=(not ascending))
+        top = values[:top_n]
+
+        # Build ranking key
+        ranking_key = metric
+        if ascending:
+            ranking_key = f"{metric}_asc"
+
+        # Add rank numbers
+        for i, entry in enumerate(top):
+            entry['rank'] = i + 1
+
+        ranking_items.append({
+            'aggregate_type': 'RANKING',
+            'aggregate_key': ranking_key,
+            'category': category,
+            'metric': metric,
+            'sort_order': 'ascending' if ascending else 'descending',
+            'total_with_data': len(values),
+            'showing': len(top),
+            'rankings': top,
+            'computed_at': now.isoformat(),
+            'expires_at': int(now.timestamp()) + (7 * 24 * 60 * 60),
+        })
+
+    return ranking_items
 
 
 def _write_aggregates(items: List[Dict]):

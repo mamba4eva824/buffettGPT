@@ -39,6 +39,7 @@ FUNCTIONS=(
     "sp500_backfill"
     "earnings_calendar_checker"
     "sp500_aggregator"
+    "market_intel_chat"
 )
 
 # Build each function
@@ -73,7 +74,7 @@ for FUNCTION in "${FUNCTIONS[@]}"; do
 
     # Copy investment_research module for sp500 pipeline functions
     INVEST_DIR="${BACKEND_DIR}/investment_research"
-    if [[ "${FUNCTION}" == sp500_* || "${FUNCTION}" == "earnings_calendar_checker" ]]; then
+    if [[ "${FUNCTION}" == sp500_* || "${FUNCTION}" == "earnings_calendar_checker" || "${FUNCTION}" == "market_intel_chat" ]]; then
         if [ -d "${INVEST_DIR}" ]; then
             cp -r "${INVEST_DIR}" "${TEMP_DIR}/"
         fi
