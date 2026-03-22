@@ -33,12 +33,12 @@ Add a new "Market Intelligence" tab/mode to the React frontend that provides:
 | Auth context | `frontend/src/auth.jsx` | Google OAuth, JWT management, user state. Subscription tier accessible. |
 | Vite env vars | `frontend/.env.*` | `VITE_ANALYSIS_FOLLOWUP_URL` pattern for Lambda Function URLs. |
 
-### Unknowns / Gaps
+### Unknowns / Gaps — RESOLVED
 
-1. **Charting library**: Value Insights appears to use custom Tailwind components for data display. Do we need a charting library (Recharts, Chart.js) for market intelligence visualizations, or can we build with Tailwind + CSS?
-2. **Response format**: How does the Bedrock agent return structured data vs text? The follow-up agent returns plain text. Market intelligence needs structured data for rendering tables/charts. Options: JSON blocks in markdown, or custom response parsing.
+1. **Charting library**: **Use Recharts.** It's React-native, composable, lightweight (~40KB gzipped), and supports line, bar, pie, radar, and area charts. Install via `npm install recharts`. Use dynamic imports (`React.lazy`) to avoid bundle impact on non-MI pages.
+2. **Response format**: **The agent emits ` ```chart ` fenced code blocks** containing a JSON chart specification (defined in Phase 4, step 10). The frontend parses these blocks from the streamed markdown and renders them as interactive Recharts components. Plain text and markdown tables coexist alongside chart blocks in the same response.
 3. **Session management**: Does the market intelligence chat maintain conversation history? The existing chat stores in DynamoDB. Market intelligence may need lighter sessions (just Bedrock session ID).
-4. **Mobile responsiveness**: The existing app has mobile support via MobileDrawer. The new tab needs to work on mobile too.
+4. **Mobile responsiveness**: The existing app has mobile support via MobileDrawer. The new tab needs to work on mobile too. Charts should be responsive — Recharts supports `<ResponsiveContainer>` for auto-sizing.
 
 ### Constraints
 
@@ -140,20 +140,55 @@ Add a new `appMode: 'market-intelligence'` alongside the existing modes. Create 
      - "Companies with strongest cash flow"
    - Clicking a card populates the chat input and submits
 
-6. **Create structured response renderers**
+6. **Create structured response renderers (tables + charts)**
    - File: `frontend/src/components/market-intelligence/ResponseRenderers.jsx`
-   - `RankingTable` — for getTopCompanies results (rank, ticker, company, metric value)
-   - `SectorComparisonTable` — for getSectorOverview (sector name, median metrics, company count)
-   - `CompanyProfileCard` — for getCompanyProfile (company info + key metrics + sector rank)
-   - `ComparisonGrid` — for compareCompanies (side-by-side metric cards)
-   - `IndexSnapshotCard` — for getIndexSnapshot (overall health indicators)
-   - Each renderer receives parsed JSON data and uses format helpers from `mockData.js`
+   - **Table renderers** (for structured data in the text response):
+     - `RankingTable` — for getTopCompanies results (rank, ticker, company, metric value)
+     - `SectorComparisonTable` — for getSectorOverview (sector name, median metrics, company count)
+     - `CompanyProfileCard` — for getCompanyProfile (company info + key metrics + sector rank)
+     - `ComparisonGrid` — for compareCompanies (side-by-side metric cards)
+     - `IndexSnapshotCard` — for getIndexSnapshot (overall health indicators)
+     - Each renderer receives parsed JSON data and uses format helpers from `mockData.js`
+   - File: `frontend/src/components/market-intelligence/ChartRenderer.jsx`
+   - **Chart renderers** (for ` ```chart ` blocks — see Phase 4, step 10 for schema):
+     - `ChartRenderer` — master component that reads `type` from chart JSON and delegates:
+
+       | `type` value | Recharts Component | Use Case |
+       |-------------|-------------------|----------|
+       | `line` | `<LineChart>` with `<ResponsiveContainer>` | `getMetricTrend` time-series (quarterly data) |
+       | `bar` | `<BarChart>` | `getSectorOverview`, `screenStocks` single-metric rankings |
+       | `horizontalBar` | `<BarChart layout="vertical">` | `getTopCompanies` ranked lists |
+       | `grouped_bar` | `<BarChart>` with multiple `<Bar>` children | `compareCompanies`, `compareSectors` multi-metric |
+       | `pie` | `<PieChart>` with labels | `getSectorOverview` sector breakdown |
+       | `radar` | `<RadarChart>` | `compareSectors` multi-dimensional comparison |
+       | `divergingBar` | `<BarChart>` with positive/negative coloring | `getEarningsSurprises` (+/- surprise) |
+
+     - All charts wrapped in `<ResponsiveContainer width="100%" height={300}>` for responsive sizing
+     - Color palette: use Tailwind theme colors (emerald for positive, red for negative, blue/indigo for neutral series)
+     - Tooltips: include formatted values using the `format` field from chart JSON (`pct` → "34.2%", `billions` → "$2.4B", etc.)
+     - Mobile: charts auto-resize via ResponsiveContainer; hide legend on viewports < 640px to save space
+     - Lazy-load Recharts: `const ChartRenderer = React.lazy(() => import('./ChartRenderer'))` to avoid bundle bloat
 
 7. **Create response parser utility**
    - File: `frontend/src/utils/marketIntelParser.js`
-   - Parse agent response text for embedded JSON blocks: ` ```json\n{...}\n``` `
-   - Extract `response_type` field from JSON to determine which renderer to use
-   - Return `{ text: "...", structuredData: {...}, responseType: "ranking"|"sector"|"comparison"|... }`
+   - Parse agent response text for TWO types of embedded blocks:
+     - ` ```json\n{...}\n``` ` — structured data for table renderers (existing convention)
+     - ` ```chart\n{...}\n``` ` — chart specifications for ChartRenderer (Phase 4 convention)
+   - Extract `response_type` field from JSON blocks to determine which table renderer to use
+   - Extract chart blocks separately and validate against expected schema: `{ type, title, data, xKey, yKey }`
+   - Return:
+     ```js
+     {
+       text: "narrative markdown without code blocks",
+       structuredData: { responseType: "ranking"|"sector"|..., ...data },
+       charts: [
+         { type: "line", title: "...", data: [...], xKey: "...", yKey: "...", format: "pct" },
+         ...
+       ]
+     }
+     ```
+   - Graceful fallback: if chart JSON is malformed, skip chart rendering and show the raw text response
+   - Edge case: a single response may contain multiple chart blocks (e.g., compare query with trend + bar chart)
 
 8. **Create subscription gate component**
    - File: `frontend/src/components/market-intelligence/MarketIntelGate.jsx`
@@ -184,7 +219,8 @@ Add a new `appMode: 'market-intelligence'` alongside the existing modes. Create 
 | `frontend/src/components/market-intelligence/MarketIntelligence.jsx` | **NEW** — main component |
 | `frontend/src/components/market-intelligence/MarketIntelChat.jsx` | **NEW** — chat interface |
 | `frontend/src/components/market-intelligence/MarketIntelSuggestions.jsx` | **NEW** — query starters |
-| `frontend/src/components/market-intelligence/ResponseRenderers.jsx` | **NEW** — structured data rendering |
+| `frontend/src/components/market-intelligence/ResponseRenderers.jsx` | **NEW** — structured data rendering (tables, cards) |
+| `frontend/src/components/market-intelligence/ChartRenderer.jsx` | **NEW** — Recharts-based chart rendering for ` ```chart ` blocks |
 | `frontend/src/components/market-intelligence/MarketIntelGate.jsx` | **NEW** — subscription gate + CTA |
 | `frontend/src/contexts/MarketIntelContext.jsx` | **NEW** — state management + SSE streaming |
 | `frontend/src/utils/marketIntelParser.js` | **NEW** — response parsing utility |
@@ -244,9 +280,20 @@ Task 5: Create ResponseRenderers (tables, cards, comparisons)
   Files: components/market-intelligence/ResponseRenderers.jsx
   Verify: npm run lint
 
+Task 5b: Install Recharts + create ChartRenderer component
+  Dependencies: Task 2 (parser — chart block extraction)
+  Files: package.json (add recharts), components/market-intelligence/ChartRenderer.jsx
+  Details: npm install recharts. Build ChartRenderer with type-based delegation (line, bar, horizontalBar,
+           grouped_bar, pie, radar, divergingBar). Wrap all charts in ResponsiveContainer. Use React.lazy
+           for code-splitting. Apply Tailwind color palette. Add format-aware tooltips (pct, billions, etc.).
+  Verify: npm run lint && npm run build (confirm no bundle errors, check chunk size)
+
 Task 6: Create MarketIntelChat (chat interface + message rendering)
-  Dependencies: Task 1 (context), Task 2 (parser), Task 5 (renderers)
+  Dependencies: Task 1 (context), Task 2 (parser), Task 5 (renderers), Task 5b (charts)
   Files: components/market-intelligence/MarketIntelChat.jsx
+  Details: Use custom ReactMarkdown `code` component to intercept ```chart language blocks
+           and render via ChartRenderer. Render ```json blocks via ResponseRenderers. Pass-through
+           all other markdown (text, tables) to default ReactMarkdown + remark-gfm rendering.
   Verify: npm run lint
 
 Task 7: Create MarketIntelligence main component (orchestrator)
@@ -280,16 +327,22 @@ Task 11: End-to-end visual QA
 ## GSD Step 5: Self-Critique / Red Team
 
 ### Fragile assumptions
-- **Agent returns parseable structured data**: The biggest risk. If the Bedrock agent doesn't consistently wrap data in ```json blocks with a `response_type` field, the frontend can't render rich visualizations. Mitigation: the agent prompt (Phase 3) must explicitly instruct this format. Fallback: render all responses as plain text (graceful degradation).
+- **Agent returns parseable chart blocks**: The biggest risk. If the Bedrock agent doesn't consistently emit ` ```chart ` blocks with valid JSON matching the expected schema (`type`, `title`, `data`, `xKey`, `yKey`, `format`), charts won't render. Mitigation: Phase 4 step 10 adds explicit prompt instructions. Fallback: `marketIntelParser.js` gracefully degrades — malformed chart blocks render as plain text.
 - **Format helpers reuse**: Assumes `mockData.js` format helpers (`fmt.billions`, `fmt.pct`, etc.) can be extracted to a shared utility. Currently they're co-located with mock data.
+- **Chart data volume**: Agent might emit large datasets (500 companies). Charts should cap at ~50 data points for readability. Parser should truncate with a "showing top N" note.
 
 ### Failure modes
+- **Streaming breaks mid-chart block**: If the SSE stream cuts off mid-` ```chart ` block, the JSON is incomplete and unparseable. Mitigation: buffer chart blocks until the closing ` ``` ` delimiter before attempting JSON.parse. Show a "chart loading..." placeholder while buffering.
 - **Streaming breaks mid-response**: If the Lambda or Bedrock agent errors mid-stream, the frontend shows partial text. Need error handling in the SSE parser (follow ResearchContext pattern which handles this).
 - **Large response rendering**: A screenStocks result with 50 companies could render a very long table. Add virtual scrolling or pagination for large result sets.
 - **Subscription status caching**: If subscription check is too aggressive (every render), it's slow. If too lax (once on mount), user might lose access mid-session. Cache for 5 minutes with refetch on focus.
+- **Recharts bundle size**: Recharts adds ~40KB gzipped. Mitigate with React.lazy + code splitting so it's only loaded when a user visits Market Intelligence.
 
 ### Simplest 80% version
-Start with chat-only (no structured renderers). Just render agent responses as markdown text. This works immediately with no parsing logic. Then add ResponseRenderers as a fast follow once the agent response format is stabilized. The suggested query cards + chat input + streaming response covers 80% of the value.
+Start with chat + markdown tables (no charts). Just render agent responses as markdown text via ReactMarkdown + remark-gfm. This works immediately with no chart parsing. Then add ChartRenderer as a fast follow once the ` ```chart ` block format is validated end-to-end. The progression:
+1. **MVP**: Text + markdown tables (no new dependencies)
+2. **V1.1**: Add ChartRenderer for `line` and `bar` types only (covers `getMetricTrend` + `getTopCompanies`)
+3. **V1.2**: Add remaining chart types (`pie`, `radar`, `divergingBar`, `grouped_bar`)
 
 ### Key Design Decision: Layout
 Two viable approaches:

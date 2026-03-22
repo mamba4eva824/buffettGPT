@@ -157,6 +157,48 @@ Add a new Lambda handler (`market_intel_api.py`) that receives chat requests, ve
 | `chat-api/terraform/environments/dev/main.tf` | Wire new resources + outputs |
 | `chat-api/backend/scripts/build_lambdas.sh` | Add market_intel_api |
 
+10. **Configure chart data convention in agent response format**
+    - The Bedrock agent's system prompt must instruct Claude to emit fenced ` ```chart ` code blocks containing JSON chart specifications alongside narrative text
+    - Chart blocks are emitted when tool results contain data suitable for visualization (time-series, rankings, comparisons, sector breakdowns)
+    - The Lambda handler (`market_intel_api.py`) streams these blocks as-is — no server-side parsing needed. The frontend (Phase 5) intercepts and renders them.
+    - **Chart block schema**:
+      ```
+      ```chart
+      {
+        "type": "line" | "bar" | "horizontalBar" | "pie" | "radar" | "divergingBar" | "grouped_bar",
+        "title": "Human-readable chart title",
+        "data": [ { "key": "value", ... }, ... ],
+        "xKey": "field name for x-axis",
+        "yKey": "field name for y-axis (or array for multi-series)",
+        "xLabel": "X-axis label",
+        "yLabel": "Y-axis label",
+        "format": "pct" | "billions" | "ratio" | "number" | "currency"
+      }
+      ```
+      ```
+    - **Tool-to-chart mapping** (include in agent system prompt instructions):
+
+      | Tool | Chart Type | When to Emit |
+      |------|-----------|--------------|
+      | `getMetricTrend` | `line` | Always — time-series data is best as a line chart |
+      | `compareCompanies` | `grouped_bar` | When comparing 2-5 companies on multiple metrics |
+      | `getTopCompanies` | `horizontalBar` | When showing ranked lists (top 10, bottom 5, etc.) |
+      | `getSectorOverview` | `pie` or `bar` | Sector breakdown by company count or median metric |
+      | `compareSectors` | `radar` or `grouped_bar` | Multi-metric sector comparison |
+      | `screenStocks` | `horizontalBar` | When results have a clear ranking metric |
+      | `getEarningsSurprises` | `divergingBar` | Positive/negative surprise visualization |
+      | `getIndexSnapshot` | None (KPI cards) | Text-only with key stats — no chart needed |
+      | `getCompanyProfile` | None | Text-only company summary — no chart needed |
+
+    - **Agent prompt addition** (append to market intelligence system prompt):
+      ```
+      When your tool results contain data suitable for visualization, include a ```chart
+      code block with a JSON chart spec. Always include the chart AFTER your text explanation.
+      Do not emit charts for single-value lookups or company profiles.
+      If a tool returns rankings or time-series data, ALWAYS include a chart block.
+      The chart JSON must include: type, title, data array, xKey, yKey, and format.
+      ```
+
 ### Verification Commands
 
 ```bash
