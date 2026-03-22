@@ -143,6 +143,12 @@ resource "aws_dynamodb_table" "metrics_history_cache" {
 #     "data_coverage": 87,
 #   }
 
+# Import existing table created via CLI during Phase 2 testing
+import {
+  to = aws_dynamodb_table.sp500_aggregates
+  id = "${var.project_name}-${var.environment}-sp500-aggregates"
+}
+
 resource "aws_dynamodb_table" "sp500_aggregates" {
   name         = "${var.project_name}-${var.environment}-sp500-aggregates"
   billing_mode = "PAY_PER_REQUEST"
