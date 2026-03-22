@@ -22,7 +22,12 @@ Usage (CLI):
     python -m investment_research.generate_report --djia --dry-run
 """
 
-from .report_generator import ReportGenerator
+try:
+    from .report_generator import ReportGenerator
+except ImportError:
+    # report_generator requires 'anthropic' which may not be in all Lambda layers
+    ReportGenerator = None
+
 from .index_tickers import get_index_tickers, get_test_tickers, DJIA_TICKERS, SP500_TICKERS
 
 __all__ = [

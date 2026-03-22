@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAuth } from '../../auth.jsx';
+import useTypewriter from '../../hooks/useTypewriter.js';
 
 const MARKET_INTEL_URL = import.meta.env.VITE_MARKET_INTEL_URL || '';
 
@@ -16,15 +17,77 @@ const SUGGESTED_QUERIES = [
   "How has NVDA's revenue growth changed over 5 years?",
 ];
 
-export default function MarketIntelligence() {
+function TypewriterMessage({ content, isNew, tokenUsage }) {
+  const { displayText, isTyping } = useTypewriter(content, {
+    speed: 1.5,
+    isActive: isNew,
+    alwaysAnimate: isNew,
+  });
+
+  // Loading state — waiting for response
+  if (!content) {
+    return (
+      <div className="flex items-center gap-2 text-sand-400 dark:text-warm-500 text-sm">
+        <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse" />
+        Analyzing...
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="prose prose-sm dark:prose-invert max-w-none prose-table:text-xs prose-th:px-2 prose-td:px-2">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          {displayText}
+        </ReactMarkdown>
+        {isTyping && (
+          <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
+        )}
+      </div>
+      {!isTyping && tokenUsage && (
+        <div className="mt-2 pt-2 border-t border-sand-200 dark:border-warm-700 text-xs text-sand-400 dark:text-warm-500">
+          Tokens: {tokenUsage.input_tokens?.toLocaleString()} in / {tokenUsage.output_tokens?.toLocaleString()} out
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function MarketIntelligence({
+  conversationId: externalConversationId = null,
+  initialMessages = null,
+  onConversationCreated = null,
+  createConversation = null,
+}) {
   const { user, isAuthenticated, token } = useAuth();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
+  const [conversationId, setConversationId] = useState(externalConversationId);
   const abortRef = useRef(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Sync external conversationId prop
+  useEffect(() => {
+    setConversationId(externalConversationId);
+  }, [externalConversationId]);
+
+  // Hydrate from initialMessages when loading a saved conversation
+  useEffect(() => {
+    if (initialMessages && initialMessages.length > 0) {
+      const hydrated = initialMessages.map(m => ({
+        role: m.type === 'user' ? 'user' : 'assistant',
+        content: m.content,
+        isStreaming: false,
+        isNew: false,
+      }));
+      setMessages(hydrated);
+    } else if (initialMessages === null) {
+      setMessages([]);
+    }
+  }, [initialMessages]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -39,13 +102,26 @@ export default function MarketIntelligence() {
     }
 
     setError(null);
-    const userMsg = { role: 'user', content: messageText.trim() };
+    const trimmedMessage = messageText.trim();
+    const userMsg = { role: 'user', content: trimmedMessage };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsStreaming(true);
 
-    // Add placeholder for assistant response
-    const assistantMsg = { role: 'assistant', content: '', isStreaming: true };
+    // Create conversation on first message if authenticated
+    let activeConversationId = conversationId;
+    if (isAuthenticated && !activeConversationId && createConversation) {
+      const title = `MI: ${trimmedMessage.slice(0, 50)}${trimmedMessage.length > 50 ? '...' : ''}`;
+      const newConv = await createConversation(title, { type: 'market-intelligence' });
+      if (newConv) {
+        activeConversationId = newConv.conversation_id;
+        setConversationId(activeConversationId);
+        if (onConversationCreated) onConversationCreated(newConv);
+      }
+    }
+
+    // Add placeholder for assistant response (loading state)
+    const assistantMsg = { role: 'assistant', content: '', isStreaming: true, isNew: false };
     setMessages(prev => [...prev, assistantMsg]);
 
     // Abort any existing stream
@@ -60,7 +136,8 @@ export default function MarketIntelligence() {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
-          message: messageText.trim(),
+          message: trimmedMessage,
+          conversation_id: activeConversationId || undefined,
           messages: messages
             .filter(m => m.role === 'user' || (m.role === 'assistant' && m.content))
             .map(m => ({
@@ -89,57 +166,22 @@ export default function MarketIntelligence() {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      // Parse SSE stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullText = '';
-      let tokenUsage = null;
+      // Parse JSON response (non-streaming)
+      // Lambda Function URL returns {statusCode, headers, body} wrapper
+      // where body is a JSON string that needs to be parsed
+      const raw = await response.json();
+      const data = raw.body ? JSON.parse(raw.body) : raw;
+      const fullText = data.response || '';
+      const tokenUsage = data.token_usage || null;
 
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === 'chunk') {
-                fullText += data.text;
-                setMessages(prev => {
-                  const updated = [...prev];
-                  updated[updated.length - 1] = {
-                    role: 'assistant',
-                    content: fullText,
-                    isStreaming: true,
-                  };
-                  return updated;
-                });
-              } else if (data.type === 'complete') {
-                tokenUsage = data.token_usage;
-              } else if (data.type === 'error') {
-                setError(data.message);
-              }
-            } catch {
-              // Skip unparseable lines
-            }
-          }
-        }
-      }
-
-      // Finalize assistant message
+      // Update assistant message with complete response
       setMessages(prev => {
         const updated = [...prev];
         updated[updated.length - 1] = {
           role: 'assistant',
           content: fullText,
           isStreaming: false,
+          isNew: true,
           tokenUsage,
         };
         return updated;
@@ -151,7 +193,7 @@ export default function MarketIntelligence() {
     } finally {
       setIsStreaming(false);
     }
-  }, [token, messages, isStreaming]);
+  }, [token, messages, isStreaming, conversationId, isAuthenticated, createConversation, onConversationCreated]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -177,37 +219,79 @@ export default function MarketIntelligence() {
     );
   }
 
-  return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {messages.length === 0 && !isStreaming && (
-          <div className="max-w-2xl mx-auto">
-            <div className="text-center mb-8">
-              <h2 className="text-xl font-bold text-sand-900 dark:text-warm-50 mb-2">
-                Market Intelligence
-              </h2>
-              <p className="text-sand-500 dark:text-warm-400 text-sm">
-                Ask questions about the S&P 500 — sectors, companies, rankings, trends, and earnings.
-              </p>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {SUGGESTED_QUERIES.map((query, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSuggestionClick(query)}
-                  className="text-left px-4 py-3 rounded-xl border border-sand-200 dark:border-warm-700
-                    text-sm text-sand-700 dark:text-warm-200
-                    hover:bg-sand-50 dark:hover:bg-warm-800 hover:border-sand-300 dark:hover:border-warm-600
-                    transition-colors"
-                >
-                  {query}
-                </button>
-              ))}
+  const inputBar = (
+    <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex gap-2">
+      <input
+        ref={inputRef}
+        type="text"
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        placeholder="Ask about the S&P 500..."
+        disabled={isStreaming}
+        className="flex-1 rounded-full border border-sand-300 dark:border-warm-600
+          bg-white dark:bg-warm-800 px-4 py-2.5 text-sm
+          text-sand-900 dark:text-warm-50
+          placeholder:text-sand-400 dark:placeholder:text-warm-500
+          focus:outline-none focus:ring-2 focus:ring-indigo-500
+          disabled:opacity-50"
+      />
+      <button
+        type="submit"
+        disabled={!input.trim() || isStreaming}
+        className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white
+          hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
+          transition-colors"
+      >
+        {isStreaming ? 'Thinking...' : 'Send'}
+      </button>
+    </form>
+  );
+
+  // Empty state — centered layout matching Chat mode
+  if (messages.length === 0 && !isStreaming) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 pb-24">
+        <div className="max-w-2xl w-full">
+          <div className="text-center mb-8">
+            <h2 className="text-xl font-bold text-sand-900 dark:text-warm-50 mb-2">
+              Market Intelligence
+            </h2>
+            <p className="text-sand-500 dark:text-warm-400 text-sm">
+              Ask questions about the S&P 500 — sectors, companies, rankings, trends, and earnings.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-6">
+            {SUGGESTED_QUERIES.map((query, i) => (
+              <button
+                key={i}
+                onClick={() => handleSuggestionClick(query)}
+                className="text-left px-4 py-3 rounded-xl border border-sand-200 dark:border-warm-700
+                  text-sm text-sand-700 dark:text-warm-200
+                  hover:bg-sand-50 dark:hover:bg-warm-800 hover:border-sand-300 dark:hover:border-warm-600
+                  transition-colors"
+              >
+                {query}
+              </button>
+            ))}
+          </div>
+          {inputBar}
+        </div>
+
+        {error && (
+          <div className="max-w-2xl w-full mt-4">
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300">
+              {error}
             </div>
           </div>
         )}
+      </div>
+    );
+  }
 
+  // Messages state — chat layout with pinned input
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 min-h-0">
         {messages.map((msg, i) => (
           <div key={i} className={`flex gap-3 max-w-3xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {msg.role === 'assistant' && (
@@ -223,19 +307,11 @@ export default function MarketIntelligence() {
               {msg.role === 'user' ? (
                 <div className="whitespace-pre-wrap">{msg.content}</div>
               ) : (
-                <div className="prose prose-sm dark:prose-invert max-w-none prose-table:text-xs prose-th:px-2 prose-td:px-2">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {msg.content}
-                  </ReactMarkdown>
-                  {msg.isStreaming && (
-                    <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse ml-0.5 align-middle" />
-                  )}
-                </div>
-              )}
-              {msg.tokenUsage && (
-                <div className="mt-2 pt-2 border-t border-sand-200 dark:border-warm-700 text-xs text-sand-400 dark:text-warm-500">
-                  Tokens: {msg.tokenUsage.input_tokens?.toLocaleString()} in / {msg.tokenUsage.output_tokens?.toLocaleString()} out
-                </div>
+                <TypewriterMessage
+                  content={msg.content}
+                  isNew={msg.isNew}
+                  tokenUsage={msg.tokenUsage}
+                />
               )}
             </div>
             {msg.role === 'user' && user?.picture && (
@@ -255,33 +331,8 @@ export default function MarketIntelligence() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input bar */}
       <div className="border-t border-sand-200 dark:border-warm-700 px-4 py-3">
-        <form onSubmit={handleSubmit} className="max-w-3xl mx-auto flex gap-2">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about the S&P 500..."
-            disabled={isStreaming}
-            className="flex-1 rounded-full border border-sand-300 dark:border-warm-600
-              bg-white dark:bg-warm-800 px-4 py-2.5 text-sm
-              text-sand-900 dark:text-warm-50
-              placeholder:text-sand-400 dark:placeholder:text-warm-500
-              focus:outline-none focus:ring-2 focus:ring-indigo-500
-              disabled:opacity-50"
-          />
-          <button
-            type="submit"
-            disabled={!input.trim() || isStreaming}
-            className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white
-              hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed
-              transition-colors"
-          >
-            {isStreaming ? 'Thinking...' : 'Send'}
-          </button>
-        </form>
+        {inputBar}
       </div>
     </div>
   );

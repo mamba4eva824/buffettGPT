@@ -104,7 +104,8 @@ def _get_latest_quarters(tickers: list) -> Dict[str, Dict]:
         'ProjectionExpression': (
             'ticker, fiscal_date, fiscal_year, fiscal_quarter, currency, '
             'revenue_profit, cashflow, balance_sheet, debt_leverage, '
-            'earnings_quality, dilution, valuation, earnings_events, dividend'
+            'earnings_quality, dilution, valuation, earnings_events, dividend, '
+            'market_valuation'
         ),
     }
 
@@ -197,6 +198,11 @@ AGGREGATE_METRICS = [
     ('valuation', 'roa', 'ROA'),
     ('valuation', 'asset_turnover', 'Asset Turnover'),
     ('earnings_quality', 'sbc_to_revenue_pct', 'SBC/Revenue'),
+    # Market Valuation (TTM multiples - only on latest quarter items)
+    ('market_valuation', 'pe_ratio', 'P/E Ratio'),
+    ('market_valuation', 'ev_to_ebitda', 'EV/EBITDA'),
+    ('market_valuation', 'ev_to_sales', 'EV/Sales'),
+    ('market_valuation', 'market_cap', 'Market Cap'),
 ]
 
 
@@ -416,6 +422,10 @@ RANKING_METRICS = [
     ('earnings_events', 'eps_surprise_pct', False),     # Best earnings beats
     ('earnings_events', 'eps_surprise_pct', True),      # Worst earnings misses
     ('earnings_quality', 'sbc_to_revenue_pct', True),   # Lowest SBC (ascending)
+    # Market Valuation
+    ('market_valuation', 'pe_ratio', True),              # Lowest P/E (cheapest)
+    ('market_valuation', 'ev_to_ebitda', True),          # Lowest EV/EBITDA (cheapest)
+    ('market_valuation', 'market_cap', False),           # Largest market cap
 ]
 
 

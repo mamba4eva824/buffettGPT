@@ -26,6 +26,9 @@ from typing import Any, Dict, List, Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 
+# Import ticker data from investment_research package
+from investment_research.index_tickers import SP500_TICKERS, SP500_SECTORS
+
 logger = logging.getLogger(__name__)
 
 # Environment configuration
@@ -127,7 +130,6 @@ def _get_latest_per_ticker(tickers: Optional[List[str]] = None) -> Dict[str, Dic
     """
     global _latest_cache, _latest_cache_time
     import time as _time
-    from investment_research.index_tickers import SP500_TICKERS
 
     if tickers and len(tickers) <= 20:
         # Query each ticker individually — faster for small lists
@@ -220,6 +222,16 @@ METRIC_MAP = {
     # Dividend
     'dividend_yield': ('dividend', 'dividend_yield'),
     'dps': ('dividend', 'dps'),
+    # Market Valuation (TTM multiples)
+    'pe_ratio': ('market_valuation', 'pe_ratio'),
+    'ev_to_ebitda': ('market_valuation', 'ev_to_ebitda'),
+    'ev_to_sales': ('market_valuation', 'ev_to_sales'),
+    'ev_to_fcf': ('market_valuation', 'ev_to_fcf'),
+    'price_to_fcf': ('market_valuation', 'price_to_fcf'),
+    'market_cap': ('market_valuation', 'market_cap'),
+    'enterprise_value': ('market_valuation', 'enterprise_value'),
+    'earnings_yield': ('market_valuation', 'earnings_yield'),
+    'fcf_yield': ('market_valuation', 'fcf_yield'),
 }
 
 
@@ -257,7 +269,6 @@ def _screen_stocks(params: Dict) -> Dict:
     category, metric = resolved
     threshold = float(value)
 
-    from investment_research.index_tickers import SP500_SECTORS
 
     latest = _get_latest_per_ticker()
     matches = []
@@ -343,6 +354,7 @@ def _get_top_companies(params: Dict) -> Dict:
     metric_name = params.get('metric', '')
     n = min(params.get('n', 10), 50)
     sector = params.get('sector')
+    sort_order = params.get('sort', 'desc')  # 'desc' (highest first) or 'asc' (lowest first)
 
     if not metric_name:
         return {"success": False, "error": "metric is required"}
@@ -352,15 +364,18 @@ def _get_top_companies(params: Dict) -> Dict:
         return {"success": False, "error": f"Unknown metric: {metric_name}. Available: {', '.join(sorted(METRIC_MAP.keys()))}"}
 
     category, metric = resolved
+    ascending = (sort_order == 'asc')
 
     # Try pre-computed ranking first (no sector filter — rankings are index-wide)
     if not sector:
-        ranking = _read_ranking(metric)
+        ranking_key = f"{metric}_asc" if ascending else metric
+        ranking = _read_ranking(ranking_key)
         if ranking:
             entries = ranking.get('rankings', [])[:n]
             return {
                 "success": True,
                 "metric": metric_name,
+                "sort": sort_order,
                 "sector_filter": None,
                 "total_companies": ranking.get('total_with_data', 0),
                 "showing": len(entries),
@@ -378,7 +393,6 @@ def _get_top_companies(params: Dict) -> Dict:
             }
 
     # Fallback: full scan (sector filter or no pre-computed ranking)
-    from investment_research.index_tickers import SP500_SECTORS
 
     latest = _get_latest_per_ticker()
     ranked = []
@@ -393,7 +407,7 @@ def _get_top_companies(params: Dict) -> Dict:
         if val is not None:
             ranked.append((ticker, val))
 
-    ranked.sort(key=lambda x: x[1], reverse=True)
+    ranked.sort(key=lambda x: x[1], reverse=(not ascending))
     top = ranked[:n]
 
     return {
@@ -434,7 +448,6 @@ def _get_company_profile(params: Dict) -> Dict:
     if not ticker:
         return {"success": False, "error": "ticker is required"}
 
-    from investment_research.index_tickers import SP500_SECTORS
 
     # Get latest quarter for this ticker
     resp = metrics_table.query(
@@ -468,7 +481,7 @@ def _get_company_profile(params: Dict) -> Dict:
 
     # Add key metrics from each category
     for category in ['revenue_profit', 'cashflow', 'balance_sheet', 'debt_leverage',
-                     'earnings_quality', 'dilution', 'valuation']:
+                     'earnings_quality', 'dilution', 'valuation', 'market_valuation']:
         cat_data = item.get(category, {})
         if cat_data:
             profile[category] = {k: _safe_float(v) for k, v in cat_data.items() if v is not None}
@@ -510,13 +523,12 @@ def _compare_companies(params: Dict) -> Dict:
     if len(tickers) > 10:
         return {"success": False, "error": "Maximum 10 tickers allowed"}
 
-    from investment_research.index_tickers import SP500_SECTORS
 
     tickers = [t.upper() for t in tickers]
     latest = _get_latest_per_ticker(tickers)
 
     categories = ['revenue_profit', 'cashflow', 'balance_sheet', 'debt_leverage',
-                  'earnings_quality', 'dilution', 'valuation']
+                  'earnings_quality', 'dilution', 'valuation', 'market_valuation']
     if metric_type != 'all':
         categories = [c for c in categories if c == metric_type]
 
@@ -642,7 +654,6 @@ def _get_earnings_surprises(params: Dict) -> Dict:
             }
 
     # Fallback: full scan
-    from investment_research.index_tickers import SP500_SECTORS
 
     latest = _get_latest_per_ticker()
     surprises = []

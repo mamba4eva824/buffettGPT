@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 SP500_DATA_DIR = BACKEND_DIR.parent.parent / 'sp500_analysis' / 'data' / 'company_financials'
 SP500_DIVIDENDS_DIR = BACKEND_DIR.parent.parent / 'sp500_analysis' / 'data' / 'company_dividends'
 SP500_EARNINGS_DIR = BACKEND_DIR.parent.parent / 'sp500_analysis' / 'data' / 'company_earnings'
+SP500_VALUATIONS_DIR = BACKEND_DIR.parent.parent / 'sp500_analysis' / 'data' / 'company_valuations'
+SP500_HIST_VALUATIONS_DIR = BACKEND_DIR.parent.parent / 'sp500_analysis' / 'data' / 'company_historical_valuations'
 
 # Environment
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
@@ -130,6 +132,95 @@ def load_local_earnings(ticker: str) -> Optional[List[Dict[str, Any]]]:
     return None
 
 
+def load_local_valuations(ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Load TTM valuation data from local JSON file.
+
+    Returns dict with valuation metrics, or None if not available.
+    Extracts and normalizes the key valuation multiples from FMP TTM data.
+    """
+    json_path = SP500_VALUATIONS_DIR / f'{ticker}.json'
+    if not json_path.exists():
+        return None
+
+    with open(json_path) as f:
+        data = json.load(f)
+
+    if not data or not data.get('marketCap'):
+        return None
+
+    # Extract and normalize valuation metrics
+    earnings_yield = data.get('earningsYieldTTM', 0)
+    fcf_yield = data.get('freeCashFlowYieldTTM', 0)
+
+    valuation = {
+        'market_cap': data.get('marketCap'),
+        'enterprise_value': data.get('enterpriseValueTTM'),
+        'pe_ratio': round(1 / earnings_yield, 2) if earnings_yield and earnings_yield > 0 else None,
+        'earnings_yield': round(earnings_yield * 100, 2) if earnings_yield else None,
+        'ev_to_ebitda': round(data.get('evToEBITDATTM', 0), 2) if data.get('evToEBITDATTM') else None,
+        'ev_to_sales': round(data.get('evToSalesTTM', 0), 2) if data.get('evToSalesTTM') else None,
+        'ev_to_fcf': round(data.get('evToFreeCashFlowTTM', 0), 2) if data.get('evToFreeCashFlowTTM') else None,
+        'fcf_yield': round(fcf_yield * 100, 2) if fcf_yield else None,
+        'price_to_fcf': round(1 / fcf_yield, 2) if fcf_yield and fcf_yield > 0 else None,
+    }
+
+    # Remove None values
+    return {k: v for k, v in valuation.items() if v is not None}
+
+
+def _days_between(date1: str, date2: str) -> int:
+    """Calculate days between two YYYY-MM-DD date strings."""
+    from datetime import datetime as dt
+    d1 = dt.strptime(date1, '%Y-%m-%d')
+    d2 = dt.strptime(date2, '%Y-%m-%d')
+    return (d1 - d2).days
+
+
+def load_local_historical_valuations(ticker: str) -> Optional[Dict[str, Dict[str, Any]]]:
+    """
+    Load annual historical valuation data from local JSON file.
+
+    Returns dict mapping fiscal_date -> valuation metrics dict.
+    Each date corresponds to a fiscal year-end quarter.
+    """
+    json_path = SP500_HIST_VALUATIONS_DIR / f'{ticker}.json'
+    if not json_path.exists():
+        return None
+
+    with open(json_path) as f:
+        data = json.load(f)
+
+    if not isinstance(data, list) or not data:
+        return None
+
+    # Map each annual record to its fiscal_date
+    by_date = {}
+    for record in data:
+        date = record.get('date')
+        if not date:
+            continue
+
+        earnings_yield = record.get('earningsYield', 0)
+        fcf_yield_raw = record.get('freeCashFlowYield', 0)
+
+        valuation = {
+            'market_cap': record.get('marketCap'),
+            'enterprise_value': record.get('enterpriseValue'),
+            'pe_ratio': round(1 / earnings_yield, 2) if earnings_yield and earnings_yield > 0 else None,
+            'earnings_yield': round(earnings_yield * 100, 2) if earnings_yield else None,
+            'ev_to_ebitda': round(record.get('evToEBITDA', 0), 2) if record.get('evToEBITDA') else None,
+            'ev_to_sales': round(record.get('evToSales', 0), 2) if record.get('evToSales') else None,
+            'ev_to_fcf': round(record.get('evToFreeCashFlow', 0), 2) if record.get('evToFreeCashFlow') else None,
+            'fcf_yield': round(fcf_yield_raw * 100, 2) if fcf_yield_raw else None,
+        }
+
+        # Remove None values
+        by_date[date] = {k: v for k, v in valuation.items() if v is not None}
+
+    return by_date if by_date else None
+
+
 def backfill_ticker(
     ticker: str,
     metrics_table,
@@ -170,6 +261,34 @@ def backfill_ticker(
 
     if not items:
         return {'ticker': ticker, 'status': 'no_metrics', 'items': 0}
+
+    # Attach TTM valuation data to the latest quarter item
+    valuation_data = load_local_valuations(ticker)
+    if valuation_data:
+        latest_item = max(items, key=lambda x: x.get('fiscal_date', ''))
+        latest_item['market_valuation'] = valuation_data
+
+    # Attach historical annual valuations to matching quarterly items
+    hist_valuations = load_local_historical_valuations(ticker)
+    if hist_valuations:
+        items_by_date = {item.get('fiscal_date'): item for item in items}
+        matched = 0
+        for val_date, val_data in hist_valuations.items():
+            if val_date in items_by_date:
+                # Exact date match — annual valuation maps to this quarter
+                items_by_date[val_date]['market_valuation'] = val_data
+                matched += 1
+            else:
+                # Find closest quarterly item within 45 days of the annual date
+                for item in items:
+                    item_date = item.get('fiscal_date', '')
+                    if item_date and abs(_days_between(val_date, item_date)) <= 45:
+                        if 'market_valuation' not in item:
+                            item['market_valuation'] = val_data
+                            matched += 1
+                            break
+        if matched > 0:
+            logger.debug(f"{ticker}: mapped {matched} historical valuations to quarterly items")
 
     if dry_run:
         logger.info(f"[DRY RUN] {ticker}: would write {len(items)} items")

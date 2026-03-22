@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, Archive, Trash2, Edit2, Check, X, Hash, MoreHorizontal } from 'lucide-react';
+import { MessageSquare, Archive, Trash2, Edit2, Check, X, Hash, MoreHorizontal, BarChart2 } from 'lucide-react';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 function classNames(...classes) {
@@ -178,7 +178,10 @@ export function ConversationList({
                 </div>
               ) : (
                 <>
-                  <div className="truncate text-sm font-medium">
+                  <div className="truncate text-sm font-medium flex items-center gap-1.5">
+                    {(conv.metadata?.type === 'market-intelligence' || conv.title?.startsWith('MI:')) && (
+                      <BarChart2 className="h-3.5 w-3.5 shrink-0 text-indigo-500" />
+                    )}
                     {conv.title || 'Untitled Conversation'}
                   </div>
                   {conv.message_count > 0 && (

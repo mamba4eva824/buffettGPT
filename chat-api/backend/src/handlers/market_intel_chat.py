@@ -23,8 +23,10 @@ Invocation:
 import json
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from functools import lru_cache
 from typing import Any, Dict, Optional
 
 import boto3
@@ -40,12 +42,34 @@ logger.setLevel(getattr(logging, log_level))
 
 # Environment
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
-JWT_SECRET = os.environ.get('JWT_SECRET', '')
+PROJECT_NAME = os.environ.get('PROJECT_NAME', 'buffett')
+JWT_SECRET_ARN = os.environ.get('JWT_SECRET_ARN')
 USERS_TABLE = os.environ.get('USERS_TABLE') or f'buffett-{ENVIRONMENT}-users'
+CONVERSATIONS_TABLE = os.environ.get('CONVERSATIONS_TABLE') or f'buffett-{ENVIRONMENT}-conversations'
+CHAT_MESSAGES_TABLE = os.environ.get('CHAT_MESSAGES_TABLE') or f'buffett-{ENVIRONMENT}-chat-messages'
 
-# DynamoDB for subscription check
+# AWS clients
 dynamodb = boto3.resource('dynamodb')
 users_table = dynamodb.Table(USERS_TABLE)
+conversations_table = dynamodb.Table(CONVERSATIONS_TABLE)
+messages_table = dynamodb.Table(CHAT_MESSAGES_TABLE)
+secrets_client = boto3.client('secretsmanager')
+
+
+@lru_cache(maxsize=1)
+def _get_jwt_secret() -> str:
+    """Get JWT secret from Secrets Manager (cached per Lambda instance)."""
+    if JWT_SECRET_ARN:
+        try:
+            response = secrets_client.get_secret_value(SecretId=JWT_SECRET_ARN)
+            return response['SecretString']
+        except Exception as e:
+            logger.error(f"Failed to fetch JWT secret: {e}")
+            raise
+    jwt_secret = os.environ.get('JWT_SECRET', '')
+    if jwt_secret:
+        return jwt_secret
+    raise ValueError("JWT_SECRET not configured")
 
 # Bedrock Runtime client (converse_stream API)
 bedrock_runtime = boto3.client(
@@ -98,13 +122,17 @@ Available metrics for screening and ranking:
 revenue, net_income, gross_margin, operating_margin, net_margin, revenue_growth_yoy, eps, roe,
 fcf_margin, free_cash_flow, operating_cash_flow, capex_intensity, fcf_payout_ratio,
 debt_to_equity, current_ratio, interest_coverage, net_debt_to_ebitda,
-roic, roa, asset_turnover, sbc_to_revenue_pct, eps_surprise_pct, dividend_yield, dps
+roic, roa, asset_turnover, sbc_to_revenue_pct, eps_surprise_pct, dividend_yield, dps,
+pe_ratio, ev_to_ebitda, ev_to_sales, ev_to_fcf, price_to_fcf, market_cap, enterprise_value, earnings_yield, fcf_yield
+
+Note: Valuation metrics (pe_ratio, ev_to_ebitda, etc.) are TTM snapshots based on current market prices.
+Use these for questions like "cheapest stocks by P/E" or "compare NVDA vs AMD valuations".
 
 Sector names (use these exactly):
 Technology, Healthcare, Financial Services, Consumer Cyclical, Consumer Defensive,
 Communication Services, Industrials, Energy, Utilities, Real Estate, Basic Materials
 
-Data freshness: Metrics are from the most recent available quarter per company. Aggregates are refreshed periodically."""
+Data freshness: Metrics are from the most recent available quarter per company. Valuation multiples are TTM snapshots. Aggregates are refreshed periodically."""
 
 
 # =============================================================================
@@ -169,14 +197,14 @@ MARKET_INTEL_TOOLS = {
         {
             "toolSpec": {
                 "name": "getTopCompanies",
-                "description": "Rank S&P 500 companies by any metric. Returns top N companies sorted by the metric.",
+                "description": "Rank S&P 500 companies by any metric. Use sort='asc' for lowest-first (cheapest by P/E, lowest debt). Default is 'desc' (highest first).",
                 "inputSchema": {
                     "json": {
                         "type": "object",
                         "properties": {
                             "metric": {
                                 "type": "string",
-                                "description": "Metric to rank by: revenue, gross_margin, operating_margin, net_margin, fcf_margin, revenue_growth_yoy, roe, roic, dividend_yield, eps_surprise_pct, etc."
+                                "description": "Metric to rank by: revenue, gross_margin, operating_margin, net_margin, fcf_margin, revenue_growth_yoy, roe, roic, dividend_yield, eps_surprise_pct, pe_ratio, ev_to_ebitda, market_cap, etc."
                             },
                             "n": {
                                 "type": "integer",
@@ -185,6 +213,11 @@ MARKET_INTEL_TOOLS = {
                             "sector": {
                                 "type": "string",
                                 "description": "Optional: filter to a specific sector"
+                            },
+                            "sort": {
+                                "type": "string",
+                                "enum": ["desc", "asc"],
+                                "description": "Sort order: 'desc' for highest first (default), 'asc' for lowest first. Use 'asc' for cheapest by P/E or lowest debt."
                             }
                         },
                         "required": ["metric"]
@@ -381,16 +414,75 @@ def verify_jwt_token(event: Dict) -> Optional[Dict]:
         return None
 
     token = auth_header[7:]
-    if not JWT_SECRET:
-        logger.warning("JWT_SECRET not configured")
-        return None
 
     try:
-        claims = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        jwt_secret = _get_jwt_secret()
+        claims = jwt.decode(token, jwt_secret, algorithms=['HS256'], options={'verify_exp': True})
         return claims
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token expired")
+        return None
     except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid JWT: {e}")
         return None
+    except Exception as e:
+        logger.error(f"JWT verification error: {e}")
+        return None
+
+
+# =============================================================================
+# CONVERSATION PERSISTENCE
+# =============================================================================
+
+def save_message(
+    conversation_id: str,
+    message_type: str,
+    content: str,
+    user_id: str,
+    timestamp_offset_ms: int = 0
+) -> Optional[str]:
+    """Save a market intelligence message to DynamoDB (fire-and-forget)."""
+    try:
+        timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000) + timestamp_offset_ms
+        message_id = str(uuid.uuid4())
+
+        messages_table.put_item(Item={
+            'conversation_id': conversation_id,
+            'timestamp': timestamp_ms,
+            'message_id': message_id,
+            'message_type': message_type,
+            'content': content,
+            'user_id': user_id,
+            'created_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            'status': 'completed' if message_type == 'assistant' else 'received',
+            'environment': ENVIRONMENT,
+            'project': PROJECT_NAME,
+            'metadata': {
+                'source': 'market_intelligence'
+            }
+        })
+        logger.info(f"Saved {message_type} message {message_id} for conversation {conversation_id}")
+        return message_id
+    except Exception as e:
+        logger.error(f"Failed to save {message_type} message: {e}", exc_info=True)
+        return None
+
+
+def update_conversation_record(conversation_id: str, user_id: str, message_count_increment: int = 1):
+    """Update conversation updated_at timestamp and message_count.
+
+    Raises on failure so the caller can gate message saves on ownership check.
+    """
+    conversations_table.update_item(
+        Key={'conversation_id': conversation_id},
+        UpdateExpression='SET updated_at = :ts ADD message_count :inc',
+        ExpressionAttributeValues={
+            ':ts': int(datetime.now(timezone.utc).timestamp()),
+            ':inc': message_count_increment,
+            ':user': user_id
+        },
+        ConditionExpression='user_id = :user'
+    )
 
 
 # =============================================================================
@@ -618,6 +710,7 @@ def non_streaming_response(event: Dict, context: Any, user_id: str = 'anonymous'
         body = body_str
 
     message = body.get('message', '')
+    conversation_id = body.get('conversation_id')
     conversation_history = body.get('messages', [])
 
     if not message:
@@ -680,13 +773,25 @@ def non_streaming_response(event: Dict, context: Any, user_id: str = 'anonymous'
         else:
             break
 
+    logger.info(f"[MARKET_INTEL] Token usage: input={total_input_tokens}, output={total_output_tokens}, turns={turn_count}")
     usage_result = token_tracker.record_usage(user_id, total_input_tokens, total_output_tokens)
+
+    # Persist messages to DynamoDB if conversation_id is provided
+    # Update conversation first (has ownership ConditionExpression) — only save messages if it succeeds
+    if conversation_id:
+        try:
+            update_conversation_record(conversation_id, user_id, message_count_increment=2)
+            save_message(conversation_id, 'user', message, user_id)
+            save_message(conversation_id, 'assistant', full_response, user_id, timestamp_offset_ms=1)
+        except Exception as e:
+            logger.error(f"Failed to persist messages for conversation {conversation_id}: {e}")
 
     return {
         'statusCode': 200,
         'headers': {'Content-Type': 'application/json'},
         'body': json.dumps({
             'response': full_response,
+            'conversation_id': conversation_id,
             'agent_type': 'market-intel',
             'turns': turn_count,
             'token_usage': {
@@ -759,10 +864,9 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         logger.warning(f"[MARKET_INTEL] User {user_id} denied — tier={subscription_tier}")
         return error_response(403, "Plus subscription required for Market Intelligence")
 
-    # Route to streaming or non-streaming
-    if is_function_url and not is_api_gateway:
-        logger.info(f"[MARKET_INTEL] Streaming response for user {user_id}")
-        return stream_market_intel_response(event, context, user_id=user_id)
-
+    # Route to non-streaming response
+    # NOTE: Python 3.11 Lambda runtime doesn't support generator-based RESPONSE_STREAM.
+    # Using non-streaming converse() for now. The response is returned as complete JSON.
+    # SSE streaming will be enabled when migrating to Python 3.12+ or using a streaming wrapper.
     logger.info(f"[MARKET_INTEL] Non-streaming response for user {user_id}")
     return non_streaming_response(event, context, user_id=user_id)
