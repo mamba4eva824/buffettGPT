@@ -23,3 +23,21 @@ resource "aws_lambda_function_url" "analysis_followup" {
     max_age           = 86400
   }
 }
+
+# Market Intelligence Chat Function URL
+# Same pattern as analysis_followup: NONE auth (JWT validated inside Lambda),
+# RESPONSE_STREAM for SSE streaming via Python generator.
+resource "aws_lambda_function_url" "market_intel_chat" {
+  function_name      = aws_lambda_function.functions["market_intel_chat"].function_name
+  authorization_type = "NONE"
+  invoke_mode        = "RESPONSE_STREAM"
+
+  cors {
+    allow_credentials = true
+    allow_origins     = var.cors_allowed_origins
+    allow_methods     = ["POST"]
+    allow_headers     = ["content-type", "authorization"]
+    expose_headers    = ["content-type"]
+    max_age           = 86400
+  }
+}

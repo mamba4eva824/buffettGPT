@@ -231,6 +231,10 @@ module "api_gateway" {
   investment_research_function_name   = module.lambda.investment_research_docker_function_name
   analysis_followup_function_url      = module.lambda.analysis_followup_url
 
+  # Market Intelligence API (REST API with JWT auth + Plus subscription check)
+  enable_market_intelligence_api      = true
+  market_intelligence_function_url    = module.lambda.market_intel_chat_url
+
   # Subscription/Stripe API (checkout, portal, status, webhook)
   enable_subscription_routes = true
   enable_stripe_webhook      = true

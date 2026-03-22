@@ -9,6 +9,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -q 'git commit' && git diff HEAD~1 --name-only 2>/dev/null | grep -qE '(market_intel|sp500_|market_intelligence)' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"CHANGELOG REMINDER: Market Intelligence files were modified in this commit. Update docs/market-intelligence/CHANGELOG.md with the changes under the [Unreleased] section.\"}}' || true",
+            "statusMessage": "Checking for changelog update..."
+          }
+        ]
+      }
     ]
   }
 }
