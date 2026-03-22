@@ -1,0 +1,253 @@
+import { useMemo } from 'react';
+
+// Shared sub-components for Value Insights panels
+
+export function MetricBar({ label, value, displayValue, maxValue = 1, color = 'bg-vi-accent' }) {
+  const width = Math.min((value / maxValue) * 100, 100);
+  return (
+    <div>
+      <div className="flex justify-between items-end mb-2">
+        <span className="text-sm font-semibold text-sand-600 dark:text-warm-200">{label}</span>
+        <span className="text-lg font-bold text-vi-accent">{displayValue}</span>
+      </div>
+      <div className="h-4 bg-sand-200 dark:bg-warm-800 rounded-full overflow-hidden">
+        <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export function DataTable({ columns, rows }) {
+  return (
+    <div className="bg-sand-100 dark:bg-warm-900 rounded-xl overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="bg-sand-200/50 dark:bg-warm-800/50">
+              {columns.map((col, i) => (
+                <th key={i} className={`px-8 py-4 text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-300 ${i === columns.length - 1 ? 'text-right' : ''}`}>
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-sand-200/50 dark:divide-warm-800/50">
+            {rows.map((row, i) => (
+              <tr key={i} className={`hover:bg-sand-200/50 dark:hover:bg-warm-800 transition-colors ${i % 2 === 1 ? 'bg-sand-50 dark:bg-warm-950/50' : ''}`}>
+                {row.map((cell, j) => (
+                  <td key={j} className={`px-8 py-5 font-medium ${j === 0 ? 'font-bold text-sand-800 dark:text-warm-50' : ''} ${j === row.length - 1 ? 'text-right' : ''} ${typeof cell === 'string' && cell.startsWith('-') ? 'text-vi-rose' : j > 0 ? 'text-sand-600 dark:text-warm-200' : ''}`}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function RatingBadge({ rating }) {
+  const colors = {
+    Strong: 'bg-vi-sage/20 text-vi-sage',
+    Moderate: 'bg-vi-gold/20 text-vi-gold',
+    Weak: 'bg-vi-rose/20 text-vi-rose',
+  };
+  const cls = colors[rating] || colors.Moderate;
+  return (
+    <span className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest ${cls}`}>
+      {rating}
+    </span>
+  );
+}
+
+export const CARD = "bg-sand-100 dark:bg-warm-900 rounded-xl p-8";
+
+// QoQ delta chip — small inline arrow showing quarter-over-quarter change
+export function DeltaChip({ value }) {
+  if (value == null) return null;
+  const isPositive = value >= 0;
+  const color = isPositive ? 'text-vi-sage' : 'text-vi-rose';
+  const arrow = isPositive ? 'arrow_upward' : 'arrow_downward';
+  return (
+    <span className={`inline-flex items-center ml-1.5 text-[10px] ${color}`}>
+      <span className="material-symbols-outlined text-[12px]">{arrow}</span>
+      {Math.abs(value * 100).toFixed(0)}%
+    </span>
+  );
+}
+
+// Bento tile with optional sparkline or icon
+export function BentoTile({ label, value, sparkline, color, icon }) {
+  return (
+    <div className={`${CARD} !p-4 relative overflow-hidden`}>
+      <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">{label}</div>
+      <div className="text-2xl font-serif text-sand-900 dark:text-warm-50">{value}</div>
+      {sparkline && sparkline.length > 1 && (
+        <Sparkline data={sparkline} color={color} />
+      )}
+      {icon && (
+        <span className="absolute right-3 bottom-2 material-symbols-outlined text-3xl text-sand-300 dark:text-warm-700 opacity-50">{icon}</span>
+      )}
+    </div>
+  );
+}
+
+// Tiny inline sparkline SVG
+export function Sparkline({ data, color = '#a0d6ad', width = 80, height = 24 }) {
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg className="absolute right-3 bottom-3 opacity-40" width={width} height={height}>
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+// Growth chart — actual values as solid line with rolling 4Q average dashed overlay
+export function CagrChart({ data, quarters, cagr, label, color, formatFn }) {
+  if (!data || data.length < 2 || cagr == null) return null;
+
+  const W = 320;
+  const H = 150;
+  const PAD = { top: 8, right: 12, bottom: 28, left: 42 };
+  const plotW = W - PAD.left - PAD.right;
+  const plotH = H - PAD.top - PAD.bottom;
+
+  // Rolling 4Q average — compute before min/max so trendline is included in scale
+  const rolling4Q = data.map((_, i) => {
+    if (i < 3) return null; // need 4 quarters
+    return (data[i] + data[i - 1] + data[i - 2] + data[i - 3]) / 4;
+  });
+  const rollingValid = rolling4Q.filter(v => v != null);
+
+  // Min/max across both actual and rolling to keep them on the same scale
+  const allVals = [...data, ...rollingValid];
+  const min = Math.min(...allVals);
+  const max = Math.max(...allVals);
+  const range = max - min || 1;
+
+  const toX = (i) => PAD.left + (i / (data.length - 1)) * plotW;
+  const toY = (v) => PAD.top + plotH - ((v - min) / range) * plotH;
+
+  // Actual data polyline
+  const actualPoints = data.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
+
+  // Rolling 4Q average polyline (starts at index 3)
+  const rollingPoints = rolling4Q
+    .map((v, i) => (v != null ? `${toX(i)},${toY(v)}` : null))
+    .filter(Boolean)
+    .join(' ');
+
+  // Y-axis tick values (3 ticks)
+  const yTicks = [min, min + range / 2, max];
+
+  // X-axis year labels — show a tick at the first quarter of each fiscal year
+  const xLabels = [];
+  if (quarters && quarters.length === data.length) {
+    const seenYears = new Set();
+    quarters.forEach((q, i) => {
+      const yr = q.fiscal_year;
+      if (!seenYears.has(yr)) {
+        seenYears.add(yr);
+        xLabels.push({ index: i, label: String(yr) });
+      }
+    });
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400">{label}</span>
+        <span className="text-xs font-bold" style={{ color }}>CAGR {(cagr * 100).toFixed(1)}%</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
+        {/* Horizontal grid lines + Y-axis labels */}
+        {yTicks.map((tick, i) => (
+          <g key={i}>
+            <line
+              x1={PAD.left} y1={toY(tick)} x2={W - PAD.right} y2={toY(tick)}
+              stroke="currentColor" strokeWidth="0.5" className="text-sand-200 dark:text-warm-700"
+            />
+            <text x={PAD.left - 4} y={toY(tick) + 3} textAnchor="end" className="text-sand-400 dark:text-warm-500 fill-current" fontSize="8">
+              {formatFn(tick)}
+            </text>
+          </g>
+        ))}
+        {/* X-axis year labels + vertical tick marks */}
+        {xLabels.map(({ index, label: yr }) => (
+          <g key={yr}>
+            <line
+              x1={toX(index)} y1={PAD.top} x2={toX(index)} y2={PAD.top + plotH}
+              stroke="currentColor" strokeWidth="0.3" className="text-sand-200 dark:text-warm-700"
+            />
+            <text
+              x={toX(index)} y={PAD.top + plotH + 14}
+              textAnchor="middle" className="text-sand-400 dark:text-warm-500 fill-current" fontSize="8"
+            >
+              {yr}
+            </text>
+          </g>
+        ))}
+        {/* Rolling 4Q average (dashed) */}
+        {rollingPoints && (
+          <polyline points={rollingPoints} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
+        )}
+        {/* Actual values (solid) */}
+        <polyline points={actualPoints} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Data points */}
+        {data.map((v, i) => (
+          <circle key={i} cx={toX(i)} cy={toY(v)} r="2.5" fill={color} opacity="0.7" />
+        ))}
+        {/* Shaded area under actual line */}
+        <polygon
+          points={`${toX(0)},${toY(min)} ${actualPoints} ${toX(data.length - 1)},${toY(min)}`}
+          fill={color} opacity="0.06"
+        />
+      </svg>
+      <div className="flex justify-center mt-1">
+        <div className="flex items-center gap-3 text-[9px] text-sand-400 dark:text-warm-500">
+          <span className="flex items-center gap-1"><span className="inline-block w-3 border-t-2" style={{ borderColor: color }} />Quarterly</span>
+          <span className="flex items-center gap-1"><span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: color, opacity: 0.5 }} />4Q Avg</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// DuPont block sub-component
+export function DuPontBlock({ label, value, color, highlight }) {
+  return (
+    <div className={`${highlight ? CARD + ' !p-4 border-2 border-vi-gold/30' : CARD + ' !p-4'}`}>
+      <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">{label}</div>
+      <div className={`text-2xl font-serif font-bold ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+// Hook to filter data by time range
+// eslint-disable-next-line react-refresh/only-export-components
+export const useFilteredData = (data, timeRange) => {
+  return useMemo(() => {
+    if (!data?.length) return [];
+    const sorted = [...data].sort((a, b) => a.fiscal_date.localeCompare(b.fiscal_date));
+    const quarterCount = { '5Y': 20, '3Y': 12, '1Y': 4 };
+    const count = quarterCount[timeRange] || 20;
+    return sorted.slice(-count);
+  }, [data, timeRange]);
+};

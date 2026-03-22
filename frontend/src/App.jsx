@@ -16,6 +16,7 @@ import { ResearchProvider, useResearch } from "./contexts/ResearchContext.jsx";
 import SectionCard from "./components/research/SectionCard.jsx";
 import ResearchLayout from "./components/research/ResearchLayout.jsx";
 import { useCompanySearch } from "./hooks/useCompanySearch.js";
+import ValueInsights from "./components/value-insights/ValueInsights.jsx";
 
 // Lazy-loaded waitlist page (code-split)
 const WaitlistPage = lazy(() => import("./components/waitlist/WaitlistPage.jsx"));
@@ -182,6 +183,7 @@ function ChatApp() {
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
   const [showInvestmentResearch, setShowInvestmentResearch] = useState(false);
+  const [appMode, setAppMode] = useState('chat'); // 'chat' | 'value-insights'
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const isConnecting = false; // Simplified - no connection waiting needed for analysis mode
@@ -1498,6 +1500,31 @@ function ChatApp() {
                   </button>
                 )}
               </div>
+
+              {/* Mode pill toggle — Chat / Value Insights */}
+              <div className="flex items-center bg-sand-200 dark:bg-warm-800 rounded-full p-1 gap-1">
+                <button
+                  onClick={() => setAppMode('chat')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                    appMode === 'chat'
+                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
+                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
+                  }`}
+                >
+                  Chat
+                </button>
+                <button
+                  onClick={() => setAppMode('value-insights')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                    appMode === 'value-insights'
+                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
+                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
+                  }`}
+                >
+                  Value Insights
+                </button>
+              </div>
+
               <div className="flex items-center gap-2">
                 {/* Account dropdown moved to sidebar - show login button for non-authenticated users */}
                 {!isAuthenticated && (
@@ -1521,8 +1548,13 @@ function ChatApp() {
               </div>
             </div>
 
-            {/* Dynamic Layout Based on Message State */}
-            {messages.length === 0 && !showInvestmentResearch ? (
+            {/* Dynamic Layout Based on Mode */}
+            {appMode === 'value-insights' ? (
+              /* VALUE INSIGHTS MODE */
+              <div className="flex-1 overflow-hidden">
+                <ValueInsights />
+              </div>
+            ) : messages.length === 0 && !showInvestmentResearch ? (
               /* CENTERED LAYOUT - No messages (landing, auth, new chat) */
               <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 pb-24 transition-all duration-300 ease-in-out">
                 <div className="text-center mb-8">

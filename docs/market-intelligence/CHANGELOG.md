@@ -6,6 +6,34 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Phase 4: API Gateway + Plus Subscription Gating (2026-03-22)
+
+**Added**
+- Plus subscription check in `market_intel_chat.py` — queries DynamoDB users table for `subscription_tier`
+- API Gateway REST API route: `POST /market-intel/chat` with HTTP_PROXY → Lambda Function URL (SSE streaming)
+- CORS OPTIONS preflight for `/market-intel/chat`
+- CUSTOM JWT authorizer (reuses existing `analysis_jwt`)
+- 10 unit tests for subscription gating + handler routing
+
+**Architecture**
+- Market Intelligence is included in the **Plus tier** — no new Stripe product/price needed
+- Auth flow: JWT validates identity → DynamoDB checks `subscription_tier == 'plus'` → allow/deny
+- Free users get 403 "Plus subscription required for Market Intelligence"
+- JWT `subscription_tier` is NOT trusted (may be stale) — DynamoDB is authoritative source
+
+**Key Decision: No Stripe Changes**
+- Original Phase 4 planned a separate $10/mo subscription
+- Changed to: Market Intelligence included in existing Plus tier
+- Eliminated: new Stripe product, webhook handler changes, subscription_handler changes
+
+**Modified Files**
+- `market_intel_chat.py` — added `_get_subscription_tier()` + DynamoDB users table lookup
+- `analysis_streaming.tf` — added `/market-intel/chat` resources (POST + OPTIONS + integration)
+- `api-gateway/variables.tf` — added `enable_market_intelligence_api` + `market_intelligence_function_url`
+- `environments/dev/main.tf` — wired function URL + enabled market intelligence API
+
+---
+
 ### Performance Optimization: Pre-computed Rankings + Scan Cache (2026-03-21)
 
 **Added**

@@ -41,6 +41,11 @@ logger.setLevel(getattr(logging, log_level))
 # Environment
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 JWT_SECRET = os.environ.get('JWT_SECRET', '')
+USERS_TABLE = os.environ.get('USERS_TABLE') or f'buffett-{ENVIRONMENT}-users'
+
+# DynamoDB for subscription check
+dynamodb = boto3.resource('dynamodb')
+users_table = dynamodb.Table(USERS_TABLE)
 
 # Bedrock Runtime client (converse_stream API)
 bedrock_runtime = boto3.client(
@@ -343,6 +348,28 @@ def error_response(status_code: int, message: str) -> Dict:
         'headers': {'Content-Type': 'application/json'},
         'body': json.dumps({'error': message})
     }
+
+
+def _get_subscription_tier(user_id: str) -> str:
+    """Check user's subscription tier from DynamoDB users table.
+
+    This is the authoritative source for subscription status.
+    The JWT may contain a stale tier from login time.
+
+    Returns: 'free', 'plus', or 'premium'
+    """
+    try:
+        resp = users_table.get_item(
+            Key={'user_id': user_id},
+            ProjectionExpression='subscription_tier'
+        )
+        item = resp.get('Item', {})
+        return item.get('subscription_tier', 'free')
+    except Exception as e:
+        logger.error(f"Failed to check subscription for {user_id}: {e}")
+        # Fail open for DynamoDB errors — don't block users due to infra issues
+        # The token tracker will still enforce limits
+        return 'free'
 
 
 def verify_jwt_token(event: Dict) -> Optional[Dict]:
@@ -724,6 +751,13 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         return error_response(401, "Unauthorized - valid JWT token required")
 
     user_id = user_claims.get('user_id', user_claims.get('sub', 'anonymous'))
+
+    # Plus subscription check — query DynamoDB for authoritative tier
+    # (JWT subscription_tier may be stale if user upgraded after login)
+    subscription_tier = _get_subscription_tier(user_id)
+    if subscription_tier not in ('plus', 'premium'):
+        logger.warning(f"[MARKET_INTEL] User {user_id} denied — tier={subscription_tier}")
+        return error_response(403, "Plus subscription required for Market Intelligence")
 
     # Route to streaming or non-streaming
     if is_function_url and not is_api_gateway:

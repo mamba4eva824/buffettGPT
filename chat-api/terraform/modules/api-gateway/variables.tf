@@ -127,6 +127,18 @@ variable "analysis_followup_function_url" {
   default     = ""
 }
 
+variable "enable_market_intelligence_api" {
+  description = "Enable REST API endpoints for Market Intelligence chat"
+  type        = bool
+  default     = false
+}
+
+variable "market_intelligence_function_url" {
+  description = "Function URL for Market Intelligence chat Lambda (HTTP_PROXY target for /market-intel/chat)"
+  type        = string
+  default     = ""
+}
+
 variable "investment_research_function_name" {
   description = "Name of the Investment Research Lambda function"
   type        = string

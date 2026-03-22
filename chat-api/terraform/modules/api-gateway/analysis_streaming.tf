@@ -94,6 +94,14 @@ resource "aws_api_gateway_deployment" "analysis" {
       try(aws_api_gateway_integration.research_sections_batch_lambda[0].uri, ""),
       try(aws_api_gateway_method.research_sections_batch_options[0].id, ""),
       try(aws_api_gateway_integration.research_sections_batch_options[0].id, ""),
+      # Market Intelligence API resources
+      try(aws_api_gateway_resource.market_intel[0].id, ""),
+      try(aws_api_gateway_resource.market_intel_chat[0].id, ""),
+      try(aws_api_gateway_method.market_intel_chat_post[0].id, ""),
+      try(aws_api_gateway_integration.market_intel_chat_lambda[0].id, ""),
+      try(aws_api_gateway_integration.market_intel_chat_lambda[0].uri, ""),
+      try(aws_api_gateway_method.market_intel_chat_options[0].id, ""),
+      try(aws_api_gateway_integration.market_intel_chat_options[0].id, ""),
     ]))
   }
 
@@ -113,7 +121,9 @@ resource "aws_api_gateway_deployment" "analysis" {
     aws_api_gateway_integration.research_section_lambda,
     aws_api_gateway_integration.research_section_options,
     aws_api_gateway_integration.research_sections_batch_lambda,
-    aws_api_gateway_integration.research_sections_batch_options
+    aws_api_gateway_integration.research_sections_batch_options,
+    aws_api_gateway_integration.market_intel_chat_lambda,
+    aws_api_gateway_integration.market_intel_chat_options
   ]
 }
 
@@ -809,4 +819,112 @@ resource "aws_api_gateway_integration_response" "research_followup_options" {
   }
 
   depends_on = [aws_api_gateway_integration.research_followup_options]
+}
+
+# ============================================================================
+# /market-intel/chat - POST endpoint for Market Intelligence chat (SSE streaming)
+# ============================================================================
+# Replicates the /research/followup pattern: HTTP_PROXY → Lambda Function URL
+# Plus subscription required (checked inside Lambda handler)
+
+# /market-intel resource (parent)
+resource "aws_api_gateway_resource" "market_intel" {
+  count       = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_rest_api.analysis[0].root_resource_id
+  path_part   = "market-intel"
+}
+
+# /market-intel/chat resource (child)
+resource "aws_api_gateway_resource" "market_intel_chat" {
+  count       = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  parent_id   = aws_api_gateway_resource.market_intel[0].id
+  path_part   = "chat"
+}
+
+# POST Method with JWT Authorization
+resource "aws_api_gateway_method" "market_intel_chat_post" {
+  count         = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.market_intel_chat[0].id
+  http_method   = "POST"
+  authorization = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id = var.enable_authorization ? aws_api_gateway_authorizer.analysis_jwt[0].id : null
+
+  request_parameters = {
+    "method.request.header.Authorization" = false
+    "method.request.header.Content-Type"  = false
+  }
+}
+
+# HTTP_PROXY Integration to Lambda Function URL (SSE streaming)
+resource "aws_api_gateway_integration" "market_intel_chat_lambda" {
+  count                   = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id             = aws_api_gateway_rest_api.analysis[0].id
+  resource_id             = aws_api_gateway_resource.market_intel_chat[0].id
+  http_method             = aws_api_gateway_method.market_intel_chat_post[0].http_method
+  integration_http_method = "POST"
+  type                    = "HTTP_PROXY"
+
+  uri = var.market_intelligence_function_url
+
+  request_parameters = {
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+    "integration.request.header.Content-Type"  = "method.request.header.Content-Type"
+  }
+
+  passthrough_behavior = "WHEN_NO_MATCH"
+  timeout_milliseconds = 29000
+}
+
+# CORS Preflight (OPTIONS) for Market Intelligence
+resource "aws_api_gateway_method" "market_intel_chat_options" {
+  count         = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id   = aws_api_gateway_rest_api.analysis[0].id
+  resource_id   = aws_api_gateway_resource.market_intel_chat[0].id
+  http_method   = "OPTIONS"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "market_intel_chat_options" {
+  count       = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.market_intel_chat[0].id
+  http_method = aws_api_gateway_method.market_intel_chat_options[0].http_method
+  type        = "MOCK"
+
+  request_templates = {
+    "application/json" = "{\"statusCode\": 200}"
+  }
+}
+
+resource "aws_api_gateway_method_response" "market_intel_chat_options" {
+  count       = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.market_intel_chat[0].id
+  http_method = aws_api_gateway_method.market_intel_chat_options[0].http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = true
+    "method.response.header.Access-Control-Allow-Methods" = true
+    "method.response.header.Access-Control-Allow-Origin"  = true
+  }
+}
+
+resource "aws_api_gateway_integration_response" "market_intel_chat_options" {
+  count       = var.enable_analysis_api && var.enable_market_intelligence_api ? 1 : 0
+  rest_api_id = aws_api_gateway_rest_api.analysis[0].id
+  resource_id = aws_api_gateway_resource.market_intel_chat[0].id
+  http_method = aws_api_gateway_method.market_intel_chat_options[0].http_method
+  status_code = aws_api_gateway_method_response.market_intel_chat_options[0].status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,Authorization,Accept'"
+    "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
+    "method.response.header.Access-Control-Allow-Origin"  = var.cloudfront_url != "" ? "'${var.cloudfront_url}'" : "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.market_intel_chat_options]
 }
