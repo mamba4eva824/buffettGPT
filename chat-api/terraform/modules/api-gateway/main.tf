@@ -40,7 +40,9 @@ resource "aws_apigatewayv2_api" "http_api" {
         "http://localhost:5174",  # Alternative Vite port
         "http://localhost:3000",  # Alternative dev port
         "http://localhost:4173",  # Vite preview
-        "http://127.0.0.1:5173"   # Alternative localhost
+        "http://localhost:8000",  # Alternative dev port
+        "http://127.0.0.1:5173", # Alternative localhost
+        "http://127.0.0.1:8000"  # Alternative localhost
       ]
     )
     expose_headers = [
