@@ -6,6 +6,28 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Staging Environment Parity (2026-03-23)
+
+**Added**
+- Staging Terraform brought to full parity with dev environment
+- Stripe + Email (Resend) modules added to staging
+- All API Gateway routes enabled (analysis, research, market intelligence, subscriptions)
+- Market Intelligence Lambda Function URL output for staging CI/CD
+- `VITE_MARKET_INTEL_URL` added to staging frontend build
+- Docker Lambda build jobs retained in staging CI/CD pipeline
+
+**Removed**
+- Deprecated WebSocket, SQS, chat_processor references from staging
+- Landing page CloudFront module and CI/CD jobs (consolidated into main frontend)
+- S3 import block (one-time operation already completed)
+
+**Fixed**
+- AWS provider upgraded from ~> 5.0 to ~> 6.25 in staging
+- Bedrock agent output references fixed (`agent_id` → `followup_agent_id`)
+- Stale Terraform state resources cleaned up (14 orphaned resources removed)
+
+---
+
 ### Valuation Multiples + Historical P/E Tracking (2026-03-22)
 
 **Added**
