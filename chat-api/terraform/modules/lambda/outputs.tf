@@ -128,6 +128,11 @@ output "analysis_followup_docker_function_name" {
   value       = try(aws_lambda_function.analysis_followup_docker.function_name, null)
 }
 
+output "market_intel_chat_url" {
+  description = "Function URL for market intelligence chat (SSE streaming)"
+  value       = try(aws_lambda_function_url.market_intel_chat.function_url, null)
+}
+
 # ================================================
 # Prediction Ensemble Docker Outputs (ARCHIVED - 2025-01)
 # ================================================

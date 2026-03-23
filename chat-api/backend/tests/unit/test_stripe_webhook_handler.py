@@ -32,6 +32,7 @@ os.environ['ENVIRONMENT'] = 'test'
 os.environ['USERS_TABLE'] = 'buffett-test-users'
 os.environ['TOKEN_USAGE_TABLE'] = 'buffett-test-token-usage'
 os.environ['PROCESSED_EVENTS_TABLE'] = 'buffett-test-stripe-events'
+os.environ['WAITLIST_TABLE'] = 'waitlist-test-buffett'
 os.environ['TOKEN_LIMIT_PLUS'] = '2000000'
 
 
@@ -89,12 +90,33 @@ def create_stripe_events_table(dynamodb):
     return table
 
 
+def create_waitlist_table(dynamodb):
+    """Create waitlist table."""
+    table = dynamodb.create_table(
+        TableName='waitlist-test-buffett',
+        KeySchema=[{'AttributeName': 'email', 'KeyType': 'HASH'}],
+        AttributeDefinitions=[
+            {'AttributeName': 'email', 'AttributeType': 'S'},
+            {'AttributeName': 'referral_code', 'AttributeType': 'S'},
+        ],
+        GlobalSecondaryIndexes=[{
+            'IndexName': 'referral-code-index',
+            'KeySchema': [{'AttributeName': 'referral_code', 'KeyType': 'HASH'}],
+            'Projection': {'ProjectionType': 'ALL'},
+        }],
+        BillingMode='PAY_PER_REQUEST'
+    )
+    table.wait_until_exists()
+    return table
+
+
 def create_all_tables(dynamodb):
     """Create all required tables and return them as a dict."""
     return {
         'users': create_users_table(dynamodb),
         'token_usage': create_token_usage_table(dynamodb),
         'events': create_stripe_events_table(dynamodb),
+        'waitlist': create_waitlist_table(dynamodb),
     }
 
 
@@ -2325,3 +2347,173 @@ class TestInvoicePaymentFailedAdditional:
 
         # Should return 200 (handled gracefully)
         assert response['statusCode'] == 200
+
+
+# =============================================================================
+# Test Class: Referral Claim on Checkout Completed
+# =============================================================================
+
+class TestReferralClaimOnCheckout:
+    """Tests for referral reward claim marking during checkout.session.completed."""
+
+    @mock_aws
+    @freeze_time("2025-01-20 14:30:00", tz_offset=0)
+    @patch('handlers.stripe_webhook_handler.verify_webhook_signature')
+    def test_checkout_with_referral_trial_marks_claimed(self, mock_verify):
+        """
+        Given: Checkout session with referral_trial_days metadata
+        When: checkout.session.completed fires
+        Then: Waitlist entry marked with referral_claimed_at
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'referral-claim-user',
+            'email': 'referral@example.com',
+        })
+        tables['waitlist'].put_item(Item={
+            'email': 'referral@example.com',
+            'referral_code': 'BUFF-CLAIM1',
+            'referral_count': 3,
+            'status': 'early_access',
+        })
+
+        mock_verify.return_value = build_webhook_event(
+            'evt_referral_claim', 'checkout.session.completed',
+            {
+                'client_reference_id': 'referral-claim-user',
+                'customer': 'cus_referral123',
+                'subscription': 'sub_referral123',
+                'metadata': {
+                    'user_id': 'referral-claim-user',
+                    'environment': 'test',
+                    'referral_trial_days': '30',
+                    'referral_source': 'waitlist',
+                    'referral_email': 'referral@example.com',
+                }
+            }
+        )
+
+        import handlers.stripe_webhook_handler as handler
+        handler.users_table = tables['users']
+        handler.token_usage_table = tables['token_usage']
+        handler.processed_events_table = tables['events']
+        handler.waitlist_table = tables['waitlist']
+
+        response = handler.lambda_handler(build_api_gateway_event(), None)
+
+        assert response['statusCode'] == 200
+
+        # Verify waitlist entry was marked as claimed
+        waitlist_entry = tables['waitlist'].get_item(Key={'email': 'referral@example.com'})['Item']
+        assert 'referral_claimed_at' in waitlist_entry
+        assert waitlist_entry['referral_claimed_by'] == 'referral-claim-user'
+        assert int(waitlist_entry['referral_trial_days_granted']) == 30
+
+        # Verify user was set to trialing status
+        user = tables['users'].get_item(Key={'user_id': 'referral-claim-user'})['Item']
+        assert user['subscription_status'] == 'trialing'
+        assert user['subscription_tier'] == 'plus'
+
+    @mock_aws
+    @freeze_time("2025-01-20 14:30:00", tz_offset=0)
+    @patch('handlers.stripe_webhook_handler.verify_webhook_signature')
+    def test_checkout_without_referral_metadata_no_claim(self, mock_verify):
+        """
+        Given: Regular checkout session without referral metadata
+        When: checkout.session.completed fires
+        Then: No waitlist update attempted, status is 'active' not 'trialing'
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'regular-checkout-user',
+            'email': 'regular@example.com',
+        })
+
+        mock_verify.return_value = build_webhook_event(
+            'evt_regular_checkout', 'checkout.session.completed',
+            {
+                'client_reference_id': 'regular-checkout-user',
+                'customer': 'cus_regular123',
+                'subscription': 'sub_regular123',
+                'metadata': {
+                    'user_id': 'regular-checkout-user',
+                    'environment': 'test',
+                }
+            }
+        )
+
+        import handlers.stripe_webhook_handler as handler
+        handler.users_table = tables['users']
+        handler.token_usage_table = tables['token_usage']
+        handler.processed_events_table = tables['events']
+        handler.waitlist_table = tables['waitlist']
+
+        response = handler.lambda_handler(build_api_gateway_event(), None)
+
+        assert response['statusCode'] == 200
+
+        # Verify user status is 'active' (not 'trialing')
+        user = tables['users'].get_item(Key={'user_id': 'regular-checkout-user'})['Item']
+        assert user['subscription_status'] == 'active'
+
+    @mock_aws
+    @freeze_time("2025-01-20 14:30:00", tz_offset=0)
+    @patch('handlers.stripe_webhook_handler.verify_webhook_signature')
+    def test_double_claim_prevented_by_conditional_update(self, mock_verify):
+        """
+        Given: Waitlist entry already has referral_claimed_at set
+        When: checkout.session.completed fires with referral metadata
+        Then: Conditional update fails gracefully, checkout still succeeds
+        """
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tables = create_all_tables(dynamodb)
+
+        tables['users'].put_item(Item={
+            'user_id': 'double-claim-user',
+            'email': 'doubleclaim@example.com',
+        })
+        tables['waitlist'].put_item(Item={
+            'email': 'doubleclaim@example.com',
+            'referral_code': 'BUFF-DOUBLE',
+            'referral_count': 5,
+            'status': 'early_access',
+            'referral_claimed_at': '2025-01-01T00:00:00Z',
+            'referral_claimed_by': 'previous-user',
+            'referral_trial_days_granted': 90,
+        })
+
+        mock_verify.return_value = build_webhook_event(
+            'evt_double_claim', 'checkout.session.completed',
+            {
+                'client_reference_id': 'double-claim-user',
+                'customer': 'cus_double',
+                'subscription': 'sub_double',
+                'metadata': {
+                    'user_id': 'double-claim-user',
+                    'environment': 'test',
+                    'referral_trial_days': '90',
+                    'referral_source': 'waitlist',
+                    'referral_email': 'doubleclaim@example.com',
+                }
+            }
+        )
+
+        import handlers.stripe_webhook_handler as handler
+        handler.users_table = tables['users']
+        handler.token_usage_table = tables['token_usage']
+        handler.processed_events_table = tables['events']
+        handler.waitlist_table = tables['waitlist']
+
+        response = handler.lambda_handler(build_api_gateway_event(), None)
+
+        # Checkout still succeeds
+        assert response['statusCode'] == 200
+
+        # Original claim data preserved (not overwritten)
+        waitlist_entry = tables['waitlist'].get_item(Key={'email': 'doubleclaim@example.com'})['Item']
+        assert waitlist_entry['referral_claimed_by'] == 'previous-user'
+        assert waitlist_entry['referral_claimed_at'] == '2025-01-01T00:00:00Z'

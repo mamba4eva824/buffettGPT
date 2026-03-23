@@ -83,7 +83,7 @@ variable "kms_key_arn" {
 variable "cors_allowed_origins" {
   description = "Allowed origins for Lambda Function URL CORS"
   type        = list(string)
-  default     = ["http://localhost:3000", "http://localhost:5173"]
+  default     = ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
 }
 
 # Bedrock Model ID for ConverseStream API

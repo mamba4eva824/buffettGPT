@@ -110,7 +110,7 @@ def generate_mock_financials(num_quarters: int = 20) -> dict:
             'freeCashFlow': int(base_fcf * fcf_factor * margin_factor),
             'operatingCashFlow': int(base_fcf * fcf_factor * margin_factor * 1.3),
             'capitalExpenditure': -int(revenue * 0.05),  # 5% of revenue
-            'dividendsPaid': -int(base_fcf * 0.3),
+            'commonDividendsPaid': -int(base_fcf * 0.3),
             'commonStockRepurchased': -int(base_fcf * 0.4),
         })
 

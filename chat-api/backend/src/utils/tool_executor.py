@@ -123,6 +123,23 @@ def get_report_section(ticker: str, section_id: str) -> Dict[str, Any]:
 
     ticker = ticker.upper().strip()
 
+    # Section ID aliasing: map v5.2 IDs to v5.1 IDs for backward compatibility.
+    # Reports generated with v5.1 use different section IDs for some sections.
+    # Try the requested ID first; if not found, try the alias.
+    SECTION_ID_ALIASES = {
+        # v5.2 ID -> v5.1 ID (for reports generated before v5.2)
+        '15_bull': '13_bull',
+        '16_bear': '14_bear',
+        '18_realtalk': '17_realtalk',
+        '19_triggers': None,  # No v5.1 equivalent
+        # v5.1 ID -> v5.2 ID (for future-proofing)
+        '13_bull': '15_bull',
+        '14_bear': '16_bear',
+        '15_warnings': None,  # Removed in v5.2
+        '16_vibe': None,  # Removed in v5.2
+        '17_realtalk': '18_realtalk',
+    }
+
     try:
         # Handle Executive Summary specially - stored under '00_executive'
         if section_id == '01_executive_summary':
@@ -154,6 +171,19 @@ def get_report_section(ticker: str, section_id: str) -> Dict[str, Any]:
                 }
             )
             item = response.get('Item')
+
+            # If not found, try alias for backward/forward compatibility
+            if not item and section_id in SECTION_ID_ALIASES:
+                alias = SECTION_ID_ALIASES[section_id]
+                if alias:
+                    response = reports_table.get_item(
+                        Key={
+                            'ticker': ticker,
+                            'section_id': alias
+                        }
+                    )
+                    item = response.get('Item')
+
             if item:
                 return {
                     "success": True,
@@ -256,10 +286,11 @@ def get_metrics_history(
     ticker = ticker.upper().strip()
     quarters = min(max(int(quarters), 1), 40)  # Clamp to 1-40
 
-    # Valid metric categories
+    # Valid metric categories (7 quarterly-trend categories + 2 event-based categories)
     valid_categories = [
         'revenue_profit', 'cashflow', 'balance_sheet', 'debt_leverage',
-        'earnings_quality', 'dilution', 'valuation'
+        'earnings_quality', 'dilution', 'valuation',
+        'earnings_events', 'dividend'
     ]
 
     if metric_type != 'all' and metric_type not in valid_categories:
@@ -296,7 +327,9 @@ def get_metrics_history(
             'debt_leverage': 'Debt & Leverage Ratios',
             'earnings_quality': 'Earnings Quality Metrics',
             'dilution': 'Share Dilution Metrics',
-            'valuation': 'Valuation & Returns Metrics'
+            'valuation': 'Valuation & Returns Metrics',
+            'earnings_events': 'Earnings Results — EPS & Revenue Beat/Miss per Quarter',
+            'dividend': 'Dividend Metrics — DPS, Yield, Frequency (empty for non-paying companies)'
         }
 
         # Build result with filtered categories
@@ -538,10 +571,15 @@ def get_financial_snapshot(ticker: str) -> Dict[str, Any]:
                 "ticker": ticker
             }
 
-        # Flatten the latest quarter metrics for easy consumption
+        # Flatten the latest quarter metrics for easy consumption.
+        # Exclude event-based categories (earnings_events, dividend) to keep
+        # the snapshot lightweight — users should query those explicitly.
+        SNAPSHOT_EXCLUDED_CATEGORIES = {'earnings_events', 'dividend'}
         latest_metrics = {}
         if metrics_result.get('success') and metrics_result.get('data'):
             for category, category_data in metrics_result['data'].items():
+                if category in SNAPSHOT_EXCLUDED_CATEGORIES:
+                    continue
                 quarters_data = category_data.get('quarters', [])
                 if quarters_data:
                     latest_metrics[category] = quarters_data[0].get('metrics', {})

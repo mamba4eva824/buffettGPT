@@ -85,23 +85,23 @@ export function useConversations({ token, userId, includeArchived = false }) {
   }, [nextCursor, loadingMore, fetchConversations]);
 
   // Create a new conversation
-  const createConversation = useCallback(async (title = 'New Conversation') => {
+  const createConversation = useCallback(async (title = 'New Conversation', metadata = null) => {
     if (!token || !userId || !API_BASE_URL) {
       logger.error('Cannot create conversation - missing auth or API URL');
       return null;
     }
 
     try {
+      const body = { title, user_id: userId };
+      if (metadata) body.metadata = metadata;
+
       const response = await fetch(`${API_BASE_URL}/conversations`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          title,
-          user_id: userId
-        })
+        body: JSON.stringify(body)
       });
 
       if (!response.ok) {

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Verify all DJIA reports exist in DynamoDB.
+Verify all index reports exist in DynamoDB.
 
-Checks the investment-reports-v2 table for all 30 DJIA company reports
+Checks the investment-reports-v2 table for index company reports
 and provides a summary of what exists and what's missing.
 
 Usage:
     python -m investment_research.batch_generation.verify_reports
+    python -m investment_research.batch_generation.verify_reports --index sp100
     python -m investment_research.batch_generation.verify_reports --env prod
     python -m investment_research.batch_generation.verify_reports --tickers AAPL,MSFT
 """
@@ -23,14 +24,15 @@ from botocore.exceptions import ClientError
 # Add parent directories to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../..'))
 
-from investment_research.index_tickers import DJIA_TICKERS
+from investment_research.index_tickers import get_index_tickers
 
 
 def verify_reports(
     table_name: str = "investment-reports-v2",
     environment: str = "dev",
     tickers: Optional[List[str]] = None,
-    region: str = "us-east-1"
+    region: str = "us-east-1",
+    index: str = "djia"
 ) -> bool:
     """
     Check DynamoDB for investment reports.
@@ -38,14 +40,15 @@ def verify_reports(
     Args:
         table_name: Base table name (will append -environment if not 'dev')
         environment: Environment name (dev, staging, prod)
-        tickers: List of tickers to check (defaults to DJIA_TICKERS)
+        tickers: List of tickers to check (defaults to index tickers)
         region: AWS region
+        index: Index to verify (djia, sp100, sp500)
 
     Returns:
         True if all reports exist, False otherwise
     """
     if tickers is None:
-        tickers = DJIA_TICKERS
+        tickers = get_index_tickers(index)
 
     # Build full table name
     full_table_name = f"{table_name}-{environment}" if environment != "dev" else table_name
@@ -58,7 +61,7 @@ def verify_reports(
     details = []
 
     print("=" * 70)
-    print("  DJIA Report Verification")
+    print(f"  {index.upper()} Report Verification")
     print("=" * 70)
     print()
     print(f"Table:   {full_table_name}")
@@ -136,12 +139,15 @@ def verify_reports(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Verify DJIA investment reports exist in DynamoDB",
+        description="Verify index investment reports exist in DynamoDB",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Verify all 30 DJIA reports in dev
+    # Verify all DJIA reports in dev (default)
     python -m investment_research.batch_generation.verify_reports
+
+    # Verify S&P 100 reports
+    python -m investment_research.batch_generation.verify_reports --index sp100
 
     # Verify in production
     python -m investment_research.batch_generation.verify_reports --env prod
@@ -149,6 +155,12 @@ Examples:
     # Verify specific tickers
     python -m investment_research.batch_generation.verify_reports --tickers AAPL,MSFT,NVDA
         """
+    )
+    parser.add_argument(
+        "--index",
+        type=str,
+        default="djia",
+        help="Index to verify (default: djia). Options: djia, sp100, sp500"
     )
     parser.add_argument(
         "--env",
@@ -179,7 +191,8 @@ Examples:
     success = verify_reports(
         environment=args.env,
         tickers=tickers,
-        region=args.region
+        region=args.region,
+        index=args.index
     )
 
     sys.exit(0 if success else 1)

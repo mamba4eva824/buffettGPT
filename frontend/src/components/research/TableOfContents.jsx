@@ -11,6 +11,7 @@ import {
   TrendingUp,
   TrendingDown,
   Percent,
+  BarChart2,
   BarChart3,
   Gem,
   Users,
@@ -29,6 +30,7 @@ import {
   Landmark,
   PieChart,
   Crosshair,
+  Coins,
   PanelRightClose,
   PanelRightOpen,
 } from 'lucide-react';
@@ -50,6 +52,9 @@ const iconMap = {
   'pie-chart': PieChart,
   'trending-up': TrendingUp,
   'trending-down': TrendingDown,
+  'bar-chart-2': BarChart2,
+  'coins': Coins,
+  'shield': Shield,
   'message-circle': MessageCircle,
   'crosshair': Crosshair,
   // Aliases and fallbacks
@@ -58,7 +63,6 @@ const iconMap = {
   'heart': Heart,
   'dollar': DollarSign,
   'dollar-sign': DollarSign,
-  'shield': Shield,
   'percent': Percent,
   'bar-chart': BarChart3,
   'bar-chart-3': BarChart3,

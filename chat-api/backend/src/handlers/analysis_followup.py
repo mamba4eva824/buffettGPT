@@ -161,13 +161,18 @@ FOLLOWUP_TOOLS = {
                                     "10_cashflow",
                                     "11_debt",
                                     "12_dilution",
+                                    "13_dividend",
+                                    "14_moat",
+                                    "15_bull",
+                                    "16_bear",
+                                    "17_recap",
+                                    "18_realtalk",
+                                    "19_triggers",
                                     "13_bull",
                                     "14_bear",
-                                    "15_warnings",
-                                    "16_vibe",
                                     "17_realtalk"
                                 ],
-                                "description": "Section identifier: 01_executive_summary (overview), 06_growth (revenue/earnings growth), 07_profit (margins), 08_valuation (P/E, etc.), 09_earnings (quality), 10_cashflow (FCF), 11_debt (leverage), 12_dilution (share count), 13_bull (positive case), 14_bear (risks), 15_warnings (red flags), 16_vibe (sentiment), 17_realtalk (bottom line)"
+                                "description": "Section identifier: 01_executive_summary (overview), 06_growth (revenue/earnings growth), 07_profit (margins), 08_valuation (P/E, etc.), 09_earnings (quality), 10_cashflow (FCF), 11_debt (leverage), 12_dilution (share count), 13_dividend (dividend analysis), 14_moat (competitive advantages), 15_bull (positive case), 16_bear (risks), 17_recap (earnings recap), 18_realtalk (bottom line), 19_triggers (decision triggers). Legacy IDs (13_bull, 14_bear, 17_realtalk) also supported."
                             }
                         },
                         "required": ["ticker", "section_id"]
@@ -215,9 +220,11 @@ FOLLOWUP_TOOLS = {
                                     "debt_leverage",
                                     "earnings_quality",
                                     "dilution",
-                                    "valuation"
+                                    "valuation",
+                                    "earnings_events",
+                                    "dividend"
                                 ],
-                                "description": "Category of metrics to retrieve. Use 'all' for comprehensive view or specific category for focused analysis.",
+                                "description": "Category of metrics to retrieve. Use 'all' for comprehensive view or specific category for focused analysis. 'earnings_events' for EPS beat/miss history, 'dividend' for dividend per share, yield, frequency.",
                                 "default": "all"
                             },
                             "quarters": {
@@ -271,9 +278,11 @@ FOLLOWUP_TOOLS = {
                                     "debt_leverage",
                                     "earnings_quality",
                                     "dilution",
-                                    "valuation"
+                                    "valuation",
+                                    "earnings_events",
+                                    "dividend"
                                 ],
-                                "description": "Category of metrics to compare. Use specific category for focused comparison or 'all' for comprehensive view.",
+                                "description": "Category of metrics to compare. Use specific category for focused comparison or 'all' for comprehensive view. 'earnings_events' for EPS beat/miss, 'dividend' for dividend per share and yield.",
                                 "default": "all"
                             },
                             "quarters": {
@@ -542,7 +551,7 @@ When a user asks "should I buy X?" or wants a stock evaluation:
 
 1. SNAPSHOT FIRST → Use getFinancialSnapshot to get ratings + latest metrics in one call
 2. TREND CHECK → Use getMetricsHistory to see if the business is improving or deteriorating
-3. RISK SCAN → Use getReportSection for 14_bear (risks) and 15_warnings (red flags)
+3. RISK SCAN → Use getReportSection for 16_bear (risks) or 14_bear (legacy reports)
 4. FORM A VIEW → Synthesize into a clear BUY / HOLD / AVOID recommendation
 
 When a user asks to compare stocks ("AAPL vs MSFT", "which is better"):
@@ -556,6 +565,9 @@ When a user asks to compare stocks ("AAPL vs MSFT", "which is better"):
 - For quick single-stock assessment → use getFinancialSnapshot first
 - For comparing 2-5 stocks → use compareStocks
 - For deep dives on trends → use getMetricsHistory
+- For earnings beat/miss history → use getMetricsHistory with metric_type='earnings_events'
+- For dividend history → use getMetricsHistory with metric_type='dividend'
+- For moat/competitive advantage → use getReportSection with section_id='14_moat'
 - For specific report sections → use getReportSection
 
 ## AVAILABLE TOOLS
@@ -567,14 +579,15 @@ When a user asks to compare stocks ("AAPL vs MSFT", "which is better"):
 
 3. getReportSection(ticker, section_id) - Deep dive into specific report sections:
    01_executive_summary, 06_growth, 07_profit, 08_valuation, 09_earnings,
-   10_cashflow, 11_debt, 12_dilution, 13_bull, 14_bear, 15_warnings,
-   16_vibe, 17_realtalk
+   10_cashflow, 11_debt, 12_dilution, 13_dividend, 14_moat, 15_bull,
+   16_bear, 17_recap, 18_realtalk, 19_triggers
+   (Legacy IDs 13_bull, 14_bear, 17_realtalk also supported)
 
 4. getReportRatings(ticker) - Investment ratings and overall verdict
 
 5. getMetricsHistory(ticker, metric_type, quarters) - Historical trends:
    metric_types: revenue_profit, cashflow, balance_sheet, debt_leverage,
-   earnings_quality, dilution, valuation, all
+   earnings_quality, dilution, valuation, earnings_events, dividend, all
    quarters: 4 (recent) to 20 (long-term)
 
 6. getAvailableReports() - List all companies with reports
@@ -985,7 +998,7 @@ When a user asks "should I buy X?" or wants a stock evaluation:
 
 1. SNAPSHOT FIRST → Use getFinancialSnapshot to get ratings + latest metrics in one call
 2. TREND CHECK → Use getMetricsHistory to see if the business is improving or deteriorating
-3. RISK SCAN → Use getReportSection for 14_bear (risks) and 15_warnings (red flags)
+3. RISK SCAN → Use getReportSection for 16_bear (risks) or 14_bear (legacy reports)
 4. FORM A VIEW → Synthesize into a clear BUY / HOLD / AVOID recommendation
 
 When a user asks to compare stocks ("AAPL vs MSFT", "which is better"):
@@ -999,6 +1012,9 @@ When a user asks to compare stocks ("AAPL vs MSFT", "which is better"):
 - For quick single-stock assessment → use getFinancialSnapshot first
 - For comparing 2-5 stocks → use compareStocks
 - For deep dives on trends → use getMetricsHistory
+- For earnings beat/miss history → use getMetricsHistory with metric_type='earnings_events'
+- For dividend history → use getMetricsHistory with metric_type='dividend'
+- For moat/competitive advantage → use getReportSection with section_id='14_moat'
 - For specific report sections → use getReportSection
 
 ## AVAILABLE TOOLS
@@ -1010,14 +1026,15 @@ When a user asks to compare stocks ("AAPL vs MSFT", "which is better"):
 
 3. getReportSection(ticker, section_id) - Deep dive into specific report sections:
    01_executive_summary, 06_growth, 07_profit, 08_valuation, 09_earnings,
-   10_cashflow, 11_debt, 12_dilution, 13_bull, 14_bear, 15_warnings,
-   16_vibe, 17_realtalk
+   10_cashflow, 11_debt, 12_dilution, 13_dividend, 14_moat, 15_bull,
+   16_bear, 17_recap, 18_realtalk, 19_triggers
+   (Legacy IDs 13_bull, 14_bear, 17_realtalk also supported)
 
 4. getReportRatings(ticker) - Investment ratings and overall verdict
 
 5. getMetricsHistory(ticker, metric_type, quarters) - Historical trends:
    metric_types: revenue_profit, cashflow, balance_sheet, debt_leverage,
-   earnings_quality, dilution, valuation, all
+   earnings_quality, dilution, valuation, earnings_events, dividend, all
    quarters: 4 (recent) to 20 (long-term)
 
 6. getAvailableReports() - List all companies with reports

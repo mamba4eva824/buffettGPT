@@ -129,10 +129,10 @@ def generate_okta_like_fiscal_year_data(num_quarters: int = 8) -> dict:
             'operatingCashFlow': int(base_revenue * 0.15),
             'freeCashFlow': int(base_revenue * 0.10),
             'capitalExpenditure': -int(base_revenue * 0.05),
-            'dividendsPaid': 0,
+            'commonDividendsPaid': 0,
             'commonStockRepurchased': -10_000_000,
-            'netCashUsedForInvestingActivites': -int(base_revenue * 0.08),
-            'netCashUsedProvidedByFinancingActivities': -20_000_000,
+            'netCashProvidedByInvestingActivities': -int(base_revenue * 0.08),
+            'netCashProvidedByFinancingActivities': -20_000_000,
             'netChangeInCash': int(base_revenue * 0.05),
         })
 
@@ -219,10 +219,10 @@ def generate_jpm_like_calendar_fiscal_year_data(num_quarters: int = 8) -> dict:
             'operatingCashFlow': int(base_revenue * 0.30),
             'freeCashFlow': int(base_revenue * 0.25),
             'capitalExpenditure': -int(base_revenue * 0.05),
-            'dividendsPaid': -int(base_revenue * 0.08),
+            'commonDividendsPaid': -int(base_revenue * 0.08),
             'commonStockRepurchased': -int(base_revenue * 0.10),
-            'netCashUsedForInvestingActivites': -int(base_revenue * 0.10),
-            'netCashUsedProvidedByFinancingActivities': -int(base_revenue * 0.15),
+            'netCashProvidedByInvestingActivities': -int(base_revenue * 0.10),
+            'netCashProvidedByFinancingActivities': -int(base_revenue * 0.15),
             'netChangeInCash': int(base_revenue * 0.05),
         })
 
@@ -292,10 +292,10 @@ def generate_data_without_fiscal_year_field(num_quarters: int = 8) -> dict:
             'operatingCashFlow': int(base_revenue * 0.15),
             'freeCashFlow': int(base_revenue * 0.10),
             'capitalExpenditure': -int(base_revenue * 0.05),
-            'dividendsPaid': -int(base_revenue * 0.03),
+            'commonDividendsPaid': -int(base_revenue * 0.03),
             'commonStockRepurchased': -int(base_revenue * 0.02),
-            'netCashUsedForInvestingActivites': -int(base_revenue * 0.06),
-            'netCashUsedProvidedByFinancingActivities': -int(base_revenue * 0.04),
+            'netCashProvidedByInvestingActivities': -int(base_revenue * 0.06),
+            'netCashProvidedByFinancingActivities': -int(base_revenue * 0.04),
             'netChangeInCash': int(base_revenue * 0.05),
         })
 
@@ -352,10 +352,10 @@ def generate_data_with_only_date_field(num_quarters: int = 4) -> dict:
             'operatingCashFlow': int(base_revenue * 0.15),
             'freeCashFlow': int(base_revenue * 0.10),
             'capitalExpenditure': -int(base_revenue * 0.05),
-            'dividendsPaid': -int(base_revenue * 0.03),
+            'commonDividendsPaid': -int(base_revenue * 0.03),
             'commonStockRepurchased': -int(base_revenue * 0.02),
-            'netCashUsedForInvestingActivites': -int(base_revenue * 0.06),
-            'netCashUsedProvidedByFinancingActivities': -int(base_revenue * 0.04),
+            'netCashProvidedByInvestingActivities': -int(base_revenue * 0.06),
+            'netCashProvidedByFinancingActivities': -int(base_revenue * 0.04),
             'netChangeInCash': int(base_revenue * 0.05),
         })
 
@@ -583,7 +583,7 @@ class TestFlowMetricsSummation:
     - costOfRevenue, operatingExpenses, interestExpense
     - incomeBeforeTax, incomeTaxExpense, ebitda
     - operatingCashFlow, freeCashFlow, capitalExpenditure
-    - dividendsPaid, commonStockRepurchased, etc.
+    - commonDividendsPaid, commonStockRepurchased, etc.
     """
 
     @pytest.fixture

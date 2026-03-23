@@ -40,6 +40,7 @@ locals {
   }
 
   # Lambda environment variables
+  # Updated 2026-03: Removed deprecated WebSocket, chat processing, and old Bedrock agent vars
   lambda_common_env_vars = {
     ENVIRONMENT         = local.environment
     PROJECT_NAME        = local.project_name
@@ -49,16 +50,18 @@ locals {
     KMS_KEY_ID          = module.core.kms_key_id
 
     # Bedrock Configuration
-    BEDROCK_REGION       = var.bedrock_region
+    BEDROCK_REGION = var.bedrock_region
+
+    # Follow-up Agent Configuration (for investment research follow-up questions)
     FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
     FOLLOWUP_AGENT_ALIAS = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
 
-    # FMP API Configuration
+    # FMP API Configuration (Ensemble Analysis)
     FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
     FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
     TICKER_LOOKUP_TABLE        = try(module.dynamodb.ticker_lookup_table_name, "")
 
-    # Investment Research Tables
+    # Investment Research Tables (v1 removed, only v2 active)
     INVESTMENT_REPORTS_V2_TABLE = try(module.dynamodb.investment_reports_v2_table_name, "")
     METRICS_HISTORY_CACHE_TABLE = try(module.dynamodb.metrics_history_cache_table_name, "")
 
@@ -72,11 +75,12 @@ locals {
     # Waitlist Table
     WAITLIST_TABLE = module.dynamodb.waitlist_table_name
 
-    # Frontend URL (for referral links - points to landing page)
-    FRONTEND_URL = module.cloudfront_landing.cloudfront_url
+    # Frontend URL (for referral links)
+    FRONTEND_URL = module.cloudfront.cloudfront_url
   }
 
   # Function-specific environment variables
+  # Updated 2026-03: Added Stripe and Email handler vars; removed deprecated websocket/chat_processor
   lambda_function_env_vars = {
     stripe_webhook_handler = {
       STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
@@ -146,18 +150,18 @@ module "lambda" {
   function_env_vars   = local.lambda_function_env_vars
   log_retention_days  = 14 # 2 week retention for staging
 
+  reserved_concurrency = {
+    analysis_followup = 10
+  }
+
   common_tags = local.common_tags
+
+  # KMS key for DynamoDB encryption
   kms_key_arn = module.core.kms_key_arn
 
-  # CORS: allow staging CloudFront domain + localhost for local dev
-  cors_allowed_origins = [
-    module.cloudfront.cloudfront_url,
-    "http://localhost:3000",
-    "http://localhost:5173",
-  ]
-
   # Followup Action Lambda (Bedrock action group handler)
-  create_followup_action_lambda = true
+  # Docker image NOT yet pushed to staging ECR - disable Lambda creation
+  create_followup_action_lambda = false
   followup_action_image_tag     = "latest"
 
   # DynamoDB table ARNs for followup-action Lambda IAM policy
@@ -189,7 +193,7 @@ module "api_gateway" {
   # API configuration
   enable_cors                     = true
   enable_authorization            = var.enable_authentication
-  enable_search                   = false  # Disable AI search for staging
+  enable_search                   = true
   authorizer_function_arn         = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
   authorizer_function_name        = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
@@ -206,6 +210,10 @@ module "api_gateway" {
   investment_research_function_url    = module.lambda.investment_research_docker_function_url
   investment_research_function_name   = module.lambda.investment_research_docker_function_name
   analysis_followup_function_url      = module.lambda.analysis_followup_url
+
+  # Market Intelligence API (REST API with JWT auth + Plus subscription check)
+  enable_market_intelligence_api      = true
+  market_intelligence_function_url    = module.lambda.market_intel_chat_url
 
   # Subscription/Stripe API (checkout, portal, status, webhook)
   enable_subscription_routes = true
@@ -272,6 +280,7 @@ module "monitoring" {
   # Resources to monitor
   lambda_function_names = module.lambda.function_names
   api_gateway_id        = module.api_gateway.http_api_id
+  # websocket_api_id - REMOVED (2026-03) - WebSocket deprecated
 
   # Alert configuration
   alert_email = var.alert_email
@@ -280,9 +289,9 @@ module "monitoring" {
 }
 
 # ================================================
-# Bedrock Module - Agent Configuration
+# Bedrock Module - Expert Agents Only
 # ================================================
-# Note: Knowledge Base, Guardrails, and Pinecone integration removed (2025-01)
+# Updated 2025-01: Removed Knowledge Base, Pinecone, and Guardrails
 
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -301,14 +310,25 @@ module "bedrock" {
   enable_prompt_override = true
 
   # Agent versioning - set to true to use versioned routing (not DRAFT)
-  # This allows the alias to point to numbered versions (1, 2, 3, etc.)
   create_agent_version = true
 
   # Action Group for Follow-up Agent
-  # Uses dedicated followup-action Lambda for report data retrieval
-  enable_followup_action_group         = true
-  followup_action_lambda_arn           = module.lambda.followup_action_arn
-  followup_action_lambda_function_name = module.lambda.followup_action_name
+  # Docker image NOT yet pushed to staging ECR - disable action group
+  enable_followup_action_group = false
+}
+
+# ================================================
+# CloudFront + S3 Frontend Module
+# ================================================
+
+module "cloudfront" {
+  source = "../../modules/cloudfront-static-site"
+
+  project_name = local.project_name
+  environment  = local.environment
+  price_class  = "PriceClass_100" # US, Canada, Europe
+
+  common_tags = local.common_tags
 }
 
 # ================================================
@@ -349,38 +369,3 @@ resource "aws_iam_role_policy_attachment" "lambda_resend_secrets" {
   role       = module.core.lambda_role_name
   policy_arn = module.email.resend_secrets_policy_arn
 }
-
-# ================================================
-# CloudFront + S3 Frontend Module
-# ================================================
-
-module "cloudfront" {
-  source = "../../modules/cloudfront-static-site"
-
-  project_name = local.project_name
-  environment  = local.environment
-  price_class  = "PriceClass_100" # US, Canada, Europe
-
-  common_tags = local.common_tags
-}
-
-# ================================================
-# CloudFront + S3 Landing Page
-# ================================================
-
-module "cloudfront_landing" {
-  source = "../../modules/cloudfront-static-site"
-
-  project_name = local.project_name
-  environment  = local.environment
-  site_name    = "landing"
-  price_class  = "PriceClass_100"
-
-  common_tags = local.common_tags
-}
-
-# ================================================
-# Post-Deployment Configuration
-# ================================================
-# Note: WebSocket infrastructure deprecated (2026-02) per WEBSOCKET_DEPRECATION_PLAN.md
-# All chat functionality now uses REST+SSE via Research and Follow-up APIs

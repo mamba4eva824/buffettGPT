@@ -41,11 +41,14 @@ paths:
                     - 10_cashflow: Cash flow generation and conversion
                     - 11_debt: Debt levels and leverage analysis
                     - 12_dilution: Shareholder dilution trends
-                    - 13_bull: Bull case and positive catalysts
-                    - 14_bear: Bear case and risks
-                    - 15_warnings: Red flags and warning signs
-                    - 16_vibe: Overall sentiment and vibe check
-                    - 17_realtalk: Candid assessment and bottom line
+                    - 13_dividend: Dividend analysis (yield, payout, sustainability)
+                    - 14_moat: Competitive advantages and moat durability
+                    - 15_bull: Bull case and positive catalysts
+                    - 16_bear: Bear case and risks
+                    - 17_recap: Latest earnings recap and surprise analysis
+                    - 18_realtalk: Candid assessment and bottom line
+                    - 19_triggers: Decision triggers and price targets
+                    Legacy IDs (13_bull, 14_bear, 17_realtalk) also supported for older reports.
                   enum:
                     - 01_executive_summary
                     - 06_growth
@@ -55,10 +58,15 @@ paths:
                     - 10_cashflow
                     - 11_debt
                     - 12_dilution
+                    - 13_dividend
+                    - 14_moat
+                    - 15_bull
+                    - 16_bear
+                    - 17_recap
+                    - 18_realtalk
+                    - 19_triggers
                     - 13_bull
                     - 14_bear
-                    - 15_warnings
-                    - 16_vibe
                     - 17_realtalk
                   example: "11_debt"
       responses:
@@ -140,6 +148,8 @@ paths:
                     - earnings_quality: GAAP vs adjusted earnings, SBC
                     - dilution: Share counts, dilution trends
                     - valuation: P/E, P/B, EV/EBITDA, ROE, ROIC
+                    - earnings_events: EPS beat/miss, revenue surprise per quarter
+                    - dividend: Dividend per share, yield, frequency
                     - all: All categories (default)
                   enum:
                     - revenue_profit
@@ -149,6 +159,8 @@ paths:
                     - earnings_quality
                     - dilution
                     - valuation
+                    - earnings_events
+                    - dividend
                     - all
                   default: all
                   example: "debt_leverage"
@@ -231,6 +243,8 @@ paths:
                     - earnings_quality: GAAP vs adjusted earnings, SBC
                     - dilution: Share counts, dilution trends
                     - valuation: P/E, ROE, ROIC, EV/EBITDA
+                    - earnings_events: EPS beat/miss, revenue surprise per quarter
+                    - dividend: Dividend per share, yield, frequency
                     - all: All categories (default)
                   enum:
                     - revenue_profit
@@ -240,6 +254,8 @@ paths:
                     - earnings_quality
                     - dilution
                     - valuation
+                    - earnings_events
+                    - dividend
                     - all
                   default: all
                 quarters:

@@ -1,0 +1,174 @@
+# GSD Plan: Add Dividend Data to Investment Report Pipeline
+
+## Audit Snapshot
+
+### Knowns / Evidence
+- **FMP `/stable/dividends` endpoint confirmed working** on user's subscription — returns ~90 records per ticker with: `symbol`, `date`, `recordDate`, `paymentDate`, `declarationDate`, `adjDividend`, `dividend`, `yield`, `frequency`
+- **Returns empty array for non-dividend stocks** (AMZN) — clean conditional signal
+- **TTM ratios already fetched but not surfaced** — `ratios-ttm` returns `dividendYieldTTM` (0.021), `dividendPayoutRatioTTM` (0.46), `dividendPerShareTTM` (5.20) — fetched in `prepare_data()` but never formatted into metrics_context
+- **JNJ cash flow bug confirmed** — `dividendsPaid` shows $0 post-Kenvue; `/stable/dividends` correctly shows $1.24-$1.30/quarter
+- **Section parser already v5.2 ready** — `13_dividend` pattern, icon, and tests all exist
+- **v5.2 prompt expects**: yield, payout ratio, raise history table, CAGR, streak count, frequency, next payment date, $10K income calc
+- **Current pipeline makes ~9 API calls per ticker** — this adds 1 more (total ~10)
+- **Existing pattern to follow**: `fetch_earnings()` in fmp_client.py is the exact template
+
+### Unknowns / Gaps
+- None remaining — all verified via live API calls
+
+### Constraints
+- Must follow existing `fmp_client.py` patterns (`_request_with_retry`, error handling, logging)
+- Must not break existing report generation or batch pipeline
+- No separate caching needed (dividend data is small, changes quarterly)
+
+### Risks (Post-Challenger Review)
+1. **Special dividends corrupt CAGR/streak** — RESOLVED: FMP `frequency` field cleanly distinguishes `"Special"` vs `"Quarterly"`. Filter to regular dividends only for aggregation. (Verified: COST shows 5 `"Special"` records separate from 88 `"Quarterly"` records.)
+2. **CAGR fails for <5 year history** — MITIGATED: Use max available window and label accordingly (e.g., "3-Year Dividend CAGR" for META which started 2024).
+3. **TTM fields exist?** — RESOLVED: `ratios-ttm` confirmed to return `dividendYieldTTM`, `dividendPayoutRatioTTM`, `dividendPerShareTTM` (verified for JNJ).
+4. **Unbounded record count** — RESOLVED: `limit` parameter works (JNJ with `limit=24` returns exactly 24 records, 2020-2026). Will use `limit=40` for ~10 years of quarterly data.
+5. **Computation in the formatter** — Derived metrics (CAGR, streak, raise %) computed in `_format_dividend_analysis()`. Must handle malformed data gracefully.
+6. **Metrics context length growth** — Adding ~30-40 lines increases prompt input. Manageable given existing ~2000-line contexts.
+
+---
+
+## PRD (Acceptance Criteria)
+
+```
+AC-1: Given any ticker with dividend history (e.g., JNJ, MSFT, AAPL),
+      when prepare_data() is called,
+      then valuation_data['dividend_history'] contains a non-empty list of
+      dividend records with fields: date, adjDividend, paymentDate, frequency.
+
+AC-2: Given a non-dividend ticker (e.g., AMZN),
+      when prepare_data() is called,
+      then valuation_data['dividend_history'] is an empty list.
+
+AC-3: Given a dividend-paying ticker,
+      when _format_metrics_for_prompt() runs,
+      then the metrics_context string contains a "DIVIDEND ANALYSIS" section with:
+      - Current Dividend Snapshot table (yield, payout ratio, DPS, frequency, next payment)
+      - 5-Year Raise History table (year, annual DPS, YoY change %)
+      - 5-Year Dividend CAGR
+      - Consecutive raise streak with classification
+
+AC-4: Given a non-dividend ticker,
+      when _format_metrics_for_prompt() runs,
+      then the metrics_context contains a short "DIVIDEND ANALYSIS" note
+      stating the company does not pay a dividend.
+
+AC-5: Given TTM ratios already fetched (dividendYieldTTM, dividendPayoutRatioTTM,
+      dividendPerShareTTM),
+      when _format_dividend_analysis() runs,
+      then these values are included in the Current Dividend Snapshot table.
+
+AC-6: Given the batch pipeline (prepare_batch_data.py),
+      when it calls prepare_data() for any ticker,
+      then dividend data is automatically included without any changes to
+      prepare_batch_data.py.
+
+AC-7: Given a ticker where FMP returns an error for the dividends endpoint,
+      when fetch_dividends() is called,
+      then it returns an empty list (graceful fallback) and logs the error.
+
+AC-8: Given existing tests (make test),
+      when all changes are complete,
+      then all existing tests pass without modification.
+```
+
+---
+
+## Implementation Plan
+
+### Objective
+Add `fetch_dividends()` to `fmp_client.py` and wire it into the report data pipeline so the v5.2 Dividend section gets accurate per-share dividend data instead of deriving it from aggregate cash flow statements.
+
+### Approach: Full Integration (Approach 2)
+Add one new fetch function to `fmp_client.py` following the exact pattern of `fetch_earnings()`. Call it from `prepare_data()` and store results in `valuation_data['dividend_history']`. Add a new `_format_dividend_analysis()` method to `report_generator.py` that computes raise history, CAGR, streak, and frequency from the raw records, combining with TTM ratios already available. Handle non-dividend stocks by detecting empty arrays.
+
+### Steps
+
+**Step 1: Add `fetch_dividends()` to fmp_client.py**
+- New function after `fetch_earnings_calendar_upcoming()` (~line 935)
+- Endpoint: `https://financialmodelingprep.com/stable/dividends`
+- Params: `symbol={ticker}`, `limit=40` (10 years of quarterly data), `apikey`
+- Returns: list of dicts or empty list on error
+- Uses `_request_with_retry` and standard error handling pattern (graceful fallback: return [] on error)
+- ~25 lines
+
+**Step 2: Wire `fetch_dividends()` into `prepare_data()`**
+- Add one call in the valuation fetches block (~line 248)
+- Store as `valuation_data['dividend_history']`
+- No changes to return value structure (already part of `valuation_data` dict)
+
+**Step 3: Add `_format_dividend_analysis()` to report_generator.py**
+- New method (~80-100 lines) that:
+  a. Checks if `dividend_history` is empty → emit "no dividend" note and return
+  b. Extracts TTM snapshot from `financial_ratios_ttm` (yield, payout ratio, DPS)
+  c. **Filters to regular dividends only** — exclude records where `frequency == "Special"` before aggregation (prevents COST-style special dividends from corrupting CAGR/streak)
+  d. Aggregates annual DPS from quarterly records (sum `adjDividend` by calendar year)
+  e. Computes YoY raise % for each year
+  f. Counts consecutive raise streak (walk backward from most recent completed year)
+  g. Computes N-year CAGR: `(latest_annual / Nyr_ago_annual)^(1/N) - 1` — uses 5 years if available, falls back to max available window (labeled accordingly)
+  h. Uses `frequency` field directly from FMP response (most recent record)
+  i. Estimates next payment date from most recent `paymentDate` + frequency interval
+  i. Formats all as text tables for metrics_context
+
+**Step 4: Call `_format_dividend_analysis()` from `_format_metrics_for_prompt()`**
+- Insert call after the existing cash flow / shareholder returns section
+- Pass `valuation_data` and `fmt` (currency formatter)
+
+**Step 5: Run full verification**
+- Run `prepare_data()` for JNJ, MSFT, AMZN
+- Inspect metrics_context for DIVIDEND ANALYSIS section
+- Confirm JNJ shows accurate per-share data (not $0)
+- Confirm AMZN shows "no dividend" note
+- Run `make test` to ensure nothing breaks
+
+### Files to Modify
+| File | Change |
+|------|--------|
+| `chat-api/backend/src/utils/fmp_client.py` | Add `fetch_dividends()` function (~25 lines) |
+| `chat-api/backend/investment_research/report_generator.py` | Wire into `prepare_data()` (~2 lines), new `_format_dividend_analysis()` (~80-100 lines), call from `_format_metrics_for_prompt()` (~2 lines) |
+
+### Files NOT Modified (Downstream Transparent)
+- `prepare_batch_data.py` — calls `prepare_data()` which auto-includes new data
+- `section_parser.py` — already handles `13_dividend`
+- `feature_extractor.py` — not involved (dividend computation stays in report_generator)
+- Tests — no changes needed (AC-8)
+
+### Verification Commands
+```bash
+# Step 1: Verify fetch works
+python3 -c "
+import sys; sys.path.insert(0, 'chat-api/backend/src')
+from utils.fmp_client import fetch_dividends
+print(len(fetch_dividends('JNJ')), 'records for JNJ')
+print(len(fetch_dividends('AMZN')), 'records for AMZN')
+"
+
+# Step 3-4: Verify formatted output
+python3 -c "
+import sys; sys.path.insert(0, 'chat-api/backend')
+from investment_research.report_generator import ReportGenerator
+g = ReportGenerator(use_api=False)
+data = g.prepare_data('JNJ')
+assert 'DIVIDEND ANALYSIS' in data['metrics_context']
+print('PASS: DIVIDEND ANALYSIS found in metrics_context')
+"
+
+# Step 5: Run existing tests
+cd chat-api/backend && make test
+```
+
+---
+
+## Task Graph
+
+```
+[1] Add fetch_dividends() to fmp_client.py       ← no deps
+[2] Wire into prepare_data()                      ← depends on [1]
+[3] Add _format_dividend_analysis() method        ← depends on [1] (needs to know return shape)
+[4] Call from _format_metrics_for_prompt()         ← depends on [2], [3]
+[5] Full verification (live data + make test)      ← depends on [4]
+```
+
+Tasks 2 and 3 can run in parallel after Task 1 completes.

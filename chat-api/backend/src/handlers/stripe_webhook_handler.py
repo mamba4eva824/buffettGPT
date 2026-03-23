@@ -33,11 +33,13 @@ ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 USERS_TABLE = os.environ.get('USERS_TABLE', f'buffett-{ENVIRONMENT}-users')
 TOKEN_USAGE_TABLE = os.environ.get('TOKEN_USAGE_TABLE', f'buffett-{ENVIRONMENT}-token-usage')
 PROCESSED_EVENTS_TABLE = os.environ.get('PROCESSED_EVENTS_TABLE', f'buffett-{ENVIRONMENT}-stripe-events')
+WAITLIST_TABLE = os.environ.get('WAITLIST_TABLE', f'waitlist-{ENVIRONMENT}-buffett')
 
 # Initialize DynamoDB
 dynamodb = boto3.resource('dynamodb')
 users_table = dynamodb.Table(USERS_TABLE)
 token_usage_table = dynamodb.Table(TOKEN_USAGE_TABLE)
+waitlist_table = dynamodb.Table(WAITLIST_TABLE)
 
 # Try to initialize processed events table (may not exist yet)
 try:
@@ -154,6 +156,11 @@ def handle_checkout_completed(session: Dict[str, Any]) -> None:
     now = datetime.now(timezone.utc)
     billing_day = now.day
 
+    # Determine subscription status: trialing if referral trial was applied
+    checkout_metadata = session.get('metadata', {})
+    referral_trial_days = checkout_metadata.get('referral_trial_days')
+    subscription_status = 'trialing' if referral_trial_days else 'active'
+
     # Update user record - uses conditional expression to ensure user exists
     # This preserves existing attributes (email, name, picture, last_login)
     try:
@@ -172,14 +179,14 @@ def handle_checkout_completed(session: Dict[str, Any]) -> None:
                 ':customer_id': customer_id,
                 ':subscription_id': subscription_id,
                 ':tier': 'plus',
-                ':status': 'active',
+                ':status': subscription_status,
                 ':billing_day': billing_day,
                 ':activated_at': now.isoformat().replace('+00:00', 'Z'),
                 ':updated_at': now.isoformat().replace('+00:00', 'Z'),
             },
             ConditionExpression='attribute_exists(user_id)'
         )
-        logger.info(f"Updated user {user_id} to Plus tier")
+        logger.info(f"Updated user {user_id} to Plus tier (status: {subscription_status})")
     except ClientError as e:
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
             logger.error(f"User {user_id} not found - cannot create incomplete user record via webhook")
@@ -189,6 +196,11 @@ def handle_checkout_completed(session: Dict[str, Any]) -> None:
 
     # Initialize token usage for the new billing period
     _initialize_plus_token_usage(user_id, billing_day)
+
+    # Mark referral reward as claimed if this was a referral trial checkout
+    referral_email = checkout_metadata.get('referral_email')
+    if referral_trial_days and referral_email:
+        _mark_referral_claimed(referral_email, int(referral_trial_days), user_id)
 
 
 def handle_subscription_created(subscription: Dict[str, Any]) -> None:
@@ -718,6 +730,39 @@ def _mark_event_processed(event_id: str, event_type: str) -> None:
         )
     except ClientError as e:
         logger.warning(f"Failed to mark event as processed: {str(e)}")
+
+
+def _mark_referral_claimed(email: str, trial_days: int, user_id: str) -> None:
+    """
+    Mark referral reward as claimed in the waitlist table.
+
+    Uses a conditional update to prevent double-claiming (only writes if
+    referral_claimed_at does not already exist).
+
+    Args:
+        email: Waitlist email to mark as claimed
+        trial_days: Number of trial days that were granted
+        user_id: User ID who claimed the reward (for audit trail)
+    """
+    now = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    try:
+        waitlist_table.update_item(
+            Key={'email': email},
+            UpdateExpression='SET referral_claimed_at = :ts, referral_claimed_by = :uid, referral_trial_days_granted = :days',
+            ExpressionAttributeValues={
+                ':ts': now,
+                ':uid': user_id,
+                ':days': trial_days,
+            },
+            ConditionExpression='attribute_not_exists(referral_claimed_at)'
+        )
+        logger.info(f"Marked referral reward as claimed: {trial_days}-day trial for user {user_id}")
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
+            logger.warning(f"Referral reward already claimed for email (race condition prevented)")
+        else:
+            # Non-fatal: don't fail the webhook over claim tracking
+            logger.error(f"Failed to mark referral as claimed: {str(e)}")
 
 
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:

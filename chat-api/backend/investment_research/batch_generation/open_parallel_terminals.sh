@@ -1,38 +1,33 @@
 #!/bin/bash
-# Open 5 Terminal.app windows for parallel DJIA report generation
+# Open Terminal.app windows for parallel report generation with wave-based recycling
+# Splits tickers into fixed-size batches and runs them in waves across N terminal windows
+# When a terminal finishes its batch, it picks up the next unprocessed batch
 # Fully automated — no manual approvals required
-#
-# This script uses AppleScript to open visible Terminal windows,
-# each running a Claude session for a batch of 6 companies.
 #
 # Usage:
 #   ./open_parallel_terminals.sh
+#   ./open_parallel_terminals.sh --index sp100 --windows 5 --batch-size 5
 #   ./open_parallel_terminals.sh --dry-run
 #   ./open_parallel_terminals.sh --prompt-version 5.1
+#   ./open_parallel_terminals.sh --index sp100 --windows 8 --batch-size 3
 #
 # Prerequisites:
 #   - macOS with Terminal.app
 #   - claude CLI installed
-#   - djia_30_batch_data.json exists (from prepare_batch_data.py)
+#   - Data file exists (from prepare_batch_data.py)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-DATA_FILE="$PROJECT_ROOT/djia_30_batch_data.json"
-PROMPT_FILE="$SCRIPT_DIR/batch_prompt_template.md"
-
-# 5 batches of 6 companies each (alphabetically sorted)
-BATCH1="AAPL,AMGN,AXP,BA,CAT,CRM"
-BATCH2="CSCO,CVX,DIS,DOW,GS,HD"
-BATCH3="HON,IBM,INTC,JNJ,JPM,KO"
-BATCH4="MCD,MMM,MRK,MSFT,NKE,PG"
-BATCH5="TRV,UNH,V,VZ,WBA,WMT"
 
 # Defaults
+INDEX="djia"
+WINDOWS=5
+BATCH_SIZE=5
 DRY_RUN=false
-PROMPT_VERSION="4.8"
-MAX_TURNS=50
+PROMPT_VERSION="5.1"
+MAX_TURNS=""
 
 # Allowed tools for automated execution
 ALLOWED_TOOLS="Read,Write,Edit,Glob,Grep,Bash(python *),Bash(python3 *),Bash(cd *),Bash(cat *)"
@@ -40,6 +35,18 @@ ALLOWED_TOOLS="Read,Write,Edit,Glob,Grep,Bash(python *),Bash(python3 *),Bash(cd 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --index)
+            INDEX="$2"
+            shift 2
+            ;;
+        --windows)
+            WINDOWS="$2"
+            shift 2
+            ;;
+        --batch-size)
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
         --dry-run)
             DRY_RUN=true
             shift
@@ -54,7 +61,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--dry-run] [--prompt-version 4.8] [--max-turns 50]"
+            echo "Usage: $0 [--index djia] [--windows 5] [--batch-size 5] [--dry-run] [--prompt-version 5.1] [--max-turns N]"
             exit 1
             ;;
     esac
@@ -62,13 +69,58 @@ done
 
 PROMPT_FILE_NAME="investment_report_prompt_v${PROMPT_VERSION//./_}.txt"
 
+# Get tickers and split into fixed-size batches using Python
+BATCHES=$(python3 -c "
+import sys; sys.path.insert(0, '$PROJECT_ROOT/chat-api/backend')
+from investment_research.index_tickers import get_index_tickers
+tickers = get_index_tickers('$INDEX')
+batch_size = $BATCH_SIZE
+batches = []
+for i in range(0, len(tickers), batch_size):
+    batches.append(','.join(tickers[i:i+batch_size]))
+print('\n'.join(batches))
+")
+
+# Get total ticker count
+TOTAL_TICKERS=$(python3 -c "
+import sys; sys.path.insert(0, '$PROJECT_ROOT/chat-api/backend')
+from investment_research.index_tickers import get_index_tickers
+print(len(get_index_tickers('$INDEX')))
+")
+
+# Split batches into array (one batch per line)
+IFS=$'\n' read -r -d '' -a BATCH_ARRAY <<< "$BATCHES" || true
+
+TOTAL_BATCHES=${#BATCH_ARRAY[@]}
+
+# Auto-calculate max-turns if not specified: batch_size * 5 + 20
+if [[ -z "$MAX_TURNS" ]]; then
+    MAX_TURNS=$(( BATCH_SIZE * 5 + 20 ))
+fi
+
+# Find data file
+DATA_FILE=$(ls "$PROJECT_ROOT"/${INDEX}_*_batch_data.json 2>/dev/null | head -1 || echo "")
+if [[ -z "$DATA_FILE" ]]; then
+    DATA_FILE="$PROJECT_ROOT/${INDEX}_${TOTAL_TICKERS}_batch_data.json"
+fi
+DATA_FILE_BASENAME=$(basename "$DATA_FILE")
+
+# Calculate number of waves
+TOTAL_WAVES=$(( (TOTAL_BATCHES + WINDOWS - 1) / WINDOWS ))
+
+INDEX_UPPER=$(echo "$INDEX" | tr '[:lower:]' '[:upper:]')
 echo "============================================"
-echo "  DJIA Batch Report Generation (Automated)"
-echo "  5 Terminal windows × 6 companies each"
+echo "  ${INDEX_UPPER} Wave-Based Report Generation (Automated)"
+echo "  $TOTAL_BATCHES batches of ~$BATCH_SIZE tickers across $WINDOWS windows"
 echo "============================================"
 echo ""
 echo "Project root:    $PROJECT_ROOT"
-echo "Data file:       $DATA_FILE"
+echo "Data file:       $DATA_FILE_BASENAME"
+echo "Total tickers:   $TOTAL_TICKERS"
+echo "Batch size:      $BATCH_SIZE tickers per batch"
+echo "Total batches:   $TOTAL_BATCHES"
+echo "Windows:         $WINDOWS (concurrent terminals)"
+echo "Waves:           ~$TOTAL_WAVES"
 echo "Prompt version:  v$PROMPT_VERSION"
 echo "Max turns/batch: $MAX_TURNS"
 echo ""
@@ -80,10 +132,12 @@ if ! command -v claude &> /dev/null; then
 fi
 
 if [[ ! -f "$DATA_FILE" ]]; then
-    echo "ERROR: Data file not found: $DATA_FILE"
+    echo "WARNING: Data file not found: $DATA_FILE"
     echo "Run prepare_batch_data.py first:"
-    echo "  python -m investment_research.batch_generation.batch_cli prepare"
-    exit 1
+    echo "  python -m investment_research.batch_generation.prepare_batch_data --index $INDEX"
+    if [[ "$DRY_RUN" != "true" ]]; then
+        exit 1
+    fi
 fi
 
 # Verify prompt file exists
@@ -93,17 +147,32 @@ if [[ ! -f "$PROMPT_FILE_PATH" ]]; then
     exit 1
 fi
 
-# Dry run - just show what would happen
+# Dry run - show wave plan with batches grouped by wave
 if [[ "$DRY_RUN" == "true" ]]; then
-    echo "DRY RUN - Would open 5 Terminal windows:"
-    echo "  Window 1 (batch1): $BATCH1"
-    echo "  Window 2 (batch2): $BATCH2"
-    echo "  Window 3 (batch3): $BATCH3"
-    echo "  Window 4 (batch4): $BATCH4"
-    echo "  Window 5 (batch5): $BATCH5"
+    echo "DRY RUN - Wave plan for $TOTAL_BATCHES batches across $WINDOWS windows:"
     echo ""
-    echo "Each window runs:"
+    batch_idx=0
+    wave_num=1
+    while [[ $batch_idx -lt $TOTAL_BATCHES ]]; do
+        echo "  Wave $wave_num:"
+        wave_end=$((batch_idx + WINDOWS))
+        if [[ $wave_end -gt $TOTAL_BATCHES ]]; then
+            wave_end=$TOTAL_BATCHES
+        fi
+        while [[ $batch_idx -lt $wave_end ]]; do
+            batch_num=$((batch_idx + 1))
+            tickers="${BATCH_ARRAY[$batch_idx]}"
+            ticker_count=$(echo "$tickers" | tr ',' '\n' | wc -l | tr -d ' ')
+            echo "    Batch $batch_num ($ticker_count tickers): $tickers"
+            batch_idx=$((batch_idx + 1))
+        done
+        echo ""
+        wave_num=$((wave_num + 1))
+    done
+    echo "Each batch runs:"
     echo "  claude -p '<prompt>' --allowedTools '$ALLOWED_TOOLS' --max-turns $MAX_TURNS"
+    echo ""
+    echo "Sentinel files: /tmp/${INDEX}_batch{N}.done"
     exit 0
 fi
 
@@ -111,8 +180,8 @@ fi
 open_terminal_with_claude() {
     local batch_num=$1
     local tickers=$2
-    local window_title="DJIA Batch $batch_num: $tickers"
-    local log_file="/tmp/djia_batch${batch_num}.log"
+    local window_title="${INDEX_UPPER} Batch $batch_num: $tickers"
+    local log_file="/tmp/${INDEX}_batch${batch_num}.log"
 
     # Build the prompt inline
     local prompt="Generate investment reports for: $tickers
@@ -120,7 +189,7 @@ open_terminal_with_claude() {
 You are running in FULLY AUTOMATED mode. Execute every step without waiting for confirmation.
 
 Instructions:
-1. Read the pre-fetched data from djia_30_batch_data.json
+1. Read the pre-fetched data from $DATA_FILE_BASENAME
 2. For each ticker in ($tickers), extract its metrics_context from the JSON
 3. Read the system prompt from chat-api/backend/investment_research/prompts/$PROMPT_FILE_NAME
 4. Generate a complete investment report following the prompt structure
@@ -142,51 +211,81 @@ IMPORTANT:
 - When all reports are saved, print: 'BATCH COMPLETE: $tickers'"
 
     # Use AppleScript to open a new Terminal window with automated claude
+    # Sentinel file is touched after claude finishes to signal completion
     osascript <<EOF
 tell application "Terminal"
     activate
-    do script "echo 'Starting Batch $batch_num: $tickers' && cd '$PROJECT_ROOT' && claude -p '$(echo "$prompt" | sed "s/'/'\\''/g")' --allowedTools '$ALLOWED_TOOLS' --max-turns $MAX_TURNS --output-format text 2>&1 | tee $log_file"
+    do script "echo 'Starting Batch $batch_num: $tickers' && cd '$PROJECT_ROOT' && claude -p '$(echo "$prompt" | sed "s/'/'\\\\''/g")' --allowedTools '$ALLOWED_TOOLS' --max-turns $MAX_TURNS --output-format text 2>&1 | tee $log_file; touch /tmp/${INDEX}_batch${batch_num}.done"
     set custom title of front window to "$window_title"
 end tell
 EOF
 }
 
-echo "Opening 5 Terminal windows (automated)..."
+echo "Starting wave-based execution..."
+echo "  $TOTAL_BATCHES batches, $WINDOWS concurrent windows"
 echo ""
 
-# Open each terminal with a slight delay to prevent race conditions
-open_terminal_with_claude 1 "$BATCH1"
-sleep 1
-open_terminal_with_claude 2 "$BATCH2"
-sleep 1
-open_terminal_with_claude 3 "$BATCH3"
-sleep 1
-open_terminal_with_claude 4 "$BATCH4"
-sleep 1
-open_terminal_with_claude 5 "$BATCH5"
+# Clean up old sentinel files
+rm -f /tmp/${INDEX}_batch*.done
+
+NEXT_BATCH=0
+ACTIVE=0
+
+# Launch initial wave
+while [[ $NEXT_BATCH -lt $TOTAL_BATCHES && $ACTIVE -lt $WINDOWS ]]; do
+    batch_num=$((NEXT_BATCH + 1))
+    echo "  Launching batch $batch_num/$TOTAL_BATCHES: ${BATCH_ARRAY[$NEXT_BATCH]}"
+    open_terminal_with_claude "$batch_num" "${BATCH_ARRAY[$NEXT_BATCH]}"
+    NEXT_BATCH=$((NEXT_BATCH + 1))
+    ACTIVE=$((ACTIVE + 1))
+    sleep 1
+done
+
+echo ""
+echo "Initial wave launched ($ACTIVE terminals). Polling for completions..."
+echo ""
+
+# Poll for completions and launch next batches
+while [[ $ACTIVE -gt 0 ]]; do
+    sleep 5
+    for done_file in /tmp/${INDEX}_batch*.done; do
+        [ -f "$done_file" ] || continue
+        # Extract batch number from filename for logging
+        done_basename=$(basename "$done_file")
+        done_batch_num=$(echo "$done_basename" | sed "s/${INDEX}_batch//" | sed 's/.done//')
+        echo "  Batch $done_batch_num completed. ($ACTIVE active -> $((ACTIVE - 1)))"
+        ACTIVE=$((ACTIVE - 1))
+        rm "$done_file"
+        if [[ $NEXT_BATCH -lt $TOTAL_BATCHES ]]; then
+            batch_num=$((NEXT_BATCH + 1))
+            echo "  Launching batch $batch_num/$TOTAL_BATCHES: ${BATCH_ARRAY[$NEXT_BATCH]}"
+            open_terminal_with_claude "$batch_num" "${BATCH_ARRAY[$NEXT_BATCH]}"
+            NEXT_BATCH=$((NEXT_BATCH + 1))
+            ACTIVE=$((ACTIVE + 1))
+            sleep 1
+        fi
+    done
+done
 
 echo ""
 echo "============================================"
-echo "  5 Automated Terminal Windows Opened!"
+echo "  All $TOTAL_BATCHES Batches Complete!"
 echo "============================================"
 echo ""
-echo "Sessions are running autonomously — no manual approval needed."
+echo "Sessions ran autonomously across $WINDOWS terminal windows."
 echo ""
 echo "Logs:"
-echo "  tail -f /tmp/djia_batch1.log   # Watch batch 1"
-echo "  tail -f /tmp/djia_batch2.log   # Watch batch 2"
-echo "  tail -f /tmp/djia_batch3.log   # Watch batch 3"
-echo "  tail -f /tmp/djia_batch4.log   # Watch batch 4"
-echo "  tail -f /tmp/djia_batch5.log   # Watch batch 5"
+for i in $(seq 1 "$TOTAL_BATCHES"); do
+    echo "  /tmp/${INDEX}_batch${i}.log"
+done
 echo ""
 echo "Batch assignments:"
-echo "  Window 1: $BATCH1"
-echo "  Window 2: $BATCH2"
-echo "  Window 3: $BATCH3"
-echo "  Window 4: $BATCH4"
-echo "  Window 5: $BATCH5"
+for i in "${!BATCH_ARRAY[@]}"; do
+    batch_num=$((i + 1))
+    echo "  Batch $batch_num: ${BATCH_ARRAY[$i]}"
+done
 echo ""
 echo "Verify after completion:"
-echo "  cd chat-api/backend && python -m investment_research.batch_generation.batch_cli verify"
+echo "  cd chat-api/backend && python -m investment_research.batch_generation.batch_cli verify --index $INDEX"
 echo ""
 echo "============================================"

@@ -947,3 +947,395 @@ class TestIntegration:
                 metric_type='all',
                 quarters=4
             )
+
+
+class TestNewMetricCategories:
+    """Tests for earnings_events and dividend cache categories."""
+
+    @pytest.fixture
+    def mock_metrics_table(self):
+        """Create a mock DynamoDB table for metrics."""
+        with patch('utils.tool_executor.metrics_table') as mock_table:
+            yield mock_table
+
+    def test_earnings_events_is_valid_category(self, mock_metrics_table):
+        """Test that earnings_events is accepted as a valid metric_type."""
+        mock_metrics_table.query.return_value = {
+            'Items': [{
+                'ticker': 'AAPL',
+                'fiscal_date': '2025-09-27',
+                'fiscal_year': 2025,
+                'fiscal_quarter': 'Q3',
+                'earnings_events': {
+                    'earnings_date': '2025-10-30',
+                    'eps_actual': Decimal('1.64'),
+                    'eps_estimated': Decimal('1.59'),
+                    'eps_surprise_pct': Decimal('3.14'),
+                    'eps_beat': True,
+                    'revenue_actual': Decimal('94930000000'),
+                    'revenue_estimated': Decimal('94500000000'),
+                    'revenue_surprise_pct': Decimal('0.45')
+                }
+            }]
+        }
+
+        from utils.tool_executor import get_metrics_history
+        result = get_metrics_history('AAPL', 'earnings_events', 4)
+
+        assert result['success'] is True
+        assert result['metric_type'] == 'earnings_events'
+        assert 'earnings_events' in result['data']
+        assert result['categories_returned'] == ['earnings_events']
+        quarters = result['data']['earnings_events']['quarters']
+        assert len(quarters) == 1
+        assert quarters[0]['metrics']['eps_actual'] == 1.64
+        assert quarters[0]['metrics']['eps_beat'] == True  # noqa: E712 - DynamoDB bool comes through decimal_to_float
+
+    def test_dividend_is_valid_category(self, mock_metrics_table):
+        """Test that dividend is accepted as a valid metric_type."""
+        mock_metrics_table.query.return_value = {
+            'Items': [{
+                'ticker': 'AAPL',
+                'fiscal_date': '2025-09-27',
+                'fiscal_year': 2025,
+                'fiscal_quarter': 'Q3',
+                'dividend': {
+                    'dps': Decimal('0.25'),
+                    'payments_in_quarter': 1,
+                    'frequency': 'Quarterly',
+                    'dividend_yield': Decimal('0.52'),
+                    'annualized_dps': Decimal('1.0')
+                }
+            }]
+        }
+
+        from utils.tool_executor import get_metrics_history
+        result = get_metrics_history('AAPL', 'dividend', 4)
+
+        assert result['success'] is True
+        assert result['metric_type'] == 'dividend'
+        assert 'dividend' in result['data']
+        quarters = result['data']['dividend']['quarters']
+        assert len(quarters) == 1
+        assert quarters[0]['metrics']['dps'] == 0.25
+        assert quarters[0]['metrics']['frequency'] == 'Quarterly'
+
+    def test_non_dividend_company_sentinel(self, mock_metrics_table):
+        """Test that non-dividend companies return sentinel value."""
+        mock_metrics_table.query.return_value = {
+            'Items': [{
+                'ticker': 'AMZN',
+                'fiscal_date': '2025-09-30',
+                'fiscal_year': 2025,
+                'fiscal_quarter': 'Q3',
+                'dividend': {
+                    'dividend_status': 'none',
+                    'dps': 0
+                }
+            }]
+        }
+
+        from utils.tool_executor import get_metrics_history
+        result = get_metrics_history('AMZN', 'dividend', 4)
+
+        assert result['success'] is True
+        quarters = result['data']['dividend']['quarters']
+        assert len(quarters) == 1
+        assert quarters[0]['metrics']['dividend_status'] == 'none'
+        assert quarters[0]['metrics']['dps'] == 0
+
+    def test_all_includes_new_categories(self, mock_metrics_table):
+        """Test that metric_type='all' includes earnings_events and dividend."""
+        mock_metrics_table.query.return_value = {
+            'Items': [{
+                'ticker': 'AAPL',
+                'fiscal_date': '2025-09-27',
+                'fiscal_year': 2025,
+                'fiscal_quarter': 'Q3',
+                'revenue_profit': {'revenue': Decimal('95000000000')},
+                'earnings_events': {'eps_actual': Decimal('1.64')},
+                'dividend': {'dps': Decimal('0.25')}
+            }]
+        }
+
+        from utils.tool_executor import get_metrics_history
+        result = get_metrics_history('AAPL', 'all', 4)
+
+        assert result['success'] is True
+        assert 'revenue_profit' in result['data']
+        assert 'earnings_events' in result['data']
+        assert 'dividend' in result['data']
+
+    def test_snapshot_excludes_new_categories(self):
+        """Test that getFinancialSnapshot excludes earnings_events and dividend."""
+        with patch('utils.tool_executor.get_report_ratings') as mock_ratings, \
+             patch('utils.tool_executor.get_metrics_history') as mock_metrics:
+
+            mock_ratings.return_value = {
+                'success': True,
+                'ticker': 'AAPL',
+                'company_name': 'Apple Inc.',
+                'ratings': {'overall_verdict': 'BUY'},
+                'generated_at': '2026-01-15T10:00:00Z'
+            }
+            mock_metrics.return_value = {
+                'success': True,
+                'data': {
+                    'revenue_profit': {
+                        'quarters': [{'fiscal_date': '2025-12-28', 'fiscal_year': 2026,
+                                      'fiscal_quarter': 'Q1', 'metrics': {'revenue': 100000}}]
+                    },
+                    'earnings_events': {
+                        'quarters': [{'fiscal_date': '2025-12-28', 'fiscal_year': 2026,
+                                      'fiscal_quarter': 'Q1', 'metrics': {'eps_actual': 1.64}}]
+                    },
+                    'dividend': {
+                        'quarters': [{'fiscal_date': '2025-12-28', 'fiscal_year': 2026,
+                                      'fiscal_quarter': 'Q1', 'metrics': {'dps': 0.25}}]
+                    }
+                },
+                'quarters_available': 1
+            }
+
+            from utils.tool_executor import get_financial_snapshot
+            result = get_financial_snapshot('AAPL')
+
+            assert result['success'] is True
+            assert 'revenue_profit' in result['latest_metrics']
+            assert 'earnings_events' not in result['latest_metrics']
+            assert 'dividend' not in result['latest_metrics']
+
+
+class TestSectionIdAliasing:
+    """Tests for section ID backward/forward compatibility aliasing."""
+
+    @pytest.fixture
+    def mock_reports_table(self):
+        """Create a mock DynamoDB table for reports."""
+        with patch('utils.tool_executor.reports_table') as mock_table:
+            yield mock_table
+
+    def test_v52_id_falls_back_to_v51(self, mock_reports_table):
+        """Test v5.2 section ID falls back to v5.1 ID when not found."""
+        # First call (v5.2 ID) returns nothing; second call (v5.1 alias) returns data
+        mock_reports_table.get_item.side_effect = [
+            {},  # 15_bull not found
+            {    # 13_bull found (v5.1 report)
+                'Item': {
+                    'ticker': 'AAPL',
+                    'section_id': '13_bull',
+                    'title': 'Bull Case',
+                    'content': 'Apple has strong growth...',
+                    'part': 2,
+                    'word_count': 300
+                }
+            }
+        ]
+
+        from utils.tool_executor import get_report_section
+        result = get_report_section('AAPL', '15_bull')
+
+        assert result['success'] is True
+        assert result['section_id'] == '15_bull'  # Returns requested ID
+        assert result['content'] == 'Apple has strong growth...'
+        # Verify two get_item calls were made
+        assert mock_reports_table.get_item.call_count == 2
+
+    def test_v51_id_falls_back_to_v52(self, mock_reports_table):
+        """Test v5.1 section ID falls back to v5.2 ID when not found."""
+        mock_reports_table.get_item.side_effect = [
+            {},  # 13_bull not found
+            {    # 15_bull found (v5.2 report)
+                'Item': {
+                    'ticker': 'AAPL',
+                    'section_id': '15_bull',
+                    'title': 'Bull Case',
+                    'content': 'Apple bulls argue...',
+                    'part': 2,
+                    'word_count': 350
+                }
+            }
+        ]
+
+        from utils.tool_executor import get_report_section
+        result = get_report_section('AAPL', '13_bull')
+
+        assert result['success'] is True
+        assert result['section_id'] == '13_bull'  # Returns requested ID
+
+    def test_direct_match_no_alias_needed(self, mock_reports_table):
+        """Test direct section ID match does not trigger alias lookup."""
+        mock_reports_table.get_item.return_value = {
+            'Item': {
+                'ticker': 'AAPL',
+                'section_id': '16_bear',
+                'title': 'Bear Case',
+                'content': 'The main risks are...',
+                'part': 2,
+                'word_count': 400
+            }
+        }
+
+        from utils.tool_executor import get_report_section
+        result = get_report_section('AAPL', '16_bear')
+
+        assert result['success'] is True
+        # Only one get_item call — no alias needed
+        assert mock_reports_table.get_item.call_count == 1
+
+    def test_v52_section_ids_without_aliases(self, mock_reports_table):
+        """Test v5.2-only section IDs (13_dividend, 14_moat, 17_recap) work directly."""
+        mock_reports_table.get_item.return_value = {
+            'Item': {
+                'ticker': 'AAPL',
+                'section_id': '14_moat',
+                'title': 'Moat Analysis',
+                'content': 'Apple has a strong ecosystem moat...',
+                'part': 2,
+                'word_count': 500
+            }
+        }
+
+        from utils.tool_executor import get_report_section
+        result = get_report_section('AAPL', '14_moat')
+
+        assert result['success'] is True
+        assert result['title'] == 'Moat Analysis'
+
+
+class TestPrepareMetricsForCache:
+    """Tests for prepare_metrics_for_cache with earnings and dividend data."""
+
+    def test_earnings_aligned_to_quarters(self):
+        """Test earnings events are correctly aligned to fiscal quarters."""
+        from utils.feature_extractor import prepare_metrics_for_cache
+
+        quarterly_trends = {
+            'quarters': ['Q0', 'Q1', 'Q2'],
+            'period_dates': ['2025-09-27', '2025-06-28', '2025-03-29'],
+            'revenue': [95000000000, 90000000000, 85000000000],
+            'net_income': [20000000000, 19000000000, 18000000000],
+        }
+
+        earnings_history = [
+            {'date': '2025-10-30', 'epsActual': 1.64, 'epsEstimated': 1.59,
+             'revenueActual': 95000000000, 'revenueEstimated': 94500000000},
+            {'date': '2025-07-31', 'epsActual': 1.50, 'epsEstimated': 1.48,
+             'revenueActual': 90000000000, 'revenueEstimated': 89500000000},
+        ]
+
+        items = prepare_metrics_for_cache(
+            'AAPL', quarterly_trends, earnings_history=earnings_history
+        )
+
+        assert len(items) == 3
+        # Earnings on 2025-10-30 should map to quarter ending 2025-09-27
+        q0_item = items[0]
+        assert 'earnings_events' in q0_item
+        assert q0_item['earnings_events']['eps_actual'] == 1.64
+        assert q0_item['earnings_events']['eps_beat'] is True
+        assert q0_item['earnings_events']['earnings_date'] == '2025-10-30'
+
+        # Earnings on 2025-07-31 should map to quarter ending 2025-06-28
+        q1_item = items[1]
+        assert 'earnings_events' in q1_item
+        assert q1_item['earnings_events']['eps_actual'] == 1.50
+
+        # Q2 has no earnings
+        q2_item = items[2]
+        assert 'earnings_events' not in q2_item
+
+    def test_dividends_aggregated_per_quarter(self):
+        """Test dividend payments are aggregated into fiscal quarters."""
+        from utils.feature_extractor import prepare_metrics_for_cache
+
+        quarterly_trends = {
+            'quarters': ['Q0', 'Q1'],
+            'period_dates': ['2025-09-27', '2025-06-28'],
+            'revenue': [95000000000, 90000000000],
+        }
+
+        dividend_history = [
+            # 2025-10-15 is after 2025-09-27 → maps to Q0 (2025-09-27)
+            {'date': '2025-10-15', 'adjDividend': 0.25, 'yield': 0.52, 'frequency': 'Quarterly'},
+            # 2025-08-15 is after 2025-06-28 but before 2025-09-27 → maps to Q1 (2025-06-28)
+            {'date': '2025-08-15', 'adjDividend': 0.24, 'yield': 0.50, 'frequency': 'Quarterly'},
+        ]
+
+        items = prepare_metrics_for_cache(
+            'AAPL', quarterly_trends, dividend_history=dividend_history
+        )
+
+        assert len(items) == 2
+        # Dividend on 2025-08-15 maps to quarter ending 2025-06-28 (most recent period before)
+        q1_item = items[1]
+        assert 'dividend' in q1_item
+        assert q1_item['dividend']['dps'] == 0.24
+        assert q1_item['dividend']['frequency'] == 'Quarterly'
+        # Dividend on 2025-10-15 maps to quarter ending 2025-09-27
+        q0_item = items[0]
+        assert 'dividend' in q0_item
+        assert q0_item['dividend']['dps'] == 0.25
+
+    def test_non_dividend_company_gets_sentinel(self):
+        """Test non-dividend companies get explicit sentinel value."""
+        from utils.feature_extractor import prepare_metrics_for_cache
+
+        quarterly_trends = {
+            'quarters': ['Q0'],
+            'period_dates': ['2025-09-30'],
+            'revenue': [140000000000],
+        }
+
+        # Empty dividend history = non-dividend-paying company
+        items = prepare_metrics_for_cache(
+            'AMZN', quarterly_trends, dividend_history=[]
+        )
+
+        assert len(items) == 1
+        assert 'dividend' in items[0]
+        assert items[0]['dividend']['dividend_status'] == 'none'
+        assert items[0]['dividend']['dps'] == 0
+
+    def test_no_earnings_or_dividends_passed(self):
+        """Test backward compatibility when no earnings/dividend data is provided."""
+        from utils.feature_extractor import prepare_metrics_for_cache
+
+        quarterly_trends = {
+            'quarters': ['Q0'],
+            'period_dates': ['2025-09-27'],
+            'revenue': [95000000000],
+        }
+
+        # No earnings or dividends (old call pattern)
+        items = prepare_metrics_for_cache('AAPL', quarterly_trends)
+
+        assert len(items) == 1
+        assert 'earnings_events' not in items[0]
+        assert 'dividend' not in items[0]
+        assert 'revenue_profit' in items[0]
+
+    def test_eps_surprise_uses_safe_divide(self):
+        """Test that zero EPS estimate doesn't cause division error."""
+        from utils.feature_extractor import prepare_metrics_for_cache
+
+        quarterly_trends = {
+            'quarters': ['Q0'],
+            'period_dates': ['2025-09-27'],
+            'revenue': [95000000000],
+        }
+
+        earnings_history = [
+            {'date': '2025-10-30', 'epsActual': 0.05, 'epsEstimated': 0,
+             'revenueActual': 95000000000, 'revenueEstimated': 94500000000},
+        ]
+
+        # Should not raise — safe_divide handles zero denominator
+        items = prepare_metrics_for_cache(
+            'TEST', quarterly_trends, earnings_history=earnings_history
+        )
+
+        assert len(items) == 1
+        assert 'earnings_events' in items[0]
+        # safe_divide returns 0 when denominator is 0
+        assert items[0]['earnings_events']['eps_surprise_pct'] == 0

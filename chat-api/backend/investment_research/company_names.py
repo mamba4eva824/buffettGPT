@@ -27,6 +27,7 @@ COMPANY_NAMES = {
     'CRM': 'Salesforce Inc.',
     'AMD': 'Advanced Micro Devices Inc.',
     'NFLX': 'Netflix Inc.',
+    'SPOT': 'Spotify Technology S.A.',
     'CSCO': 'Cisco Systems Inc.',
     'INTC': 'Intel Corporation',
     'IBM': 'International Business Machines',

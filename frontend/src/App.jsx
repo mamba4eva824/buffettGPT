@@ -16,6 +16,8 @@ import { ResearchProvider, useResearch } from "./contexts/ResearchContext.jsx";
 import SectionCard from "./components/research/SectionCard.jsx";
 import ResearchLayout from "./components/research/ResearchLayout.jsx";
 import { useCompanySearch } from "./hooks/useCompanySearch.js";
+import ValueInsights from "./components/value-insights/ValueInsights.jsx";
+import MarketIntelligence from "./components/market-intelligence/MarketIntelligence.jsx";
 
 /*************************
  * Environment Configuration *
@@ -178,6 +180,9 @@ function ChatApp() {
   const [search, setSearch] = useState("");
   const [input, setInput] = useState("");
   const [showInvestmentResearch, setShowInvestmentResearch] = useState(false);
+  const [appMode, setAppMode] = useState('chat'); // 'chat' | 'value-insights' | 'market-intelligence'
+  const [marketIntelConversationId, setMarketIntelConversationId] = useState(null);
+  const [marketIntelMessages, setMarketIntelMessages] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const isConnecting = false; // Simplified - no connection waiting needed for analysis mode
@@ -815,6 +820,10 @@ function ChatApp() {
     setUserExpandedSections(['01_executive_summary']);
     setVisibleSections([]);
 
+    // Clear market intelligence state
+    setMarketIntelConversationId(null);
+    setMarketIntelMessages(null);
+
     // Clear selection - conversation will be created in doSend when user submits a company
     setSelectedConversation(null);
   }, [setMessages, setSelectedConversation, resetResearch]);
@@ -1226,6 +1235,21 @@ function ChatApp() {
         }
       }
 
+      // Check if this is a Market Intelligence conversation
+      const isMarketIntelConversation =
+        conversation?.metadata?.type === 'market-intelligence' ||
+        (conversationTitle && conversationTitle.startsWith('MI:'));
+
+      if (isMarketIntelConversation) {
+        resetResearch();
+        setShowInvestmentResearch(false);
+        setAppMode('market-intelligence');
+        setMarketIntelConversationId(conversationId);
+        setMarketIntelMessages(formattedMessages);
+        setMessages([]);
+        return;
+      }
+
       // Regular conversation (including legacy "Analysis:" conversations) - show messages as chat
       // Clean up research state to avoid stale data from previous research conversation
       resetResearch();
@@ -1494,6 +1518,51 @@ function ChatApp() {
                   </button>
                 )}
               </div>
+
+              {/* Mode pill toggle — Chat / Value Insights / Market Intelligence */}
+              <div className="flex items-center bg-sand-200 dark:bg-warm-800 rounded-full p-1 gap-1">
+                <button
+                  onClick={() => {
+                    setAppMode('chat');
+                    setMarketIntelConversationId(null);
+                    setMarketIntelMessages(null);
+                  }}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                    appMode === 'chat'
+                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
+                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
+                  }`}
+                >
+                  Chat
+                </button>
+                <button
+                  onClick={() => setAppMode('value-insights')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                    appMode === 'value-insights'
+                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
+                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
+                  }`}
+                >
+                  Value Insights
+                </button>
+                <button
+                  onClick={() => {
+                    setAppMode('market-intelligence');
+                    if (appMode !== 'market-intelligence') {
+                      setMarketIntelConversationId(null);
+                      setMarketIntelMessages(null);
+                    }
+                  }}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                    appMode === 'market-intelligence'
+                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
+                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
+                  }`}
+                >
+                  Market Intel
+                </button>
+              </div>
+
               <div className="flex items-center gap-2">
                 {/* Account dropdown moved to sidebar - show login button for non-authenticated users */}
                 {!isAuthenticated && (
@@ -1517,27 +1586,48 @@ function ChatApp() {
               </div>
             </div>
 
-            {/* Dynamic Layout Based on Message State */}
-            {messages.length === 0 && !showInvestmentResearch ? (
+            {/* Dynamic Layout Based on Mode */}
+            {appMode === 'market-intelligence' ? (
+              /* MARKET INTELLIGENCE MODE */
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <MarketIntelligence
+                  conversationId={marketIntelConversationId}
+                  initialMessages={marketIntelMessages}
+                  createConversation={createConversation}
+                  onConversationCreated={(newConv) => {
+                    setMarketIntelConversationId(newConv.conversation_id);
+                    setSelectedConversation(newConv);
+                    navigate(`/c/${newConv.conversation_id}`, { replace: true });
+                  }}
+                />
+              </div>
+            ) : appMode === 'value-insights' ? (
+              /* VALUE INSIGHTS MODE */
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <ValueInsights />
+              </div>
+            ) : messages.length === 0 && !showInvestmentResearch ? (
               /* CENTERED LAYOUT - No messages (landing, auth, new chat) */
-              <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 pb-24 transition-all duration-300 ease-in-out">
-                <div className="text-center mb-8">
-                  <div className="text-sand-400 dark:text-warm-50 text-3xl font-medium">
-                    Welcome{isAuthenticated && userFirstName ? `, ${userFirstName}` : ''} to {ENV_CONFIG.APP_NAME}
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 pb-24">
+                  <div className="text-center mb-8">
+                    <div className="text-sand-400 dark:text-warm-50 text-3xl font-medium">
+                      Welcome{isAuthenticated && userFirstName ? `, ${userFirstName}` : ''} to {ENV_CONFIG.APP_NAME}
+                    </div>
                   </div>
-                </div>
 
-                <div className="w-full max-w-3xl">
-                  <SearchComposer
-                    input={input}
-                    setInput={setInput}
-                    doSend={doSend}
-                    isConnecting={isConnecting}
-                    searchResults={searchResults}
-                    isSearching={isSearching}
-                    onResultSelect={handleCompanySelect}
-                    onInputChange={handleSearchInputChange}
-                  />
+                  <div className="w-full max-w-3xl">
+                    <SearchComposer
+                      input={input}
+                      setInput={setInput}
+                      doSend={doSend}
+                      isConnecting={isConnecting}
+                      searchResults={searchResults}
+                      isSearching={isSearching}
+                      onResultSelect={handleCompanySelect}
+                      onInputChange={handleSearchInputChange}
+                    />
+                  </div>
                 </div>
               </div>
             ) : (

@@ -640,50 +640,59 @@ cd chat-api/backend && ./scripts/build_lambdas.sh
 
 ---
 
-## Agent Roles (for Task Tool)
+## Agent Roles (`.claude/agents/`)
 
-When spawning subagents via the Task tool, use these roles:
+This project has dedicated agent personas in `.claude/agents/`. When spawning agents via the Task tool, read the relevant agent file and include its prompt in the task description.
 
-### Explorer Agent (`subagent_type=Explore`)
-- Codebase exploration and research
-- Finding patterns and existing implementations
-- Understanding architecture before changes
+| Agent File | Role | When to Spawn |
+|------------|------|---------------|
+| `researcher.md` | Information gathering, codebase exploration | GSD Audit (Step 1), investigating failures |
+| `explorer-alternatives.md` | Generate 2-4 alternative approaches | GSD Planning (Step 3) |
+| `challenger.md` | Red-team plans, find failure modes | GSD Self-Critique (Step 5) |
+| `implementer.md` | Focused single-task implementation | RALF Execute (Step 1) |
+| `verifier.md` | Run verification gates, report pass/fail | RALF Verify (Step 2), `/verify`, `/ship` |
+| `reviewer.md` | Semantic code review against acceptance criteria | RALF Review (Step 3), `/ship` |
+| `debugger.md` | Investigate test failures, runtime errors | When gates fail |
+| `test-writer.md` | Create tests for new functionality | After implementation |
+| `perf-reviewer.md` | Identify bottlenecks, optimize queries | Performance-sensitive changes |
+| `performance-optimizer.md` | Optimize data processing and loops | Performance-sensitive changes |
+| `aws-bedrock-architect.md` | Design Bedrock agent configurations | AI/agent infrastructure changes |
 
-### Plan Agent (`subagent_type=Plan`)
-- Designing implementation strategies
-- Identifying critical files and trade-offs
-- Creating step-by-step plans
+### How to Spawn Agents
 
-### Debugger Agent (`subagent_type=debugger`)
-- Investigating test failures
-- Fixing runtime errors
-- Performance issue diagnosis
-
-### Test Writer Agent (`subagent_type=test-writer`)
-- Creating tests after implementation
-- Ensuring coverage for new code
-- Regression test creation
-
-### Performance Reviewer (`subagent_type=perf-reviewer`)
-- Identifying bottlenecks
-- Reviewing data processing code
-- Optimizing loops and queries
+Use the Task tool with `subagent_type=general-purpose`. Include the agent's prompt from its `.md` file in the task description so the subagent adopts the persona. For simple codebase searches, `subagent_type=Explore` can be used directly without an agent file.
 
 ---
 
-## Workflow Triggers
+## Workflow Triggers (Slash Commands)
 
-### User says "GSD" or "plan this"
-→ Execute full GSD workflow (Audit → PRD → Plan → Tasks → Approval)
+| User says | Slash command | Action |
+|-----------|--------------|--------|
+| "GSD" or "plan this" | `/gsd` | Full planning: Audit → PRD → Plan → Tasks → Approval |
+| "RALF" or "execute" | `/ralf` | Execute RALF loop on TodoWrite tasks |
+| "verify" or "run gates" | `/verify` | Run all verification gates via Verifier agent |
+| "ship" or "create PR" | `/ship` | Final gates → commit → PR creation |
 
-### User says "RALF" or "execute"
-→ Execute RALF loop on existing TodoWrite tasks
+### Agent Orchestration per Workflow
 
-### User says "verify" or "run gates"
-→ Run all verification commands and report status
+**`/gsd` spawns:**
+- 2x Researcher (parallel) → audit codebase context
+- 1x Explorer-Alternatives → generate approach options
+- 1x Challenger → red-team the plan
 
-### User says "ship" or "create PR"
-→ Summarize changes, run final gates, prepare PR description
+**`/ralf` spawns per task:**
+- 1x Researcher (if needed) → understand unfamiliar code
+- 1x Implementer → make changes
+- 1x Verifier → run gates
+- 1x Reviewer → semantic code review
+
+**`/verify` spawns:**
+- 1x Verifier → full gate suite
+- 1x Researcher (if failures) → diagnose root cause
+
+**`/ship` spawns:**
+- 1x Verifier → final gates
+- 1x Reviewer + 1x Bash (parallel) → review + git diff summary
 
 ---
 

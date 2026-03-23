@@ -110,7 +110,9 @@ def create_checkout_session(
     user_email: str,
     success_url: str,
     cancel_url: str,
-    customer_id: Optional[str] = None
+    customer_id: Optional[str] = None,
+    trial_period_days: Optional[int] = None,
+    extra_metadata: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """
     Create a Stripe Checkout Session for Plus subscription.
@@ -121,12 +123,21 @@ def create_checkout_session(
         success_url: URL to redirect after successful payment
         cancel_url: URL to redirect if user cancels
         customer_id: Optional existing Stripe customer ID
+        trial_period_days: Optional free trial period in days (e.g., 30 or 90 for referral rewards)
+        extra_metadata: Optional additional metadata to include on the session
 
     Returns:
         Dictionary with checkout_url and session_id
     """
     stripe = get_stripe()
     price_id = get_stripe_plus_price_id()
+
+    metadata = {
+        'user_id': user_id,
+        'environment': ENVIRONMENT,
+    }
+    if extra_metadata:
+        metadata.update(extra_metadata)
 
     session_params = {
         'mode': 'subscription',
@@ -138,11 +149,14 @@ def create_checkout_session(
         'success_url': success_url,
         'cancel_url': cancel_url,
         'client_reference_id': user_id,
-        'metadata': {
-            'user_id': user_id,
-            'environment': ENVIRONMENT,
-        },
+        'metadata': metadata,
     }
+
+    # Apply free trial if specified (e.g., from referral rewards)
+    if trial_period_days and trial_period_days > 0:
+        session_params['subscription_data'] = {
+            'trial_period_days': trial_period_days,
+        }
 
     # Use existing customer or create new one
     if customer_id:
@@ -152,7 +166,8 @@ def create_checkout_session(
 
     try:
         session = stripe.checkout.Session.create(**session_params)
-        logger.info(f"Created checkout session for user {user_id}: {session.id}")
+        logger.info(f"Created checkout session for user {user_id}: {session.id}"
+                     + (f" with {trial_period_days}-day trial" if trial_period_days else ""))
         return {
             'checkout_url': session.url,
             'session_id': session.id

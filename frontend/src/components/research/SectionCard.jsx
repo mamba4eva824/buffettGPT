@@ -13,6 +13,7 @@ import {
   TrendingUp,
   TrendingDown,
   Percent,
+  BarChart2,
   BarChart3,
   Gem,
   Users,
@@ -30,6 +31,7 @@ import {
   Landmark,
   PieChart,
   Crosshair,
+  Coins,
 } from 'lucide-react';
 import useTypewriter from '../../hooks/useTypewriter';
 
@@ -50,6 +52,9 @@ const iconMap = {
   'pie-chart': PieChart,
   'trending-up': TrendingUp,
   'trending-down': TrendingDown,
+  'bar-chart-2': BarChart2,
+  'coins': Coins,
+  'shield': Shield,
   'message-circle': MessageCircle,
   'crosshair': Crosshair,
   // Aliases and fallbacks
@@ -58,7 +63,6 @@ const iconMap = {
   'heart': Heart,
   'dollar': DollarSign,
   'dollar-sign': DollarSign,
-  'shield': Shield,
   'percent': Percent,
   'bar-chart': BarChart3,
   'bar-chart-3': BarChart3,
@@ -70,6 +74,10 @@ const iconMap = {
   'file-text': FileText,
   'banknote': Banknote,
 };
+
+/** Strip trailing JSON ratings block from section content (safety net for existing data). */
+const stripTrailingJsonBlock = (text) =>
+  text ? text.replace(/\n*---\s*\n*```json\s*\{[\s\S]*?\}\s*```\s*$/, '').replace(/\n*```json\s*\{[\s\S]*?\}\s*```\s*$/, '').trim() : '';
 
 /**
  * SectionCard - Renders a research section as a styled card
@@ -92,9 +100,12 @@ export default function SectionCard({
   // Get the icon component
   const Icon = iconMap[section?.icon] || FileText;
 
+  // Strip trailing JSON ratings block from content (safety net for legacy data)
+  const cleanContent = stripTrailingJsonBlock(section?.content || '');
+
   // ChatGPT-style streaming effect
   // Only animate when actively streaming - loaded from history should display instantly
-  const { displayText, isTyping } = useTypewriter(section?.content || '', {
+  const { displayText, isTyping } = useTypewriter(cleanContent, {
     speed: 1.5,
     isActive: isStreaming,
     alwaysAnimate: isStreaming  // Only animate during actual streaming, not history loads

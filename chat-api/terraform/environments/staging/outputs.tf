@@ -1,6 +1,6 @@
 # Staging Environment Outputs
 # These values are used by CI/CD and for sharing access with testers
-# Updated 2025-01: Removed CloudFront, deprecated DynamoDB, and Knowledge Base outputs
+# Updated 2026-03: Added market intelligence, removed landing page and deprecated outputs
 
 # ================================================
 # API Gateway Outputs
@@ -16,23 +16,13 @@ output "http_api_endpoint" {
   value       = module.api_gateway.http_api_endpoint
 }
 
-# WebSocket API outputs - REMOVED (2026-02)
-# websocket_api_id and websocket_api_endpoint deprecated
-
 output "analysis_api_endpoint" {
   description = "Analysis REST API endpoint URL (for streaming analysis)"
   value       = module.api_gateway.analysis_api_endpoint
 }
 
-output "research_api_endpoint" {
-  description = "Research REST API endpoint URL"
-  value       = module.api_gateway.research_api_endpoint
-}
-
-output "analysis_api_base_url" {
-  description = "Analysis REST API base URL (for frontend VITE_RESEARCH_API_URL)"
-  value       = module.api_gateway.analysis_api_base_url
-}
+# WebSocket API outputs - REMOVED (2026-02)
+# websocket_api_id and websocket_api_endpoint deprecated
 
 # ================================================
 # Lambda Outputs
@@ -56,6 +46,11 @@ output "investment_research_function_url" {
 output "analysis_followup_function_url" {
   description = "Analysis followup Lambda function URL"
   value       = module.lambda.analysis_followup_url
+}
+
+output "market_intel_chat_url" {
+  description = "Market Intelligence chat Lambda function URL"
+  value       = module.lambda.market_intel_chat_url
 }
 
 # ================================================
@@ -90,41 +85,13 @@ output "bedrock_agent_alias_id" {
 # Access Instructions Output
 # ================================================
 
-output "landing_cloudfront_url" {
-  description = "CloudFront URL for the landing page"
-  value       = module.cloudfront_landing.cloudfront_url
-}
-
-output "landing_s3_bucket_name" {
-  description = "S3 bucket name for the landing page"
-  value       = module.cloudfront_landing.s3_bucket_name
-}
-
-output "landing_cloudfront_distribution_id" {
-  description = "CloudFront distribution ID for the landing page"
-  value       = module.cloudfront_landing.cloudfront_distribution_id
-}
-
 output "staging_access_info" {
   description = "Information for accessing the staging environment"
   value = {
-    environment    = "staging"
-    app_url        = module.cloudfront.cloudfront_url
-    landing_url    = module.cloudfront_landing.cloudfront_url
-    http_api_url   = module.api_gateway.http_api_endpoint
-    research_url   = module.lambda.investment_research_docker_function_url
-    instructions   = "Share the landing URL for new signups. Share the app URL with testers."
+    environment  = "staging"
+    frontend_url = module.cloudfront.cloudfront_url
+    http_api_url = module.api_gateway.http_api_endpoint
+    research_url = module.lambda.investment_research_docker_function_url
+    instructions = "Share the frontend URL with friends and family for testing."
   }
 }
-
-# ================================================
-# DEPRECATED OUTPUTS (Removed 2025-01)
-# ================================================
-# The following outputs were removed as part of RAG chatbot deprecation:
-# - chat_messages_table_name (table removed)
-# - bedrock_knowledge_base_id (KB removed)
-# - cloudfront_distribution_id (module removed)
-# - cloudfront_url (module removed)
-# - cloudfront_domain_name (module removed)
-# - s3_bucket_name (module removed)
-# ================================================
