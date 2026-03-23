@@ -109,23 +109,8 @@ output "fmp_api_key_name" {
 # }
 
 output "analysis_followup_url" {
-  description = "Function URL for analysis followup (SSE streaming) - Docker-based"
-  value       = try(aws_lambda_function_url.analysis_followup_docker.function_url, null)
-}
-
-output "analysis_followup_docker_arn" {
-  description = "ARN of the analysis follow-up Docker Lambda function"
-  value       = try(aws_lambda_function.analysis_followup_docker.arn, null)
-}
-
-output "analysis_followup_docker_ecr_url" {
-  description = "ECR repository URL for analysis follow-up"
-  value       = try(aws_ecr_repository.analysis_followup.repository_url, null)
-}
-
-output "analysis_followup_docker_function_name" {
-  description = "Name of the analysis follow-up Docker Lambda function"
-  value       = try(aws_lambda_function.analysis_followup_docker.function_name, null)
+  description = "Function URL for analysis followup (SSE streaming)"
+  value       = try(aws_lambda_function_url.analysis_followup.function_url, null)
 }
 
 output "market_intel_chat_url" {
