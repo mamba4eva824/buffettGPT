@@ -7,7 +7,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.25"
     }
   }
 
@@ -40,27 +40,37 @@ locals {
   }
 
   # Lambda environment variables
+  # Updated 2026-03: Removed deprecated WebSocket, chat processing, and old Bedrock agent vars
   lambda_common_env_vars = {
-    ENVIRONMENT                 = local.environment
-    PROJECT_NAME                = local.project_name
-    LOG_LEVEL                   = "INFO" # Less verbose than dev
-    CHAT_MESSAGES_TABLE = module.dynamodb.chat_messages_table_name
+    ENVIRONMENT         = local.environment
+    PROJECT_NAME        = local.project_name
+    LOG_LEVEL           = "INFO" # Less verbose than dev
     CONVERSATIONS_TABLE = module.dynamodb.conversations_table_name
-    KMS_KEY_ID                  = module.core.kms_key_id
-    CHAT_PROCESSING_QUEUE_URL   = module.core.chat_processing_queue_url
+    CHAT_MESSAGES_TABLE = module.dynamodb.chat_messages_table_name
+    KMS_KEY_ID          = module.core.kms_key_id
 
-    # Bedrock Configuration - Use module outputs when available
-    BEDROCK_AGENT_ID    = try(module.bedrock.agent_id, var.bedrock_agent_id)
-    BEDROCK_AGENT_ALIAS = try(module.bedrock.agent_alias_id, var.bedrock_agent_alias)
-    BEDROCK_REGION      = var.bedrock_region
+    # Bedrock Configuration
+    BEDROCK_REGION = var.bedrock_region
 
-    # WebSocket endpoint for API Gateway Management API (needed by multiple functions)
-    # Format: {api-id}.execute-api.{region}.amazonaws.com/{stage}
-    WEBSOCKET_API_ENDPOINT = try("${module.api_gateway.websocket_api_id}.execute-api.us-east-1.amazonaws.com/${local.environment}", "")
+    # Follow-up Agent Configuration (for investment research follow-up questions)
+    FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
+    FOLLOWUP_AGENT_ALIAS = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
+
+    # FMP API Configuration (Ensemble Analysis)
+    FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
+    FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
+    TICKER_LOOKUP_TABLE        = try(module.dynamodb.ticker_lookup_table_name, "")
+
+    # Investment Research Tables (v1 removed, only v2 active)
+    INVESTMENT_REPORTS_V2_TABLE = try(module.dynamodb.investment_reports_v2_table_name, "")
+    METRICS_HISTORY_CACHE_TABLE = try(module.dynamodb.metrics_history_cache_table_name, "")
 
     # Token Usage Tracking (monthly limits for follow-up agent)
     TOKEN_USAGE_TABLE   = try(module.dynamodb.token_usage_table_name, "")
     DEFAULT_TOKEN_LIMIT = "500000"  # 500K tokens for staging/testing
+
+    # JWT Authentication Configuration
+    JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
 
     # Waitlist Table
     WAITLIST_TABLE = module.dynamodb.waitlist_table_name
@@ -70,10 +80,26 @@ locals {
   }
 
   # Function-specific environment variables
-  # NOTE: Anonymous sessions and rate limits tables removed (2025-01)
+  # Updated 2026-03: Added Stripe and Email handler vars; removed deprecated websocket/chat_processor
   lambda_function_env_vars = {
-    websocket_connect = {}
-    chat_processor    = {}
+    stripe_webhook_handler = {
+      STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
+      STRIPE_WEBHOOK_SECRET_ARN  = module.stripe.stripe_webhook_secret_arn
+      STRIPE_PLUS_PRICE_ID_ARN   = module.stripe.stripe_plus_price_id_arn
+      TOKEN_LIMIT_PLUS           = tostring(module.stripe.token_limit_plus)
+      USERS_TABLE                = var.enable_authentication ? module.auth[0].users_table_name : ""
+    }
+    subscription_handler = {
+      STRIPE_SECRET_KEY_ARN      = module.stripe.stripe_secret_key_arn
+      STRIPE_PLUS_PRICE_ID_ARN   = module.stripe.stripe_plus_price_id_arn
+      STRIPE_PUBLISHABLE_KEY_ARN = module.stripe.stripe_publishable_key_arn
+      USERS_TABLE                = var.enable_authentication ? module.auth[0].users_table_name : ""
+    }
+    waitlist_handler = {
+      RESEND_API_KEY_ARN = module.email.resend_api_key_arn
+      RESEND_FROM_EMAIL  = module.email.resend_from_email
+      API_BASE_URL       = module.api_gateway.http_api_endpoint
+    }
   }
 }
 
@@ -115,24 +141,40 @@ module "dynamodb" {
 module "lambda" {
   source = "../../modules/lambda"
 
-  project_name              = local.project_name
-  environment               = local.environment
-  lambda_role_arn           = module.core.lambda_role_arn
-  lambda_package_path       = "${path.root}/../../../backend/build"
-  runtime                   = "python3.11"
-  common_env_vars           = local.lambda_common_env_vars
-  function_env_vars         = local.lambda_function_env_vars
-  dlq_arn                   = module.core.chat_dlq_arn
-  chat_processing_queue_arn = module.core.chat_processing_queue_arn
-  log_retention_days        = 14 # 2 week retention for staging
+  project_name        = local.project_name
+  environment         = local.environment
+  lambda_role_arn     = module.core.lambda_role_arn
+  lambda_package_path = "${path.root}/../../../backend/build"
+  runtime             = "python3.11"
+  common_env_vars     = local.lambda_common_env_vars
+  function_env_vars   = local.lambda_function_env_vars
+  log_retention_days  = 14 # 2 week retention for staging
 
   reserved_concurrency = {
-    chat_processor = 5 # Higher than dev for multiple testers
+    analysis_followup = 10
   }
 
-  sqs_batch_window    = 10
-  sqs_max_concurrency = 5
-  common_tags         = local.common_tags
+  common_tags = local.common_tags
+
+  # KMS key for DynamoDB encryption
+  kms_key_arn = module.core.kms_key_arn
+
+  # Followup Action Lambda (Bedrock action group handler)
+  # Docker image NOT yet pushed to staging ECR - disable Lambda creation
+  create_followup_action_lambda = false
+  followup_action_image_tag     = "latest"
+
+  # DynamoDB table ARNs for followup-action Lambda IAM policy
+  investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
+  financial_data_cache_table_arn  = module.dynamodb.financial_data_cache_table_arn
+
+  # DynamoDB table names for followup-action Lambda environment variables
+  investment_reports_v2_table_name = module.dynamodb.investment_reports_v2_table_name
+  financial_data_cache_table_name  = module.dynamodb.financial_data_cache_table_name
+
+  # Metrics History Cache table for followup-action Lambda
+  metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
+  metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
 }
 
 # ================================================
@@ -151,11 +193,31 @@ module "api_gateway" {
   # API configuration
   enable_cors                     = true
   enable_authorization            = var.enable_authentication
+  enable_search                   = true
   authorizer_function_arn         = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
   authorizer_function_name        = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
   authorizer_function_arn_for_iam = var.enable_authentication ? module.auth[0].auth_verify_function_arn : null
   auth_callback_function_arn      = var.enable_authentication ? module.auth[0].auth_callback_function_arn : null
   cloudfront_url                  = module.cloudfront.cloudfront_url
+
+  # Analysis Streaming API (REST API with JWT auth)
+  enable_analysis_api       = true
+  auth_verify_invoke_arn    = var.enable_authentication ? module.auth[0].auth_verify_invoke_arn : null
+  auth_verify_function_name = var.enable_authentication ? module.auth[0].auth_verify_function_name : null
+
+  # Investment Research API (REST API with JWT auth)
+  enable_research_api                 = true
+  investment_research_function_url    = module.lambda.investment_research_docker_function_url
+  investment_research_function_name   = module.lambda.investment_research_docker_function_name
+  analysis_followup_function_url      = module.lambda.analysis_followup_url
+
+  # Market Intelligence API (REST API with JWT auth + Plus subscription check)
+  enable_market_intelligence_api      = true
+  market_intelligence_function_url    = module.lambda.market_intel_chat_url
+
+  # Subscription/Stripe API (checkout, portal, status, webhook)
+  enable_subscription_routes = true
+  enable_stripe_webhook      = true
 
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
@@ -218,7 +280,7 @@ module "monitoring" {
   # Resources to monitor
   lambda_function_names = module.lambda.function_names
   api_gateway_id        = module.api_gateway.http_api_id
-  websocket_api_id      = module.api_gateway.websocket_api_id
+  # websocket_api_id - REMOVED (2026-03) - WebSocket deprecated
 
   # Alert configuration
   alert_email = var.alert_email
@@ -227,9 +289,9 @@ module "monitoring" {
 }
 
 # ================================================
-# Bedrock Module - Agent Configuration
+# Bedrock Module - Expert Agents Only
 # ================================================
-# Note: Knowledge Base, Guardrails, and Pinecone integration removed (2025-01)
+# Updated 2025-01: Removed Knowledge Base, Pinecone, and Guardrails
 
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -248,19 +310,16 @@ module "bedrock" {
   enable_prompt_override = true
 
   # Agent versioning - set to true to use versioned routing (not DRAFT)
-  # This allows the alias to point to numbered versions (1, 2, 3, etc.)
   create_agent_version = true
+
+  # Action Group for Follow-up Agent
+  # Docker image NOT yet pushed to staging ECR - disable action group
+  enable_followup_action_group = false
 }
 
 # ================================================
 # CloudFront + S3 Frontend Module
 # ================================================
-
-# Import existing S3 bucket into Terraform state
-import {
-  to = module.cloudfront.aws_s3_bucket.frontend
-  id = "buffett-staging-frontend"
-}
 
 module "cloudfront" {
   source = "../../modules/cloudfront-static-site"
@@ -273,9 +332,40 @@ module "cloudfront" {
 }
 
 # ================================================
-# Post-Deployment Configuration
+# Stripe Module - Payment Integration
 # ================================================
-# Note: The WebSocket endpoint for the chat_processor Lambda is set
-# through the common environment variables to avoid circular dependency.
-# The chat_processor function will receive WEBSOCKET_API_ENDPOINT
-# as an environment variable once both modules are deployed.
+
+module "stripe" {
+  source = "../../modules/stripe"
+
+  environment = local.environment
+  common_tags = local.common_tags
+
+  # Token limit for Plus subscribers (2M tokens/month)
+  token_limit_plus = 2000000
+}
+
+# Attach Stripe secrets policy to Lambda execution role
+resource "aws_iam_role_policy_attachment" "lambda_stripe_secrets" {
+  role       = module.core.lambda_role_name
+  policy_arn = module.stripe.stripe_secrets_policy_arn
+}
+
+# ================================================
+# Email Module - Resend Integration
+# ================================================
+
+module "email" {
+  source = "../../modules/email"
+
+  environment        = local.environment
+  common_tags        = local.common_tags
+  resend_secret_name = "resend_staging_key"
+  resend_from_email  = "onboarding@resend.dev"
+}
+
+# Attach Resend secrets policy to Lambda execution role
+resource "aws_iam_role_policy_attachment" "lambda_resend_secrets" {
+  role       = module.core.lambda_role_name
+  policy_arn = module.email.resend_secrets_policy_arn
+}

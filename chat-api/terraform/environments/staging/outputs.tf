@@ -16,6 +16,11 @@ output "http_api_endpoint" {
   value       = module.api_gateway.http_api_endpoint
 }
 
+output "analysis_api_endpoint" {
+  description = "Analysis REST API endpoint URL (for streaming analysis)"
+  value       = module.api_gateway.analysis_api_endpoint
+}
+
 # WebSocket API outputs - REMOVED (2026-02)
 # websocket_api_id and websocket_api_endpoint deprecated
 
@@ -41,6 +46,11 @@ output "investment_research_function_url" {
 output "analysis_followup_function_url" {
   description = "Analysis followup Lambda function URL"
   value       = module.lambda.analysis_followup_url
+}
+
+output "market_intel_chat_url" {
+  description = "Market Intelligence chat Lambda function URL"
+  value       = module.lambda.market_intel_chat_url
 }
 
 # ================================================

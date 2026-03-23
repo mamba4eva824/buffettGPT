@@ -75,6 +75,7 @@ jobs:
       http_api_endpoint: ${{ steps.terraform-output.outputs.http_api_endpoint }}
       research_function_url: ${{ steps.terraform-output.outputs.research_function_url }}
       followup_function_url: ${{ steps.terraform-output.outputs.followup_function_url }}
+      market_intel_url: ${{ steps.terraform-output.outputs.market_intel_url }}
 
     steps:
       - name: Checkout code
@@ -169,15 +170,18 @@ jobs:
           HTTP_ENDPOINT=$(terraform output -raw http_api_endpoint)
           RESEARCH_URL=$(terraform output -raw investment_research_function_url)
           FOLLOWUP_URL=$(terraform output -raw analysis_followup_function_url)
+          MARKET_INTEL_URL=$(terraform output -raw market_intel_chat_url)
 
           echo "http_api_endpoint=$HTTP_ENDPOINT" >> $GITHUB_OUTPUT
           echo "research_function_url=$RESEARCH_URL" >> $GITHUB_OUTPUT
           echo "followup_function_url=$FOLLOWUP_URL" >> $GITHUB_OUTPUT
+          echo "market_intel_url=$MARKET_INTEL_URL" >> $GITHUB_OUTPUT
 
           echo "📡 API Endpoints:"
           echo "  HTTP API: $HTTP_ENDPOINT"
           echo "  Research Lambda: $RESEARCH_URL"
           echo "  Followup Lambda: $FOLLOWUP_URL"
+          echo "  Market Intel: $MARKET_INTEL_URL"
 
   build-frontend:
     name: Build Frontend
@@ -201,11 +205,12 @@ jobs:
         working-directory: frontend
         run: |
           cat > .env.staging << EOF
+          VITE_APP_NAME=Buffett
           VITE_REST_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
-          VITE_WEBSOCKET_URL=
           VITE_RESEARCH_API_URL=${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}
           VITE_RESEARCH_LAMBDA_URL=${{ needs.deploy-infrastructure.outputs.research_function_url }}
-          VITE_ANALYSIS_FOLLOWUP_URL=${{ needs.deploy-infrastructure.outputs.research_function_url }}followup
+          VITE_ANALYSIS_FOLLOWUP_URL=${{ needs.deploy-infrastructure.outputs.followup_function_url }}
+          VITE_MARKET_INTEL_URL=${{ needs.deploy-infrastructure.outputs.market_intel_url }}
           VITE_ENVIRONMENT=staging
           VITE_ENABLE_DEBUG_LOGS=false
           VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
