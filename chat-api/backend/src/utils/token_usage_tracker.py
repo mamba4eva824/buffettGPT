@@ -55,11 +55,11 @@ class TokenUsageTracker:
     """
 
     # Default token limits by user tier
-    # Note: Free users cannot use follow-up feature (plus only)
+    # These must match the limits set by Stripe webhook handler
     DEFAULT_LIMITS = {
-        'anonymous': 0,      # No access
-        'free': 0,           # No follow-up access (plus feature only)
-        'plus': 1000000,     # 1M tokens/month
+        'anonymous': 0,        # No access
+        'free': 100000,        # 100K tokens/month
+        'plus': 2000000,       # 2M tokens/month
     }
 
     def __init__(self, table_name: Optional[str] = None, dynamodb_resource=None):
@@ -75,8 +75,8 @@ class TokenUsageTracker:
         default_table = f'buffett-{env}-token-usage'
         self.table_name = table_name or os.environ.get('TOKEN_USAGE_TABLE', default_table)
 
-        # Default limit from environment (for testing, use 50000)
-        self.default_token_limit = int(os.environ.get('DEFAULT_TOKEN_LIMIT', '50000'))
+        # Default limit from environment (fallback for free tier)
+        self.default_token_limit = int(os.environ.get('DEFAULT_TOKEN_LIMIT', '100000'))
 
         # Initialize DynamoDB
         try:
@@ -85,9 +85,14 @@ class TokenUsageTracker:
             else:
                 self.dynamodb = boto3.resource('dynamodb')
             self.table = self.dynamodb.Table(self.table_name)
+
+            # Users table for tier lookup
+            users_table_name = os.environ.get('USERS_TABLE', f'buffett-{env}-users')
+            self.users_table = self.dynamodb.Table(users_table_name)
         except Exception as e:
             logger.error(f"Failed to initialize DynamoDB table: {str(e)}")
             self.table = None
+            self.users_table = None
 
     @staticmethod
     def get_current_month() -> str:
@@ -297,6 +302,35 @@ class TokenUsageTracker:
             logger.error(f"Unexpected error fetching billing day: {str(e)}")
             return datetime.now(timezone.utc).day
 
+    def _get_user_tier_limit(self, user_id: str) -> Tuple[str, int]:
+        """
+        Look up user's subscription tier from the users table to determine
+        the correct token limit. Prevents race condition where record_usage
+        creates a new billing period with the wrong limit before the Stripe
+        webhook fires.
+
+        Args:
+            user_id: User identifier.
+
+        Returns:
+            Tuple of (subscription_tier, token_limit).
+        """
+        if not self.users_table:
+            return 'free', self.default_token_limit
+
+        try:
+            response = self.users_table.get_item(
+                Key={'user_id': user_id},
+                ProjectionExpression='subscription_tier'
+            )
+            item = response.get('Item', {})
+            tier = item.get('subscription_tier', 'free')
+            limit = self.DEFAULT_LIMITS.get(tier, self.default_token_limit)
+            return tier, limit
+        except Exception as e:
+            logger.error(f"Failed to look up user tier: {str(e)}")
+            return 'free', self.default_token_limit
+
     def check_limit(self, user_id: str) -> Dict[str, Any]:
         """
         Check if user can make a request based on their token usage.
@@ -410,6 +444,10 @@ class TokenUsageTracker:
             # Get current billing period
             billing_period, period_start, period_end = self.get_current_billing_period(billing_day)
 
+            # Look up user's actual tier from users table to prevent
+            # setting wrong default limit when record is first created
+            user_tier, tier_limit = self._get_user_tier_limit(user_id)
+
             # Atomic update using ADD
             response = self.table.update_item(
                 Key={
@@ -436,12 +474,12 @@ class TokenUsageTracker:
                     ':total': total_new_tokens,
                     ':one': 1,
                     ':now': now,
-                    ':default_limit': self.default_token_limit,
+                    ':default_limit': tier_limit,
                     ':reset': period_end,
                     ':period_start': period_start,
                     ':period_end': period_end,
                     ':billing_day': billing_day,
-                    ':default_tier': 'free'
+                    ':default_tier': user_tier
                 },
                 ReturnValues='ALL_NEW'
             )

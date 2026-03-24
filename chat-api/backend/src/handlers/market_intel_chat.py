@@ -529,6 +529,26 @@ def stream_market_intel_response(event: Dict, context: Any, user_id: str = 'anon
 
         logger.info(f"[MARKET_INTEL] Query: {message[:80]}... | user={user_id} | session={session_id}")
 
+        # =====================================================
+        # TOKEN LIMIT CHECK - Pre-request validation
+        # =====================================================
+        limit_check = token_tracker.check_limit(user_id)
+        if not limit_check.get('allowed', True):
+            logger.warning(f"Token limit exceeded for user {user_id}: {limit_check}")
+            yield format_sse_event(json.dumps({
+                "type": "token_limit_exceeded",
+                "error": "token_limit_exceeded",
+                "message": "Monthly token limit reached. Your usage will reset at the start of your next billing cycle.",
+                "usage": {
+                    "total_tokens": limit_check.get("total_tokens", 0),
+                    "token_limit": limit_check.get("token_limit", 0),
+                    "percent_used": limit_check.get("percent_used", 100.0),
+                    "reset_date": limit_check.get("reset_date", "")
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+            }), "error")
+            return
+
         # Build messages array
         messages = list(conversation_history) if conversation_history else []
         messages.append({"role": "user", "content": [{"text": message}]})
@@ -747,6 +767,11 @@ def non_streaming_response(event: Dict, context: Any, user_id: str = 'anonymous'
         total_input_tokens += usage.get('inputTokens', 0)
         total_output_tokens += usage.get('outputTokens', 0)
 
+        # Capture text from ALL turns (not just the final one)
+        for block in assistant_message.get('content', []):
+            if 'text' in block:
+                full_response += block['text']
+
         if stop_reason == 'tool_use':
             messages.append(assistant_message)
 
@@ -766,9 +791,6 @@ def non_streaming_response(event: Dict, context: Any, user_id: str = 'anonymous'
             continue
 
         elif stop_reason == 'end_turn':
-            for block in assistant_message.get('content', []):
-                if 'text' in block:
-                    full_response += block['text']
             break
         else:
             break

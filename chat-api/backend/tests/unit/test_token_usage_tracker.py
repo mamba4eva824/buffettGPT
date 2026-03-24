@@ -56,8 +56,8 @@ class TestTokenUsageTrackerInit:
             from utils.token_usage_tracker import TokenUsageTracker
 
             assert TokenUsageTracker.DEFAULT_LIMITS['anonymous'] == 0
-            assert TokenUsageTracker.DEFAULT_LIMITS['free'] == 0
-            assert TokenUsageTracker.DEFAULT_LIMITS['plus'] == 1000000
+            assert TokenUsageTracker.DEFAULT_LIMITS['free'] == 100000
+            assert TokenUsageTracker.DEFAULT_LIMITS['plus'] == 2000000
 
 
 class TestGetAnniversaryResetDate:
@@ -612,19 +612,19 @@ class TestSetUserLimit:
 class TestSubscriptionTiers:
     """Tests for subscription tier functionality."""
 
-    def test_free_tier_has_zero_limit(self):
-        """Test that free tier users have zero token limit."""
+    def test_free_tier_has_100k_limit(self):
+        """Test that free tier users have 100K token limit."""
         with patch('boto3.resource'):
             from utils.token_usage_tracker import TokenUsageTracker
 
-            assert TokenUsageTracker.DEFAULT_LIMITS['free'] == 0
+            assert TokenUsageTracker.DEFAULT_LIMITS['free'] == 100000
 
-    def test_plus_tier_has_one_million_limit(self):
-        """Test that plus tier users have 1M token limit."""
+    def test_plus_tier_has_two_million_limit(self):
+        """Test that plus tier users have 2M token limit."""
         with patch('boto3.resource'):
             from utils.token_usage_tracker import TokenUsageTracker
 
-            assert TokenUsageTracker.DEFAULT_LIMITS['plus'] == 1000000
+            assert TokenUsageTracker.DEFAULT_LIMITS['plus'] == 2000000
 
     def test_anonymous_has_zero_limit(self):
         """Test that anonymous users have zero token limit."""

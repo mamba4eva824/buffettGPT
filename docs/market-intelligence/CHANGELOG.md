@@ -6,6 +6,22 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Token Enforcement + Response Save Fix (2026-03-23)
+
+**Fixed**
+- Added `check_limit()` gate to `market_intel_chat.py` — blocks requests when monthly token limit exceeded
+- Fixed `record_usage` race condition: new billing period records now look up user tier from users table, preventing Plus users from getting Free-tier limits when request arrives before Stripe webhook
+- Fixed `DEFAULT_LIMITS` to match Stripe webhook values: `free=100,000`, `plus=2,000,000` (was `free=0`, `plus=1,000,000`)
+- Fixed `DEFAULT_TOKEN_LIMIT` fallback from 50K to 100K
+- Fixed empty assistant messages in DynamoDB for multi-turn queries — now captures text from all converse turns, not just the final `end_turn`
+
+**Modified Files**
+- `market_intel_chat.py` — token limit gate + text capture from all turns
+- `token_usage_tracker.py` — `_get_user_tier_limit()` method, updated constants
+- `test_token_usage_tracker.py` — updated assertions for new limits
+
+---
+
 ### Valuation Multiples + Historical P/E Tracking (2026-03-22)
 
 **Added**
