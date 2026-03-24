@@ -152,11 +152,14 @@ def create_checkout_session(
         'metadata': metadata,
     }
 
-    # Apply free trial if specified (e.g., from referral rewards)
+    # Pass user_id in subscription metadata so webhook can find it
+    # on customer.subscription.created events (session metadata is separate)
+    subscription_data = {
+        'metadata': {'user_id': user_id, 'environment': ENVIRONMENT},
+    }
     if trial_period_days and trial_period_days > 0:
-        session_params['subscription_data'] = {
-            'trial_period_days': trial_period_days,
-        }
+        subscription_data['trial_period_days'] = trial_period_days
+    session_params['subscription_data'] = subscription_data
 
     # Use existing customer or create new one
     if customer_id:
