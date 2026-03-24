@@ -191,12 +191,6 @@ jobs:
           - name: investment-research
             dockerfile_dir: chat-api/backend/lambda/investment_research
             ecr_repo: buffett/investment-research
-          - name: followup-action
-            dockerfile_dir: chat-api/backend/lambda/followup_action
-            ecr_repo: buffett/followup-action
-          - name: analysis-followup
-            dockerfile_dir: chat-api/backend/lambda/analysis_followup
-            ecr_repo: buffett/analysis-followup
 
     steps:
       - name: Checkout code
