@@ -261,6 +261,40 @@ class TestCreateCheckoutSession:
 
         assert 'Stripe API Error' in str(exc_info.value)
 
+    @patch('utils.stripe_service.get_stripe')
+    @patch('utils.stripe_service.get_stripe_plus_price_id')
+    def test_create_checkout_session_includes_user_id_in_subscription_metadata(self, mock_get_price, mock_get_stripe):
+        """
+        Test that user_id is passed in subscription_data.metadata.
+
+        Given: Valid user creating a checkout session
+        When: create_checkout_session is called
+        Then: subscription_data.metadata contains user_id so the
+              customer.subscription.created webhook can find it
+        """
+        mock_get_price.return_value = 'price_test_123'
+
+        mock_session = MagicMock()
+        mock_session.url = 'https://checkout.stripe.com/session'
+        mock_session.id = 'cs_test'
+
+        mock_stripe = MagicMock()
+        mock_stripe.checkout.Session.create.return_value = mock_session
+        mock_get_stripe.return_value = mock_stripe
+
+        from utils.stripe_service import create_checkout_session
+
+        create_checkout_session(
+            user_id='user-789',
+            user_email='test@example.com',
+            success_url='https://app.com/success',
+            cancel_url='https://app.com/cancel'
+        )
+
+        call_kwargs = mock_stripe.checkout.Session.create.call_args[1]
+        assert 'subscription_data' in call_kwargs
+        assert call_kwargs['subscription_data']['metadata']['user_id'] == 'user-789'
+
 
 # =============================================================================
 # Test Class: create_portal_session
