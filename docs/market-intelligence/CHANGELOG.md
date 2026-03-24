@@ -6,6 +6,32 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Staging Environment + Stripe Subscription Fix (2026-03-24)
+
+**Added**
+- Staging Terraform brought to full parity with dev environment
+- Stripe + Email (Resend) modules added to staging
+- All API Gateway routes enabled (analysis, research, market intelligence, subscriptions)
+- Market Intelligence Lambda Function URL output for staging CI/CD
+- `VITE_MARKET_INTEL_URL` added to staging frontend build
+- CloudFront URL added to CORS allowed origins for Lambda Function URLs
+- DynamoDB data copied from dev to staging (10,025 metrics + 27 aggregates)
+
+**Fixed**
+- Stripe subscription webhook: `user_id` now passed in `subscription_data.metadata` so `customer.subscription.created` webhook can activate Plus tier automatically
+- AWS provider upgraded from ~> 5.0 to ~> 6.25 in staging
+- Bedrock agent output references fixed (`agent_id` → `followup_agent_id`)
+- Removed stale Docker Lambda references (analysis_followup migrated to zip)
+- Restored missing `waitlistApi.js` (deleted in prior commit, broke frontend build)
+- Cleaned up 14 orphaned Terraform state resources
+
+**Removed**
+- Deprecated WebSocket, SQS, chat_processor references from staging
+- Landing page CloudFront module and CI/CD jobs
+- `followup-action` and `analysis-followup` from Docker build matrix (not Docker Lambdas)
+
+---
+
 ### Token Enforcement + Response Save Fix (2026-03-23)
 
 **Fixed**
