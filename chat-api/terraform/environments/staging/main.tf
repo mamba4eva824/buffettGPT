@@ -156,6 +156,14 @@ module "lambda" {
 
   common_tags = local.common_tags
 
+  # CORS: allow CloudFront + localhost origins for Function URLs (market_intel_chat, analysis_followup)
+  cors_allowed_origins = [
+    module.cloudfront.cloudfront_url,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000"
+  ]
+
   # KMS key for DynamoDB encryption
   kms_key_arn = module.core.kms_key_arn
 
