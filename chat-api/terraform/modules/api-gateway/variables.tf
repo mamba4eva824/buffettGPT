@@ -170,3 +170,13 @@ variable "enable_waitlist_routes" {
   type        = bool
   default     = false
 }
+
+# ============================================================================
+# Admin API Variables
+# ============================================================================
+
+variable "enable_admin_routes" {
+  description = "Enable admin dashboard settings routes"
+  type        = bool
+  default     = false
+}

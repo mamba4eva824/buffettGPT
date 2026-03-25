@@ -69,6 +69,11 @@ output "subscription_handler_arn" {
   value       = try(aws_lambda_function.functions["subscription_handler"].arn, null)
 }
 
+output "admin_handler_arn" {
+  description = "ARN of the admin handler function"
+  value       = try(aws_lambda_function.functions["admin_handler"].arn, null)
+}
+
 # Log Groups
 output "log_groups" {
   description = "Map of CloudWatch log group names"

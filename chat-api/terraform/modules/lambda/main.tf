@@ -72,6 +72,12 @@ locals {
       memory_size = 512
       description = "Market Intelligence chat - converse_stream with 9 tools"
     }
+    admin_handler = {
+      handler     = "admin_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Admin dashboard settings API handler"
+    }
   }
 }
 

@@ -164,6 +164,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'message': 'Please verify your Google account email'
             }, event)
 
+        # Check if user is an admin
+        is_admin = False
+        try:
+            admin_config_table_name = os.environ.get('ADMIN_CONFIG_TABLE')
+            if admin_config_table_name:
+                admin_config_table = dynamodb.Table(admin_config_table_name)
+                admin_item = admin_config_table.get_item(
+                    Key={'config_key': 'admin_emails'}
+                ).get('Item', {})
+                admin_emails = admin_item.get('config_value', [])
+                if isinstance(admin_emails, list) and email in admin_emails:
+                    is_admin = True
+                    logger.info(f"Admin user detected", extra={'email': email})
+        except Exception as admin_err:
+            logger.warning(f"Failed to check admin status, defaulting to false: {admin_err}")
+
         # Store or update user in DynamoDB
         current_time = datetime.utcnow()
         user_data = {
@@ -220,6 +236,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'email': email,
             'name': name,
             'subscription_tier': user_data.get('subscription_tier', 'free'),
+            'is_admin': is_admin,
             'exp': int((current_time + timedelta(days=7)).timestamp()),  # 7-day expiry
             'iat': int(current_time.timestamp()),
             'iss': PROJECT_NAME
@@ -236,7 +253,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 'email': email,
                 'name': name,
                 'picture': picture,
-                'subscription_tier': user_data.get('subscription_tier', 'free')
+                'subscription_tier': user_data.get('subscription_tier', 'free'),
+                'is_admin': is_admin
             },
             'expires_in': 604800  # 7 days in seconds
         }

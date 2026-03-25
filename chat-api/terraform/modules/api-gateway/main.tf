@@ -664,3 +664,75 @@ resource "aws_lambda_permission" "waitlist_api_permission" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
+
+# ================================================
+# Admin API Routes and Integration
+# ================================================
+
+# Admin Handler Integration
+resource "aws_apigatewayv2_integration" "admin_handler_integration" {
+  count            = var.enable_admin_routes ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["admin_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# GET /admin/settings - Read all admin settings
+resource "aws_apigatewayv2_route" "admin_get_settings" {
+  count     = var.enable_admin_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /admin/settings"
+  target    = "integrations/${aws_apigatewayv2_integration.admin_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# PUT /admin/settings/{category} - Update a settings category
+resource "aws_apigatewayv2_route" "admin_update_settings" {
+  count     = var.enable_admin_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "PUT /admin/settings/{category}"
+  target    = "integrations/${aws_apigatewayv2_integration.admin_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# OPTIONS /admin/settings - CORS preflight
+resource "aws_apigatewayv2_route" "admin_settings_options" {
+  count     = var.enable_admin_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /admin/settings"
+  target    = "integrations/${aws_apigatewayv2_integration.admin_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /admin/settings/{category} - CORS preflight
+resource "aws_apigatewayv2_route" "admin_settings_category_options" {
+  count     = var.enable_admin_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /admin/settings/{category}"
+  target    = "integrations/${aws_apigatewayv2_integration.admin_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# Admin Handler Lambda Permission
+resource "aws_lambda_permission" "admin_api_permission" {
+  count         = var.enable_admin_routes ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPIAdmin"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["admin_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}

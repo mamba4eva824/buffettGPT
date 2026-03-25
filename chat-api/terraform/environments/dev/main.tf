@@ -82,6 +82,9 @@ locals {
 
     # Frontend URL (for referral links)
     FRONTEND_URL = var.frontend_url
+
+    # Admin Config Table
+    ADMIN_CONFIG_TABLE = module.dynamodb.admin_config_table_name
   }
 
   # Function-specific environment variables
@@ -193,6 +196,10 @@ module "lambda" {
   # Metrics History Cache table for followup-action Lambda
   metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
   metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
+
+  # Admin Config table
+  admin_config_table_name = module.dynamodb.admin_config_table_name
+  admin_config_table_arn  = module.dynamodb.admin_config_table_arn
 }
 
 # ================================================
@@ -241,6 +248,9 @@ module "api_gateway" {
 
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
+
+  # Admin API (settings dashboard)
+  enable_admin_routes = true
 
   common_tags = local.common_tags
 }

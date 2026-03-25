@@ -129,6 +129,19 @@ output "waitlist_table_arn" {
 }
 
 # ================================================
+# Admin Config Table (ACTIVE)
+# ================================================
+output "admin_config_table_name" {
+  description = "Name of the admin config table"
+  value       = aws_dynamodb_table.admin_config.name
+}
+
+output "admin_config_table_arn" {
+  description = "ARN of the admin config table"
+  value       = aws_dynamodb_table.admin_config.arn
+}
+
+# ================================================
 # Summary Output
 # ================================================
 output "table_summary" {
@@ -154,6 +167,9 @@ output "table_summary" {
     }
     waitlist = {
       waitlist = aws_dynamodb_table.waitlist.name
+    }
+    admin = {
+      admin_config = aws_dynamodb_table.admin_config.name
     }
   }
 }

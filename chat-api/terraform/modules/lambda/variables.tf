@@ -148,3 +148,16 @@ variable "metrics_history_cache_table_name" {
   type        = string
   default     = ""
 }
+
+# Admin Config Table
+variable "admin_config_table_name" {
+  description = "Name of the admin config DynamoDB table"
+  type        = string
+  default     = ""
+}
+
+variable "admin_config_table_arn" {
+  description = "ARN of the admin config DynamoDB table"
+  type        = string
+  default     = ""
+}

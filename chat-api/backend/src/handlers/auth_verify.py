@@ -172,7 +172,7 @@ def detect_request_type(event: Dict[str, Any]) -> str:
     # Default to websocket for backward compatibility (IAM policy response)
     return "websocket"
 
-def create_policy(effect: str, resource: str, user_id: str = None, request_type: str = "websocket") -> Dict[str, Any]:
+def create_policy(effect: str, resource: str, user_id: str = None, request_type: str = "websocket", claims: Dict[str, Any] = None) -> Dict[str, Any]:
     """
     Create IAM policy for API Gateway authorization
 
@@ -181,6 +181,7 @@ def create_policy(effect: str, resource: str, user_id: str = None, request_type:
         resource: API Gateway resource ARN
         user_id: User ID to include in context
         request_type: "websocket" or "http"
+        claims: JWT claims dict (optional, used to pass is_admin etc.)
 
     Returns:
         IAM policy document (for WebSocket) or HTTP API authorizer response (for HTTP)
@@ -197,7 +198,9 @@ def create_policy(effect: str, resource: str, user_id: str = None, request_type:
             response["context"] = {
                 "user_id": user_id,
                 "environment": ENVIRONMENT,
-                "project": PROJECT_NAME
+                "project": PROJECT_NAME,
+                "is_admin": str(claims.get("is_admin", False)).lower() if claims else "false",
+                "email": claims.get("email", "") if claims else ""
             }
 
         return response
@@ -236,7 +239,9 @@ def create_policy(effect: str, resource: str, user_id: str = None, request_type:
             policy["context"] = {
                 "user_id": user_id,
                 "environment": ENVIRONMENT,
-                "project": PROJECT_NAME
+                "project": PROJECT_NAME,
+                "is_admin": str(claims.get("is_admin", False)).lower() if claims else "false",
+                "email": claims.get("email", "") if claims else ""
             }
 
         return policy
@@ -296,7 +301,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     return create_policy("Allow", method_arn, None, request_type)
 
             logger.info(f"Authorization successful for user {user_id}")
-            return create_policy("Allow", method_arn, user_id, request_type)
+            return create_policy("Allow", method_arn, user_id, request_type, claims=claims)
 
         except Exception as token_error:
             logger.warning(f"Token verification failed: {str(token_error)}")
