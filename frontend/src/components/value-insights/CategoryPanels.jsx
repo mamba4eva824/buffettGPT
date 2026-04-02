@@ -728,59 +728,346 @@ export function ProfitabilityPanel({ data, ratings, timeRange }) {
 export function ValuationPanel({ data, ratings, timeRange }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
-  const rows = filtered.slice().reverse().map(q => [
-    `${q.fiscal_quarter} ${q.fiscal_year}`,
-    fmt.pct(q.valuation.roe),
-    fmt.pct(q.valuation.roic),
-    fmt.pct(q.valuation.roa),
-  ]);
+  const earliest = filtered[0];
 
-  const moatScore = Math.min(99, Math.round((latest?.valuation.roe || 0) * 30 + (latest?.valuation.roic || 0) * 40));
+  // Quarters with valid valuation multiples (non-null P/E)
+  const withMultiples = useMemo(() => filtered.filter(q => q.valuation.pe_ratio != null), [filtered]);
+
+  // Historical averages for assessment
+  const histAvg = useMemo(() => {
+    if (withMultiples.length === 0) return {};
+    const avg = (arr, fn) => arr.reduce((s, q) => s + fn(q), 0) / arr.length;
+    return {
+      pe: avg(withMultiples, q => q.valuation.pe_ratio),
+      pb: avg(withMultiples.filter(q => q.valuation.pb_ratio != null), q => q.valuation.pb_ratio),
+      evEbitda: avg(withMultiples.filter(q => q.valuation.ev_ebitda != null), q => q.valuation.ev_ebitda),
+      pFcf: avg(withMultiples.filter(q => q.valuation.price_to_fcf != null), q => q.valuation.price_to_fcf),
+    };
+  }, [withMultiples]);
+
+  // Min/max P/E for margin of safety gauge
+  const peRange = useMemo(() => {
+    if (withMultiples.length === 0) return { min: 0, max: 1 };
+    const values = withMultiples.map(q => q.valuation.pe_ratio);
+    return { min: Math.min(...values), max: Math.max(...values) };
+  }, [withMultiples]);
+
+  // CAGR for ROIC trend
+  const years = useMemo(() => {
+    if (!earliest || !latest) return 0;
+    return (new Date(latest.fiscal_date) - new Date(earliest.fiscal_date)) / (365.25 * 24 * 3600 * 1000);
+  }, [earliest, latest]);
+
+  const roicCagr = useMemo(() => {
+    if (!latest?.valuation.roic || !earliest?.valuation.roic || earliest.valuation.roic <= 0 || years <= 0) return null;
+    return Math.pow(latest.valuation.roic / earliest.valuation.roic, 1 / years) - 1;
+  }, [latest, earliest, years]);
+
+  // Sparkline data
+  const peSparkline = withMultiples.map(q => q.valuation.pe_ratio);
+  const evEbitdaSparkline = withMultiples.map(q => q.valuation.ev_ebitda).filter(v => v != null);
+  const earningsYieldSparkline = withMultiples.map(q => q.valuation.earnings_yield);
+  const pFcfSparkline = withMultiples.map(q => q.valuation.price_to_fcf).filter(v => v != null);
+  const roicSparkline = filtered.map(q => q.valuation.roic);
+
+  // Assessment helper: compare current to historical average
+  const assess = (current, avg) => {
+    if (current == null || avg == null || avg === 0) return { label: '—', color: 'text-sand-400' };
+    const ratio = current / avg;
+    if (ratio < 0.8) return { label: 'Below Average', color: 'text-vi-sage', bg: 'bg-vi-sage/10' };
+    if (ratio > 1.2) return { label: 'Above Average', color: 'text-vi-rose', bg: 'bg-vi-rose/10' };
+    return { label: 'Near Average', color: 'text-vi-gold', bg: 'bg-vi-gold/10' };
+  };
+
+  // Price multiple cards config
+  const multipleCards = [
+    {
+      label: 'Price-to-Earnings',
+      abbr: 'P/E',
+      value: latest?.valuation.pe_ratio,
+      avg: histAvg.pe,
+      explain: 'How many years of profits you\'re paying for',
+      format: fmt.x,
+    },
+    {
+      label: 'Price-to-Book',
+      abbr: 'P/B',
+      value: latest?.valuation.pb_ratio,
+      avg: histAvg.pb,
+      explain: 'What premium you\'re paying over the company\'s net assets',
+      format: fmt.x,
+    },
+    {
+      label: 'Enterprise Value Multiple',
+      abbr: 'EV/EBITDA',
+      value: latest?.valuation.ev_ebitda,
+      avg: histAvg.evEbitda,
+      explain: 'What the entire business costs relative to its cash earnings',
+      format: fmt.x,
+    },
+    {
+      label: 'Price-to-Free Cash',
+      abbr: 'P/FCF',
+      value: latest?.valuation.price_to_fcf,
+      avg: histAvg.pFcf,
+      explain: 'What you pay per dollar the business actually generates',
+      format: fmt.x,
+    },
+  ];
+
+  // Table data — most recent first with QoQ deltas
+  const reversed = filtered.slice().reverse();
+  const tableData = reversed.map((q, i) => {
+    const prev = reversed[i + 1];
+    return {
+      quarter: `${q.fiscal_quarter} ${q.fiscal_year}`,
+      price: q.valuation.stock_price,
+      pe: q.valuation.pe_ratio,
+      pb: q.valuation.pb_ratio,
+      evEbitda: q.valuation.ev_ebitda,
+      pFcf: q.valuation.price_to_fcf,
+      earningsYield: q.valuation.earnings_yield,
+      roe: q.valuation.roe,
+      roic: q.valuation.roic,
+      peDelta: prev && q.valuation.pe_ratio != null && prev.valuation.pe_ratio != null
+        ? fmt.delta(q.valuation.pe_ratio, prev.valuation.pe_ratio)
+        : null,
+    };
+  });
+
+  // Margin of safety (P/E vs historical average)
+  const currentPE = latest?.valuation.pe_ratio;
+  const avgPE = histAvg.pe;
+  const marginOfSafety = (currentPE != null && avgPE != null && avgPE > 0)
+    ? ((avgPE - currentPE) / avgPE)
+    : null;
 
   return (
-    <div className="grid grid-cols-12 gap-6">
-      {/* Moat Gauge */}
-      <div className={`col-span-12 lg:col-span-5 ${CARD} flex flex-col items-center justify-center relative overflow-hidden`}>
-        <div className="absolute top-0 right-0 p-6 opacity-10">
-          <span className="material-symbols-outlined text-8xl text-vi-accent">shield</span>
-        </div>
-        <h3 className="font-serif text-xl font-bold mb-8 self-start">Moat Strength Rating</h3>
-        <div className="relative w-64 h-64 flex items-center justify-center">
-          <div
-            className="w-full h-full rounded-full"
-            style={{
-              background: `conic-gradient(from 180deg at 50% 50%, #6d28d9 0deg, #6d28d9 ${moatScore * 3.6}deg, transparent ${moatScore * 3.6}deg)`,
-            }}
-          />
-          <div className="absolute inset-4 bg-sand-100 dark:bg-warm-900 rounded-full flex flex-col items-center justify-center shadow-inner">
-            <span className="text-6xl font-serif font-bold text-vi-accent">{moatScore}</span>
-            <span className="text-xs font-bold uppercase tracking-[0.2em] text-sand-500 dark:text-warm-300 mt-1">Institutional Alpha</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Capital Efficiency */}
-      <div className="col-span-12 lg:col-span-7">
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      {/* Left column: Charts + Data */}
+      <section className="xl:col-span-8 space-y-6">
+        {/* Price Multiples Overview */}
         <div className={CARD}>
-          <div className="flex justify-between items-center mb-10">
-            <h3 className="font-serif text-xl font-bold">Capital Efficiency Matrix</h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">What Are You Paying?</h3>
             <RatingBadge rating={ratings?.valuation?.rating} />
           </div>
+          <div className="flex items-center gap-2 mb-6">
+            <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-vi-gold/15 text-vi-gold border border-vi-gold/30">
+              <span className="material-symbols-outlined text-[10px] mr-0.5 align-middle">info</span>
+              Mock Price Data
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {multipleCards.map((m) => {
+              const assessment = assess(m.value, m.avg);
+              return (
+                <div key={m.abbr} className={`${CARD} !p-5 relative overflow-hidden`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400">{m.label}</span>
+                    {assessment.bg && (
+                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${assessment.bg} ${assessment.color}`}>
+                        {assessment.label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-3xl font-serif font-bold text-sand-900 dark:text-warm-50 mb-1">
+                    {m.value != null ? m.format(m.value) : '—'}
+                  </div>
+                  <p className="text-[11px] text-sand-500 dark:text-warm-400 leading-snug italic">{m.explain}</p>
+                  {m.avg != null && (
+                    <div className="text-[10px] text-sand-400 dark:text-warm-500 mt-2">
+                      Avg: {m.format(m.avg)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Valuation Over Time */}
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Valuation Over Time</h3>
+          <div className="space-y-6">
+            <CagrChart
+              data={peSparkline}
+              quarters={withMultiples}
+              cagr={histAvg.pe || 0}
+              label="P/E Ratio"
+              color="#6d28d9"
+              formatFn={fmt.x}
+              summaryLabel={histAvg.pe != null ? `Avg ${fmt.x(histAvg.pe)}` : ''}
+            />
+            <div className="border-t border-sand-200/30 dark:border-warm-800/30 pt-6">
+              <CagrChart
+                data={evEbitdaSparkline}
+                quarters={withMultiples}
+                cagr={histAvg.evEbitda || 0}
+                label="EV / EBITDA"
+                color="#f59e0b"
+                formatFn={fmt.x}
+                summaryLabel={histAvg.evEbitda != null ? `Avg ${fmt.x(histAvg.evEbitda)}` : ''}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Capital Efficiency */}
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-8">Capital Efficiency</h3>
           <div className="space-y-10">
             <MetricBar label="Return on Equity (ROE)" value={latest?.valuation.roe} displayValue={fmt.pct(latest?.valuation.roe)} maxValue={2} color="bg-vi-accent" />
             <MetricBar label="Return on Invested Capital (ROIC)" value={latest?.valuation.roic} displayValue={fmt.pct(latest?.valuation.roic)} maxValue={1} color="bg-vi-accent/80" />
             <MetricBar label="Return on Assets (ROA)" value={latest?.valuation.roa} displayValue={fmt.pct(latest?.valuation.roa)} maxValue={0.5} color="bg-vi-accent/60" />
           </div>
-          <p className="mt-8 text-xs text-sand-500 dark:text-warm-300 leading-relaxed italic border-l-2 border-vi-accent pl-4">
-            Capital intensity remains low while cash flow generation per dollar of equity remains in the top 1% of the S&P 500.
+          <div className="mt-8">
+            <CagrChart data={roicSparkline} quarters={filtered} cagr={roicCagr} label="ROIC Trend" color="#6d28d9" formatFn={fmt.pct} />
+          </div>
+        </div>
+
+        {/* Quarterly Valuation Detail Table */}
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Quarterly Valuation Detail</h3>
+          <div className="overflow-x-auto -mx-8">
+            <table className="w-full text-left min-w-[800px]">
+              <thead>
+                <tr className="bg-sand-200/50 dark:bg-warm-800/50">
+                  {['Quarter', 'Price', 'P/E', 'P/B', 'EV/EBITDA', 'P/FCF', 'Earn. Yield', 'ROE', 'ROIC'].map((col, i) => (
+                    <th key={i} className={`px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-300 ${i > 0 ? 'text-right' : ''}`}>
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-sand-200/50 dark:divide-warm-800/50">
+                {tableData.map((row, i) => (
+                  <tr key={i} className={`hover:bg-sand-200/50 dark:hover:bg-warm-800 transition-colors ${i % 2 === 1 ? 'bg-sand-50 dark:bg-warm-950/50' : ''}`}>
+                    <td className="px-4 py-4 font-bold text-sand-800 dark:text-warm-50 whitespace-nowrap">{row.quarter}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{row.price != null ? `$${row.price.toFixed(2)}` : '—'}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200 whitespace-nowrap">
+                      {row.pe != null ? fmt.x(row.pe) : '—'}
+                      <DeltaChip value={row.peDelta} />
+                    </td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{row.pb != null ? fmt.x(row.pb) : '—'}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{row.evEbitda != null ? fmt.x(row.evEbitda) : '—'}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{row.pFcf != null ? fmt.x(row.pFcf) : '—'}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{row.earningsYield != null ? fmt.pct(row.earningsYield) : '—'}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.pct(row.roe)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.pct(row.roic)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* Right column: Insights */}
+      <aside className="xl:col-span-4 space-y-6">
+        {/* Oracle's Perspective */}
+        <div className={`${CARD} border-l-4 border-vi-gold-container shadow-xl`}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-vi-gold" style={{ fontVariationSettings: "'FILL' 1" }}>format_quote</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-vi-gold-dim">Oracle&apos;s Perspective</span>
+          </div>
+          <p className="font-serif italic text-lg leading-relaxed text-sand-700 dark:text-warm-100 mb-6">
+            {currentPE != null && avgPE != null ? (
+              currentPE < avgPE
+                ? <>&ldquo;At {fmt.x(currentPE)} earnings, {latest?.ticker || 'AAPL'} trades below its historical average of {fmt.x(avgPE)}. Price is reasonable for a business generating {fmt.pct(latest?.valuation.roic)} return on every dollar of capital.&rdquo;</>
+                : <>&ldquo;At {fmt.x(currentPE)} earnings, the market expects continued growth. With ROIC at {fmt.pct(latest?.valuation.roic)}, every dollar of capital generates strong returns — but the price demands conviction.&rdquo;</>
+            ) : (
+              <>&ldquo;Focus on what you get for what you pay. Return on capital of {fmt.pct(latest?.valuation.roic)} means this business turns every dollar into meaningful profit — that&apos;s the foundation of intrinsic value.&rdquo;</>
+            )}
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-sand-200 dark:bg-warm-800 flex items-center justify-center border border-sand-300 dark:border-warm-700">
+              <span className="material-symbols-outlined text-vi-gold text-lg">psychology</span>
+            </div>
+            <div>
+              <div className="text-sm font-bold">Insight Engine</div>
+              <div className="text-[10px] text-sand-500 dark:text-warm-400 uppercase tracking-tighter">Value Synthesis AI</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bento Tiles */}
+        <div className="grid grid-cols-2 gap-4">
+          <BentoTile label="P/E Ratio" value={latest?.valuation.pe_ratio != null ? fmt.x(latest.valuation.pe_ratio) : '—'} sparkline={peSparkline} color="#6d28d9" />
+          <BentoTile label="Earnings Yield" value={latest?.valuation.earnings_yield != null ? fmt.pct(latest.valuation.earnings_yield) : '—'} sparkline={earningsYieldSparkline} color="#a0d6ad" />
+          <BentoTile label="Price / FCF" value={latest?.valuation.price_to_fcf != null ? fmt.x(latest.valuation.price_to_fcf) : '—'} sparkline={pFcfSparkline} color="#f2c35b" />
+          <BentoTile label="Book Value / Share" value={latest?.valuation.book_value_per_share != null ? fmt.eps(latest.valuation.book_value_per_share) : '—'} icon="menu_book" />
+        </div>
+
+        {/* Margin of Safety */}
+        <div className={CARD}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-vi-accent text-lg">shield</span>
+            <h4 className="font-serif text-lg text-sand-800 dark:text-warm-50">Margin of Safety</h4>
+          </div>
+          {currentPE != null && avgPE != null ? (
+            <>
+              <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-3">P/E vs Historical Average</div>
+              {/* Range bar */}
+              <div className="relative h-3 bg-sand-200 dark:bg-warm-800 rounded-full mb-2">
+                {/* Average marker */}
+                <div
+                  className="absolute top-0 bottom-0 w-0.5 bg-vi-gold z-10"
+                  style={{ left: `${((avgPE - peRange.min) / (peRange.max - peRange.min)) * 100}%` }}
+                />
+                {/* Current P/E dot */}
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white dark:border-warm-900 shadow-md z-20"
+                  style={{
+                    left: `${Math.max(0, Math.min(100, ((currentPE - peRange.min) / (peRange.max - peRange.min)) * 100))}%`,
+                    transform: 'translate(-50%, -50%)',
+                    backgroundColor: marginOfSafety > 0 ? '#a0d6ad' : marginOfSafety < -0.2 ? '#ffb4ab' : '#f2c35b',
+                  }}
+                />
+              </div>
+              <div className="flex justify-between text-[9px] text-sand-400 dark:text-warm-500 mb-4">
+                <span>{fmt.x(peRange.min)}</span>
+                <span className="text-vi-gold font-bold">Avg {fmt.x(avgPE)}</span>
+                <span>{fmt.x(peRange.max)}</span>
+              </div>
+              <p className={`text-sm leading-relaxed italic ${marginOfSafety > 0 ? 'text-vi-sage' : marginOfSafety < -0.2 ? 'text-vi-rose' : 'text-vi-gold'}`}>
+                {marginOfSafety > 0
+                  ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% below its historical average P/E. "Be greedy when others are fearful."`
+                  : marginOfSafety < -0.2
+                    ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% above its historical average. Premium pricing demands premium conviction.`
+                    : 'Near its historical fair value. Focus on the quality of the business.'}
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-sand-500 dark:text-warm-400 italic">Price data required for margin of safety analysis.</p>
+          )}
+        </div>
+
+        {/* Valuation Rating */}
+        <div className={`${CARD} !p-4 flex items-center justify-between`}>
+          <div>
+            <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Valuation Rating</div>
+            <div className="text-xl font-serif text-vi-accent">
+              {ratings?.valuation?.rating || 'Moderate'} <span className="text-sm font-sans text-sand-500 dark:text-warm-400">Conviction</span>
+            </div>
+          </div>
+          <span className="material-symbols-outlined text-3xl text-vi-accent/30">shield</span>
+        </div>
+
+        {/* Market Context */}
+        <div className={`${CARD} relative overflow-hidden group`}>
+          <div className="absolute -right-8 -bottom-8 opacity-5 group-hover:opacity-10 transition-opacity">
+            <span className="material-symbols-outlined text-[120px]">analytics</span>
+          </div>
+          <h4 className="font-serif text-lg mb-3">Market Context</h4>
+          <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed">
+            {currentPE != null
+              ? `At ${fmt.x(currentPE)} earnings with ROIC at ${fmt.pct(latest?.valuation.roic)}, ${latest?.ticker || 'AAPL'} commands a premium — but its ${fmt.pct(latest?.valuation.fcf_yield)} free cash flow yield suggests cash generation supports the valuation.`
+              : `ROIC of ${fmt.pct(latest?.valuation.roic)} with ROE at ${fmt.pct(latest?.valuation.roe)} signals strong capital efficiency — the foundation of durable value creation.`}
           </p>
         </div>
-      </div>
-
-      {/* Table */}
-      <div className="col-span-12">
-        <DataTable columns={['Quarter', 'ROE', 'ROIC', 'ROA']} rows={rows} />
-      </div>
+      </aside>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 // Shared sub-components for Value Insights panels
 
@@ -120,7 +120,10 @@ export function Sparkline({ data, color = '#a0d6ad', width = 80, height = 24 }) 
 }
 
 // Growth chart — actual values as solid line with rolling 4Q average dashed overlay
-export function CagrChart({ data, quarters, cagr, label, color, formatFn }) {
+// Interactive: hover crosshair + tooltip showing quarter, value, and rolling avg
+export function CagrChart({ data, quarters, cagr, label, color, formatFn, summaryLabel }) {
+  const [hoveredIdx, setHoveredIdx] = useState(null);
+
   if (!data || data.length < 2 || cagr == null) return null;
 
   const W = 320;
@@ -170,56 +173,122 @@ export function CagrChart({ data, quarters, cagr, label, color, formatFn }) {
     });
   }
 
+  // Mouse tracking: map client coords to nearest data point index
+  const handleMouseMove = (e) => {
+    const svgEl = e.currentTarget;
+    const rect = svgEl.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * W;
+
+    if (mouseX < PAD.left || mouseX > W - PAD.right) {
+      setHoveredIdx(null);
+      return;
+    }
+
+    let nearest = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < data.length; i++) {
+      const dist = Math.abs(mouseX - toX(i));
+      if (dist < minDist) {
+        minDist = dist;
+        nearest = i;
+      }
+    }
+    setHoveredIdx(nearest);
+  };
+
+  const hq = hoveredIdx != null ? quarters?.[hoveredIdx] : null;
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400">{label}</span>
-        <span className="text-xs font-bold" style={{ color }}>CAGR {(cagr * 100).toFixed(1)}%</span>
+        <span className="text-xs font-bold" style={{ color }}>{summaryLabel || `CAGR ${(cagr * 100).toFixed(1)}%`}</span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" preserveAspectRatio="xMidYMid meet">
-        {/* Horizontal grid lines + Y-axis labels */}
-        {yTicks.map((tick, i) => (
-          <g key={i}>
-            <line
-              x1={PAD.left} y1={toY(tick)} x2={W - PAD.right} y2={toY(tick)}
-              stroke="currentColor" strokeWidth="0.5" className="text-sand-200 dark:text-warm-700"
-            />
-            <text x={PAD.left - 4} y={toY(tick) + 3} textAnchor="end" className="text-sand-400 dark:text-warm-500 fill-current" fontSize="8">
-              {formatFn(tick)}
-            </text>
-          </g>
-        ))}
-        {/* X-axis year labels + vertical tick marks */}
-        {xLabels.map(({ index, label: yr }) => (
-          <g key={yr}>
-            <line
-              x1={toX(index)} y1={PAD.top} x2={toX(index)} y2={PAD.top + plotH}
-              stroke="currentColor" strokeWidth="0.3" className="text-sand-200 dark:text-warm-700"
-            />
-            <text
-              x={toX(index)} y={PAD.top + plotH + 14}
-              textAnchor="middle" className="text-sand-400 dark:text-warm-500 fill-current" fontSize="8"
-            >
-              {yr}
-            </text>
-          </g>
-        ))}
-        {/* Rolling 4Q average (dashed) */}
-        {rollingPoints && (
-          <polyline points={rollingPoints} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full cursor-crosshair"
+          preserveAspectRatio="xMidYMid meet"
+          onMouseMove={handleMouseMove}
+          onMouseLeave={() => setHoveredIdx(null)}
+        >
+          {/* Horizontal grid lines + Y-axis labels */}
+          {yTicks.map((tick, i) => (
+            <g key={i}>
+              <line
+                x1={PAD.left} y1={toY(tick)} x2={W - PAD.right} y2={toY(tick)}
+                stroke="currentColor" strokeWidth="0.5" className="text-sand-200 dark:text-warm-700"
+              />
+              <text x={PAD.left - 4} y={toY(tick) + 3} textAnchor="end" className="text-sand-400 dark:text-warm-500 fill-current" fontSize="8">
+                {formatFn(tick)}
+              </text>
+            </g>
+          ))}
+          {/* X-axis year labels + vertical tick marks */}
+          {xLabels.map(({ index, label: yr }) => (
+            <g key={yr}>
+              <line
+                x1={toX(index)} y1={PAD.top} x2={toX(index)} y2={PAD.top + plotH}
+                stroke="currentColor" strokeWidth="0.3" className="text-sand-200 dark:text-warm-700"
+              />
+              <text
+                x={toX(index)} y={PAD.top + plotH + 14}
+                textAnchor="middle" className="text-sand-400 dark:text-warm-500 fill-current" fontSize="8"
+              >
+                {yr}
+              </text>
+            </g>
+          ))}
+          {/* Rolling 4Q average (dashed) */}
+          {rollingPoints && (
+            <polyline points={rollingPoints} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
+          )}
+          {/* Actual values (solid) */}
+          <polyline points={actualPoints} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Data points */}
+          {data.map((v, i) => (
+            <circle key={i} cx={toX(i)} cy={toY(v)} r="2.5" fill={color} opacity={hoveredIdx != null && hoveredIdx !== i ? 0.3 : 0.7} />
+          ))}
+          {/* Shaded area under actual line */}
+          <polygon
+            points={`${toX(0)},${toY(min)} ${actualPoints} ${toX(data.length - 1)},${toY(min)}`}
+            fill={color} opacity="0.06"
+          />
+          {/* Crosshair + highlighted points on hover */}
+          {hoveredIdx != null && (
+            <>
+              <line
+                x1={toX(hoveredIdx)} y1={PAD.top} x2={toX(hoveredIdx)} y2={PAD.top + plotH}
+                stroke={color} strokeWidth="0.5" strokeDasharray="3 2" opacity="0.4"
+              />
+              <circle cx={toX(hoveredIdx)} cy={toY(data[hoveredIdx])} r="4.5" fill={color} stroke="white" strokeWidth="1.5" />
+              {rolling4Q[hoveredIdx] != null && (
+                <circle cx={toX(hoveredIdx)} cy={toY(rolling4Q[hoveredIdx])} r="3" fill={color} opacity="0.5" stroke="white" strokeWidth="1" />
+              )}
+            </>
+          )}
+        </svg>
+
+        {/* Floating tooltip */}
+        {hoveredIdx != null && hq && (
+          <div
+            className="absolute z-20 pointer-events-none"
+            style={{
+              left: `${(toX(hoveredIdx) / W) * 100}%`,
+              top: `${(toY(data[hoveredIdx]) / H) * 100}%`,
+              transform: 'translate(-50%, -100%) translateY(-6px)',
+            }}
+          >
+            <div className="bg-sand-100 dark:bg-warm-900 px-2.5 py-1.5 rounded shadow-lg border border-sand-200 dark:border-warm-700 text-[10px] font-mono text-sand-600 dark:text-warm-200 whitespace-nowrap">
+              <div className="font-bold text-sand-800 dark:text-warm-50">{hq.fiscal_quarter} {hq.fiscal_year}</div>
+              <div style={{ color }}>{formatFn(data[hoveredIdx])}</div>
+              {rolling4Q[hoveredIdx] != null && (
+                <div className="text-sand-400 dark:text-warm-500">4Q Avg: {formatFn(rolling4Q[hoveredIdx])}</div>
+              )}
+            </div>
+          </div>
         )}
-        {/* Actual values (solid) */}
-        <polyline points={actualPoints} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        {/* Data points */}
-        {data.map((v, i) => (
-          <circle key={i} cx={toX(i)} cy={toY(v)} r="2.5" fill={color} opacity="0.7" />
-        ))}
-        {/* Shaded area under actual line */}
-        <polygon
-          points={`${toX(0)},${toY(min)} ${actualPoints} ${toX(data.length - 1)},${toY(min)}`}
-          fill={color} opacity="0.06"
-        />
-      </svg>
+      </div>
       <div className="flex justify-center mt-1">
         <div className="flex items-center gap-3 text-[9px] text-sand-400 dark:text-warm-500">
           <span className="flex items-center gap-1"><span className="inline-block w-3 border-t-2" style={{ borderColor: color }} />Quarterly</span>

@@ -242,6 +242,9 @@ module "api_gateway" {
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
 
+  # Value Insights API (financial metrics and ratings)
+  enable_value_insights_routes = true
+
   common_tags = local.common_tags
 }
 

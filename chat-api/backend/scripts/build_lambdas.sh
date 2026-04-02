@@ -40,6 +40,7 @@ FUNCTIONS=(
     "earnings_calendar_checker"
     "sp500_aggregator"
     "market_intel_chat"
+    "value_insights_handler"
 )
 
 # Build each function
