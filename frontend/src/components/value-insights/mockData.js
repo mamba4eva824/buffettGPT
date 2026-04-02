@@ -5,7 +5,19 @@ import { AAPL_QUARTERS } from './aaplData';
 
 // Normalize DynamoDB schema → dashboard schema
 // DynamoDB stores margins as percentages (39.8), dashboard expects decimals (0.398)
-function normalizeQuarter(q) {
+// Helper: safe divide by 100 (null-safe for missing fields)
+function pct(v) { return v != null ? v / 100 : null; }
+function val(v) { return v ?? null; }
+
+export function normalizeQuarter(q) {
+  const rp = q.revenue_profit || {};
+  const cf = q.cashflow || {};
+  const bs = q.balance_sheet || {};
+  const dl = q.debt_leverage || {};
+  const eq = q.earnings_quality || {};
+  const di = q.dilution || {};
+  const va = q.valuation || {};
+
   return {
     ticker: q.ticker,
     fiscal_date: q.fiscal_date,
@@ -13,70 +25,69 @@ function normalizeQuarter(q) {
     fiscal_quarter: q.fiscal_quarter,
     currency: q.currency,
     revenue_profit: {
-      revenue: q.revenue_profit.revenue,
-      net_income: q.revenue_profit.net_income,
-      gross_profit: q.revenue_profit.gross_profit,
-      operating_income: q.revenue_profit.operating_income,
-      ebitda: q.revenue_profit.ebitda,
-      gross_margin: q.revenue_profit.gross_margin / 100,
-      operating_margin: q.revenue_profit.operating_margin / 100,
-      net_margin: q.revenue_profit.net_margin / 100,
-      eps: q.revenue_profit.eps,
-      roe: q.revenue_profit.roe / 100,
-      // revenue_growth_yoy computed below
+      revenue: val(rp.revenue),
+      net_income: val(rp.net_income),
+      gross_profit: val(rp.gross_profit),
+      operating_income: val(rp.operating_income),
+      ebitda: val(rp.ebitda),
+      gross_margin: pct(rp.gross_margin),
+      operating_margin: pct(rp.operating_margin),
+      net_margin: pct(rp.net_margin),
+      eps: val(rp.eps),
+      roe: pct(rp.roe),
     },
     cashflow: {
-      operating_cash_flow: q.cashflow.operating_cash_flow,
-      free_cash_flow: q.cashflow.free_cash_flow,
-      fcf_margin: q.cashflow.fcf_margin / 100,
-      capex: q.cashflow.capex,
-      capex_intensity: q.cashflow.capex_intensity / 100,
-      ocf_to_revenue: q.cashflow.ocf_to_revenue / 100,
-      fcf_to_net_income: q.cashflow.fcf_to_net_income,
-      fcf_payout_ratio: q.cashflow.fcf_payout_ratio / 100,
-      reinvestment_rate: q.cashflow.reinvestment_rate / 100,
-      share_buybacks: q.cashflow.share_buybacks,
-      dividends_paid: q.cashflow.dividends_paid,
+      operating_cash_flow: val(cf.operating_cash_flow),
+      free_cash_flow: val(cf.free_cash_flow),
+      fcf_margin: pct(cf.fcf_margin),
+      capex: val(cf.capex),
+      capex_intensity: pct(cf.capex_intensity),
+      ocf_to_revenue: pct(cf.ocf_to_revenue),
+      fcf_to_net_income: val(cf.fcf_to_net_income),
+      fcf_payout_ratio: pct(cf.fcf_payout_ratio),
+      reinvestment_rate: pct(cf.reinvestment_rate),
+      share_buybacks: val(cf.share_buybacks),
+      dividends_paid: val(cf.dividends_paid),
     },
     balance_sheet: {
-      total_debt: q.balance_sheet.total_debt,
-      cash_position: q.balance_sheet.cash_position,
-      net_debt: q.balance_sheet.net_debt,
-      total_equity: q.balance_sheet.total_equity,
-      long_term_debt: q.balance_sheet.long_term_debt,
-      short_term_debt: q.balance_sheet.short_term_debt,
-      working_capital: q.balance_sheet.working_capital,
+      total_debt: val(bs.total_debt),
+      cash_position: val(bs.cash_position),
+      net_debt: val(bs.net_debt),
+      total_equity: val(bs.total_equity),
+      long_term_debt: val(bs.long_term_debt),
+      short_term_debt: val(bs.short_term_debt),
+      working_capital: val(bs.working_capital),
     },
     debt_leverage: {
-      debt_to_equity: q.debt_leverage.debt_to_equity,
-      interest_coverage: q.debt_leverage.interest_coverage,
-      current_ratio: q.debt_leverage.current_ratio,
-      quick_ratio: q.debt_leverage.quick_ratio,
-      debt_to_assets: q.debt_leverage.debt_to_assets,
-      net_debt_to_ebitda: q.debt_leverage.net_debt_to_ebitda,
-      fcf_to_debt: q.debt_leverage.fcf_to_debt,
-      interest_expense: q.debt_leverage.interest_expense,
+      debt_to_equity: val(dl.debt_to_equity),
+      interest_coverage: val(dl.interest_coverage),
+      current_ratio: val(dl.current_ratio),
+      quick_ratio: val(dl.quick_ratio),
+      debt_to_assets: val(dl.debt_to_assets),
+      net_debt_to_ebitda: val(dl.net_debt_to_ebitda),
+      fcf_to_debt: val(dl.fcf_to_debt),
+      interest_expense: val(dl.interest_expense),
     },
     earnings_quality: {
-      gaap_net_income: q.earnings_quality.gaap_net_income,
-      sbc_actual: q.earnings_quality.sbc_actual,
-      sbc_to_revenue_pct: q.earnings_quality.sbc_to_revenue_pct / 100,
-      adjusted_earnings: q.earnings_quality.adjusted_earnings,
-      d_and_a: q.earnings_quality.d_and_a,
-      gaap_adjusted_gap_pct: q.earnings_quality.gaap_adjusted_gap_pct / 100,
+      gaap_net_income: val(eq.gaap_net_income),
+      sbc_actual: val(eq.sbc_actual),
+      sbc_to_revenue_pct: pct(eq.sbc_to_revenue_pct),
+      adjusted_earnings: val(eq.adjusted_earnings),
+      d_and_a: val(eq.d_and_a),
+      gaap_adjusted_gap_pct: pct(eq.gaap_adjusted_gap_pct),
     },
     dilution: {
-      basic_shares: q.dilution.basic_shares,
-      diluted_shares: q.dilution.diluted_shares,
-      dilution_pct: q.dilution.dilution_pct,
-      share_buybacks: q.dilution.share_buybacks,
+      basic_shares: val(di.basic_shares),
+      diluted_shares: val(di.diluted_shares),
+      dilution_pct: val(di.dilution_pct),
+      share_buybacks: val(di.share_buybacks),
     },
     valuation: {
-      roe: q.valuation.roe / 100,
-      roic: q.valuation.roic / 100,
-      roa: q.valuation.roa / 100,
-      asset_turnover: q.valuation.asset_turnover,
-      equity_multiplier: q.valuation.equity_multiplier,
+      roe: pct(va.roe),
+      roic: pct(va.roic),
+      roa: pct(va.roa),
+      asset_turnover: val(va.asset_turnover),
+      equity_multiplier: val(va.equity_multiplier),
     },
   };
 }
@@ -87,13 +98,13 @@ const normalized = AAPL_QUARTERS
   .sort((a, b) => a.fiscal_date.localeCompare(b.fiscal_date));
 
 // Helper: safe YoY growth = (current - prior) / |prior|, or null
-function yoyGrowth(current, prior) {
+export function yoyGrowth(current, prior) {
   if (current == null || prior == null || prior === 0) return null;
   return (current - prior) / Math.abs(prior);
 }
 
 // Compute all YoY / QoQ growth fields by matching same fiscal_quarter from prior year
-function computeGrowthFields(quarters) {
+export function computeGrowthFields(quarters) {
   const byQY = {};
   for (const q of quarters) {
     byQY[`${q.fiscal_quarter}-${q.fiscal_year}`] = q;
@@ -141,7 +152,87 @@ function computeGrowthFields(quarters) {
   return quarters;
 }
 
-export const MOCK_QUARTERS = computeGrowthFields(normalized);
+// MOCK: Replace with real stock prices from DynamoDB when available
+// Approximate AAPL closing prices at each fiscal quarter-end
+const MOCK_STOCK_PRICES = {
+  '2020-12-26': 131.97,
+  '2021-03-27': 121.21,
+  '2021-06-26': 136.96,
+  '2021-09-25': 141.91,
+  '2021-12-25': 179.45,
+  '2022-03-26': 174.61,
+  '2022-06-25': 141.66,
+  '2022-09-24': 150.43,
+  '2022-12-31': 129.93,
+  '2023-04-01': 164.90,
+  '2023-07-01': 193.97,
+  '2023-09-30': 171.21,
+  '2023-12-30': 192.53,
+  '2024-03-30': 171.48,
+  '2024-06-29': 210.62,
+  '2024-09-28': 227.52,
+  '2024-12-28': 259.02,
+  '2025-03-29': 222.13,
+  '2025-06-28': 214.24,
+  '2025-09-27': 226.47,
+  '2025-12-27': 258.20,
+};
+
+// Compute valuation multiples that require stock price (P/E, P/B, EV/EBITDA, P/FCF)
+export function computeValuationMultiples(quarters) {
+  for (let i = 0; i < quarters.length; i++) {
+    const q = quarters[i];
+    const price = MOCK_STOCK_PRICES[q.fiscal_date] ?? null;
+    const val = q.valuation;
+    val.stock_price = price;
+
+    // TTM (trailing twelve months) requires 4 quarters of history
+    if (i < 3 || price == null) {
+      val.ttm_eps = null;
+      val.pe_ratio = null;
+      val.earnings_yield = null;
+      val.book_value_per_share = null;
+      val.pb_ratio = null;
+      val.ttm_ebitda = null;
+      val.enterprise_value = null;
+      val.ev_ebitda = null;
+      val.ttm_fcf = null;
+      val.fcf_per_share = null;
+      val.price_to_fcf = null;
+      val.market_cap = null;
+      val.fcf_yield = null;
+      continue;
+    }
+
+    const last4 = quarters.slice(i - 3, i + 1);
+    const dilutedShares = q.dilution.diluted_shares;
+
+    // TTM EPS & P/E
+    val.ttm_eps = last4.reduce((sum, qq) => sum + qq.revenue_profit.eps, 0);
+    val.pe_ratio = val.ttm_eps > 0 ? price / val.ttm_eps : null;
+    val.earnings_yield = val.ttm_eps > 0 ? val.ttm_eps / price : null;
+
+    // Book value per share & P/B
+    const totalEquity = q.balance_sheet.total_equity;
+    val.book_value_per_share = dilutedShares > 0 ? totalEquity / dilutedShares : null;
+    val.pb_ratio = val.book_value_per_share > 0 ? price / val.book_value_per_share : null;
+
+    // EV/EBITDA
+    val.market_cap = price * dilutedShares;
+    val.ttm_ebitda = last4.reduce((sum, qq) => sum + qq.revenue_profit.ebitda, 0);
+    val.enterprise_value = val.market_cap + q.balance_sheet.total_debt - q.balance_sheet.cash_position;
+    val.ev_ebitda = val.ttm_ebitda > 0 ? val.enterprise_value / val.ttm_ebitda : null;
+
+    // Price-to-FCF & FCF Yield
+    val.ttm_fcf = last4.reduce((sum, qq) => sum + qq.cashflow.free_cash_flow, 0);
+    val.fcf_per_share = dilutedShares > 0 ? val.ttm_fcf / dilutedShares : null;
+    val.price_to_fcf = val.fcf_per_share > 0 ? price / val.fcf_per_share : null;
+    val.fcf_yield = val.fcf_per_share > 0 ? val.fcf_per_share / price : null;
+  }
+  return quarters;
+}
+
+export const MOCK_QUARTERS = computeValuationMultiples(computeGrowthFields(normalized));
 
 export const MOCK_RATINGS = {
   growth:           { rating: "Moderate", confidence: "Medium", key_factors: ["Revenue growth slowed to 2-5%", "Services segment driving growth", "iPhone cycle dependency"] },

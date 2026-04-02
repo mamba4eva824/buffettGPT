@@ -664,3 +664,53 @@ resource "aws_lambda_permission" "waitlist_api_permission" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
+
+# ================================================
+# Value Insights API Routes and Integration
+# ================================================
+
+# Value Insights Handler Integration
+resource "aws_apigatewayv2_integration" "value_insights_handler_integration" {
+  count            = var.enable_value_insights_routes ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["value_insights_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# GET /insights/{ticker} - Get financial metrics and ratings
+resource "aws_apigatewayv2_route" "value_insights_get" {
+  count     = var.enable_value_insights_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /insights/{ticker}"
+  target    = "integrations/${aws_apigatewayv2_integration.value_insights_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /insights/{ticker} - CORS preflight
+resource "aws_apigatewayv2_route" "value_insights_options" {
+  count     = var.enable_value_insights_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /insights/{ticker}"
+  target    = "integrations/${aws_apigatewayv2_integration.value_insights_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# Value Insights Handler Lambda Permission
+resource "aws_lambda_permission" "value_insights_api_permission" {
+  count         = var.enable_value_insights_routes ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPIValueInsights"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["value_insights_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}

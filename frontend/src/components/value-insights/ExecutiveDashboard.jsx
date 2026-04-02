@@ -19,11 +19,11 @@ const SCORECARD_CONFIG = {
     ],
   },
   valuation: {
-    sparklineFn: (q) => q.valuation.roic,
+    sparklineFn: (q) => q.valuation.pe_ratio,
     sparklineColor: '#6d28d9',
     metrics: [
-      { label: 'ROIC', valueFn: (q) => q.valuation.roic, format: 'pct' },
-      { label: 'ROA', valueFn: (q) => q.valuation.roa, format: 'pct' },
+      { label: 'P/E', valueFn: (q) => q.valuation.pe_ratio, format: 'x' },
+      { label: 'Earn. Yield', valueFn: (q) => q.valuation.earnings_yield, format: 'pct' },
     ],
   },
   cashflow: {

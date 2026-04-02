@@ -72,6 +72,12 @@ locals {
       memory_size = 512
       description = "Market Intelligence chat - converse_stream with 9 tools"
     }
+    value_insights_handler = {
+      handler     = "value_insights_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Value Insights API - serves financial metrics and ratings"
+    }
   }
 }
 

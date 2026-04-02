@@ -170,3 +170,13 @@ variable "enable_waitlist_routes" {
   type        = bool
   default     = false
 }
+
+# ============================================================================
+# Value Insights API Variables
+# ============================================================================
+
+variable "enable_value_insights_routes" {
+  description = "Enable Value Insights financial metrics routes"
+  type        = bool
+  default     = false
+}
