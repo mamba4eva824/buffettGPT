@@ -6,6 +6,21 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### S&P 500 Daily EOD Price Pipeline (2026-04-03)
+
+**Added**
+- `sp500_eod_ingest` Lambda: fetches 4-hour OHLCV candles for all S&P 500 tickers from FMP
+- EventBridge schedule: `cron(0 22 ? * MON-FRI *)` — runs daily at 10 PM UTC (6 PM ET)
+- DynamoDB table `stock-data-4h-{env}` with DateIndex GSI for cross-ticker queries
+- `backfill_4h_prices.py` script for local/ad-hoc historical data loading
+- `value_insights_handler` extended with `latest_price` from 4h table
+- ValuationPanel: "Last Close" banner with live P/E computed from current price + TTM earnings
+- Weekend + US market holiday detection to skip unnecessary API calls
+- 365-day TTL (`expires_at`) on ingested records
+- Ticker format conversion (`BRK.B` → `BRK-B`) for FMP API compatibility
+- Executive documentation: `docs/infrastructure/eventbridge-eod-pipeline.md`
+- 58 tests (42 unit + 16 integration) covering full pipeline
+
 ### Staging Environment + Stripe Subscription Fix (2026-03-24)
 
 **Added**
