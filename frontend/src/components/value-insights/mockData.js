@@ -89,6 +89,8 @@ export function normalizeQuarter(q) {
       asset_turnover: val(va.asset_turnover),
       equity_multiplier: val(va.equity_multiplier),
     },
+    // Pre-computed valuation ratios from FMP key-metrics (populated by sp500_backfill)
+    market_valuation: q.market_valuation || null,
   };
 }
 
@@ -152,82 +154,51 @@ export function computeGrowthFields(quarters) {
   return quarters;
 }
 
-// MOCK: Replace with real stock prices from DynamoDB when available
-// Approximate AAPL closing prices at each fiscal quarter-end
-const MOCK_STOCK_PRICES = {
-  '2020-12-26': 131.97,
-  '2021-03-27': 121.21,
-  '2021-06-26': 136.96,
-  '2021-09-25': 141.91,
-  '2021-12-25': 179.45,
-  '2022-03-26': 174.61,
-  '2022-06-25': 141.66,
-  '2022-09-24': 150.43,
-  '2022-12-31': 129.93,
-  '2023-04-01': 164.90,
-  '2023-07-01': 193.97,
-  '2023-09-30': 171.21,
-  '2023-12-30': 192.53,
-  '2024-03-30': 171.48,
-  '2024-06-29': 210.62,
-  '2024-09-28': 227.52,
-  '2024-12-28': 259.02,
-  '2025-03-29': 222.13,
-  '2025-06-28': 214.24,
-  '2025-09-27': 226.47,
-  '2025-12-27': 258.20,
-};
-
-// Compute valuation multiples that require stock price (P/E, P/B, EV/EBITDA, P/FCF)
+// Merge pre-computed FMP valuation ratios (from market_valuation) into each quarter's
+// valuation object.  Falls back to deriving P/B and stock_price from balance sheet +
+// dilution data when possible.  No mock data — quarters without market_valuation get nulls.
 export function computeValuationMultiples(quarters) {
-  for (let i = 0; i < quarters.length; i++) {
-    const q = quarters[i];
-    const price = MOCK_STOCK_PRICES[q.fiscal_date] ?? null;
-    const val = q.valuation;
-    val.stock_price = price;
+  for (const q of quarters) {
+    const v = q.valuation;
+    const mv = q.market_valuation;
+    const dilutedShares = q.dilution?.diluted_shares;
+    const totalEquity = q.balance_sheet?.total_equity;
 
-    // TTM (trailing twelve months) requires 4 quarters of history
-    if (i < 3 || price == null) {
-      val.ttm_eps = null;
-      val.pe_ratio = null;
-      val.earnings_yield = null;
-      val.book_value_per_share = null;
-      val.pb_ratio = null;
-      val.ttm_ebitda = null;
-      val.enterprise_value = null;
-      val.ev_ebitda = null;
-      val.ttm_fcf = null;
-      val.fcf_per_share = null;
-      val.price_to_fcf = null;
-      val.market_cap = null;
-      val.fcf_yield = null;
-      continue;
+    if (mv && mv.pe_ratio != null) {
+      // Use FMP pre-computed ratios (field-name mapping + unit conversion)
+      v.pe_ratio = mv.pe_ratio;
+      v.ev_ebitda = mv.ev_to_ebitda ?? null;
+      v.earnings_yield = mv.earnings_yield != null ? mv.earnings_yield / 100 : null;
+      v.fcf_yield = mv.fcf_yield != null ? mv.fcf_yield / 100 : null;
+      v.market_cap = mv.market_cap ?? null;
+      v.enterprise_value = mv.enterprise_value ?? null;
+
+      // Derive price_to_fcf from fcf_yield (P/FCF ≈ 1 / fcf_yield)
+      v.price_to_fcf = v.fcf_yield && v.fcf_yield > 0 ? 1 / v.fcf_yield : null;
+
+      // Derive P/B from market_cap / total_equity
+      v.pb_ratio = (v.market_cap && totalEquity && totalEquity > 0)
+        ? v.market_cap / totalEquity : null;
+
+      // Derive stock_price and book_value_per_share from per-share math
+      v.stock_price = (v.market_cap && dilutedShares && dilutedShares > 0)
+        ? v.market_cap / dilutedShares : null;
+      v.book_value_per_share = (totalEquity && dilutedShares && dilutedShares > 0)
+        ? totalEquity / dilutedShares : null;
+    } else {
+      // No market_valuation data — set all price-derived fields to null
+      v.pe_ratio = null;
+      v.earnings_yield = null;
+      v.pb_ratio = null;
+      v.ev_ebitda = null;
+      v.price_to_fcf = null;
+      v.fcf_yield = null;
+      v.market_cap = null;
+      v.enterprise_value = null;
+      v.stock_price = null;
+      v.book_value_per_share = (totalEquity && dilutedShares && dilutedShares > 0)
+        ? totalEquity / dilutedShares : null;
     }
-
-    const last4 = quarters.slice(i - 3, i + 1);
-    const dilutedShares = q.dilution.diluted_shares;
-
-    // TTM EPS & P/E
-    val.ttm_eps = last4.reduce((sum, qq) => sum + qq.revenue_profit.eps, 0);
-    val.pe_ratio = val.ttm_eps > 0 ? price / val.ttm_eps : null;
-    val.earnings_yield = val.ttm_eps > 0 ? val.ttm_eps / price : null;
-
-    // Book value per share & P/B
-    const totalEquity = q.balance_sheet.total_equity;
-    val.book_value_per_share = dilutedShares > 0 ? totalEquity / dilutedShares : null;
-    val.pb_ratio = val.book_value_per_share > 0 ? price / val.book_value_per_share : null;
-
-    // EV/EBITDA
-    val.market_cap = price * dilutedShares;
-    val.ttm_ebitda = last4.reduce((sum, qq) => sum + qq.revenue_profit.ebitda, 0);
-    val.enterprise_value = val.market_cap + q.balance_sheet.total_debt - q.balance_sheet.cash_position;
-    val.ev_ebitda = val.ttm_ebitda > 0 ? val.enterprise_value / val.ttm_ebitda : null;
-
-    // Price-to-FCF & FCF Yield
-    val.ttm_fcf = last4.reduce((sum, qq) => sum + qq.cashflow.free_cash_flow, 0);
-    val.fcf_per_share = dilutedShares > 0 ? val.ttm_fcf / dilutedShares : null;
-    val.price_to_fcf = val.fcf_per_share > 0 ? price / val.fcf_per_share : null;
-    val.fcf_yield = val.fcf_per_share > 0 ? val.fcf_per_share / price : null;
   }
   return quarters;
 }

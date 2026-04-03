@@ -736,7 +736,7 @@ export function ValuationPanel({ data, ratings, timeRange }) {
   // Historical averages for assessment
   const histAvg = useMemo(() => {
     if (withMultiples.length === 0) return {};
-    const avg = (arr, fn) => arr.reduce((s, q) => s + fn(q), 0) / arr.length;
+    const avg = (arr, fn) => arr.length === 0 ? null : arr.reduce((s, q) => s + fn(q), 0) / arr.length;
     return {
       pe: avg(withMultiples, q => q.valuation.pe_ratio),
       pb: avg(withMultiples.filter(q => q.valuation.pb_ratio != null), q => q.valuation.pb_ratio),
@@ -766,26 +766,53 @@ export function ValuationPanel({ data, ratings, timeRange }) {
   // Sparkline data
   const peSparkline = withMultiples.map(q => q.valuation.pe_ratio);
   const evEbitdaSparkline = withMultiples.map(q => q.valuation.ev_ebitda).filter(v => v != null);
-  const earningsYieldSparkline = withMultiples.map(q => q.valuation.earnings_yield);
+  const earningsYieldSparkline = withMultiples.map(q => q.valuation.earnings_yield).filter(v => v != null);
   const pFcfSparkline = withMultiples.map(q => q.valuation.price_to_fcf).filter(v => v != null);
   const roicSparkline = filtered.map(q => q.valuation.roic);
 
-  // Assessment helper: compare current to historical average
-  const assess = (current, avg) => {
-    if (current == null || avg == null || avg === 0) return { label: '—', color: 'text-sand-400' };
-    const ratio = current / avg;
-    if (ratio < 0.8) return { label: 'Below Average', color: 'text-vi-sage', bg: 'bg-vi-sage/10' };
-    if (ratio > 1.2) return { label: 'Above Average', color: 'text-vi-rose', bg: 'bg-vi-rose/10' };
-    return { label: 'Near Average', color: 'text-vi-gold', bg: 'bg-vi-gold/10' };
+  // Percentile helper: where does `value` sit within sorted `arr`? Returns 0–100.
+  const percentile = (value, arr) => {
+    if (value == null || arr.length === 0) return null;
+    const sorted = arr.filter(v => v != null).sort((a, b) => a - b);
+    if (sorted.length === 0) return null;
+    const below = sorted.filter(v => v < value).length;
+    return Math.round((below / sorted.length) * 100);
   };
 
-  // Price multiple cards config
+  // Historical min/max for each multiple (for range bar display)
+  const histRange = useMemo(() => {
+    const range = (arr) => {
+      const valid = arr.filter(v => v != null);
+      if (valid.length === 0) return { min: null, max: null };
+      return { min: Math.min(...valid), max: Math.max(...valid) };
+    };
+    return {
+      pe: range(withMultiples.map(q => q.valuation.pe_ratio)),
+      pb: range(withMultiples.map(q => q.valuation.pb_ratio).filter(v => v != null)),
+      evEbitda: range(withMultiples.map(q => q.valuation.ev_ebitda).filter(v => v != null)),
+      pFcf: range(withMultiples.map(q => q.valuation.price_to_fcf).filter(v => v != null)),
+    };
+  }, [withMultiples]);
+
+  // Assessment helper: compare current to historical average + percentile
+  const assess = (current, avg, allValues) => {
+    if (current == null || avg == null || avg === 0) return { label: '—', color: 'text-sand-400' };
+    const pct = allValues ? percentile(current, allValues) : null;
+    const ratio = current / avg;
+    if (ratio < 0.8) return { label: 'Near Historical Low', color: 'text-vi-sage', bg: 'bg-vi-sage/10', percentile: pct };
+    if (ratio > 1.2) return { label: 'Near Historical High', color: 'text-vi-rose', bg: 'bg-vi-rose/10', percentile: pct };
+    return { label: 'Near Average', color: 'text-vi-gold', bg: 'bg-vi-gold/10', percentile: pct };
+  };
+
+  // Price multiple cards config — includes historical values for percentile computation
   const multipleCards = [
     {
       label: 'Price-to-Earnings',
       abbr: 'P/E',
       value: latest?.valuation.pe_ratio,
       avg: histAvg.pe,
+      range: histRange.pe,
+      allValues: withMultiples.map(q => q.valuation.pe_ratio),
       explain: 'How many years of profits you\'re paying for',
       format: fmt.x,
     },
@@ -794,6 +821,8 @@ export function ValuationPanel({ data, ratings, timeRange }) {
       abbr: 'P/B',
       value: latest?.valuation.pb_ratio,
       avg: histAvg.pb,
+      range: histRange.pb,
+      allValues: withMultiples.map(q => q.valuation.pb_ratio).filter(v => v != null),
       explain: 'What premium you\'re paying over the company\'s net assets',
       format: fmt.x,
     },
@@ -802,6 +831,8 @@ export function ValuationPanel({ data, ratings, timeRange }) {
       abbr: 'EV/EBITDA',
       value: latest?.valuation.ev_ebitda,
       avg: histAvg.evEbitda,
+      range: histRange.evEbitda,
+      allValues: withMultiples.map(q => q.valuation.ev_ebitda).filter(v => v != null),
       explain: 'What the entire business costs relative to its cash earnings',
       format: fmt.x,
     },
@@ -810,6 +841,8 @@ export function ValuationPanel({ data, ratings, timeRange }) {
       abbr: 'P/FCF',
       value: latest?.valuation.price_to_fcf,
       avg: histAvg.pFcf,
+      range: histRange.pFcf,
+      allValues: withMultiples.map(q => q.valuation.price_to_fcf).filter(v => v != null),
       explain: 'What you pay per dollar the business actually generates',
       format: fmt.x,
     },
@@ -852,16 +885,13 @@ export function ValuationPanel({ data, ratings, timeRange }) {
             <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">What Are You Paying?</h3>
             <RatingBadge rating={ratings?.valuation?.rating} />
           </div>
-          <div className="flex items-center gap-2 mb-6">
-            <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-vi-gold/15 text-vi-gold border border-vi-gold/30">
-              <span className="material-symbols-outlined text-[10px] mr-0.5 align-middle">info</span>
-              Mock Price Data
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
             {multipleCards.map((m) => {
-              const assessment = assess(m.value, m.avg);
+              const assessment = assess(m.value, m.avg, m.allValues);
+              const rangeMin = m.range?.min;
+              const rangeMax = m.range?.max;
+              const rangeSpan = (rangeMin != null && rangeMax != null && rangeMax > rangeMin) ? rangeMax - rangeMin : null;
+              const rangePosition = (rangeSpan && m.value != null) ? Math.max(0, Math.min(1, (m.value - rangeMin) / rangeSpan)) : null;
               return (
                 <div key={m.abbr} className={`${CARD} !p-5 relative overflow-hidden`}>
                   <div className="flex items-center justify-between mb-1">
@@ -876,7 +906,32 @@ export function ValuationPanel({ data, ratings, timeRange }) {
                     {m.value != null ? m.format(m.value) : '—'}
                   </div>
                   <p className="text-[11px] text-sand-500 dark:text-warm-400 leading-snug italic">{m.explain}</p>
-                  {m.avg != null && (
+                  {/* Historical range bar */}
+                  {rangePosition != null && (
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between text-[9px] text-sand-400 dark:text-warm-500 mb-1">
+                        <span>Low {m.format(rangeMin)}</span>
+                        {m.avg != null && <span className="text-vi-gold">Avg {m.format(m.avg)}</span>}
+                        <span>High {m.format(rangeMax)}</span>
+                      </div>
+                      <div className="relative h-1.5 bg-sand-200/60 dark:bg-warm-800/60 rounded-full overflow-hidden">
+                        <div
+                          className="absolute top-0 left-0 h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${rangePosition * 100}%`,
+                            background: rangePosition < 0.33 ? '#6d9e78' : rangePosition > 0.66 ? '#c47a7a' : '#d4a843',
+                          }}
+                        />
+                      </div>
+                      {assessment.percentile != null && (
+                        <div className="text-[9px] text-sand-400 dark:text-warm-500 mt-1">
+                          {assessment.percentile}th percentile of historical range
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {/* Fallback: show average without range bar */}
+                  {rangePosition == null && m.avg != null && (
                     <div className="text-[10px] text-sand-400 dark:text-warm-500 mt-2">
                       Avg: {m.format(m.avg)}
                     </div>
