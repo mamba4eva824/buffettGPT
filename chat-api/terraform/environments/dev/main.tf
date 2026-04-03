@@ -106,6 +106,12 @@ locals {
       RESEND_FROM_EMAIL  = module.email.resend_from_email
       API_BASE_URL       = module.api_gateway.http_api_endpoint
     }
+    sp500_eod_ingest = {
+      STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
+    }
+    value_insights_handler = {
+      STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
+    }
   }
 }
 
@@ -193,6 +199,9 @@ module "lambda" {
   # Metrics History Cache table for followup-action Lambda
   metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
   metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
+
+  # EventBridge schedule for daily 4h candle ingestion
+  enable_eod_ingest_schedule = true
 }
 
 # ================================================

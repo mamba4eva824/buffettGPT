@@ -9,6 +9,7 @@ import {
 export default function useInsightsData(ticker) {
   const [data, setData] = useState(null);
   const [ratings, setRatings] = useState(null);
+  const [latestPrice, setLatestPrice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const abortRef = useRef(null);
@@ -31,6 +32,7 @@ export default function useInsightsData(ticker) {
         if (!result.metrics || result.metrics.length === 0) {
           setData(null);
           setRatings(null);
+          setLatestPrice(null);
           setError('no_data');
           setLoading(false);
           return;
@@ -46,6 +48,7 @@ export default function useInsightsData(ticker) {
 
         setData(withValuation);
         setRatings(result.ratings || null);
+        setLatestPrice(result.latest_price || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -57,5 +60,5 @@ export default function useInsightsData(ticker) {
     return () => controller.abort();
   }, [ticker]);
 
-  return { data, ratings, loading, error };
+  return { data, ratings, latestPrice, loading, error };
 }

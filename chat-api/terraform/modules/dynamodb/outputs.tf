@@ -129,6 +129,19 @@ output "waitlist_table_arn" {
 }
 
 # ================================================
+# Stock Data 4H Table (ACTIVE)
+# ================================================
+output "stock_data_4h_table_name" {
+  description = "Name of the stock data 4-hour candles table"
+  value       = aws_dynamodb_table.stock_data_4h.name
+}
+
+output "stock_data_4h_table_arn" {
+  description = "ARN of the stock data 4-hour candles table"
+  value       = aws_dynamodb_table.stock_data_4h.arn
+}
+
+# ================================================
 # Summary Output
 # ================================================
 output "table_summary" {

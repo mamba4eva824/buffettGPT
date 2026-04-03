@@ -17,6 +17,7 @@ dynamodb = boto3.resource('dynamodb')
 
 METRICS_TABLE = os.environ.get('METRICS_HISTORY_CACHE_TABLE', 'metrics-history-dev')
 REPORTS_TABLE = os.environ.get('INVESTMENT_REPORTS_V2_TABLE', 'investment-reports-v2-dev')
+STOCK_DATA_4H_TABLE = os.environ.get('STOCK_DATA_4H_TABLE', '')
 
 metrics_table = dynamodb.Table(METRICS_TABLE)
 reports_table = dynamodb.Table(REPORTS_TABLE)
@@ -79,6 +80,40 @@ def _get_ratings(ticker: str) -> dict | None:
     return ratings
 
 
+def _get_latest_price(ticker: str) -> dict | None:
+    """
+    Fetch the most recent closing price from the stock-data-4h table.
+    Returns {price, date, datetime} or None if unavailable.
+    """
+    if not STOCK_DATA_4H_TABLE:
+        return None
+
+    try:
+        table = dynamodb.Table(STOCK_DATA_4H_TABLE)
+        response = table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('PK').eq(f'TICKER#{ticker}'),
+            ScanIndexForward=False,  # Most recent first
+            Limit=1,
+        )
+        items = response.get('Items', [])
+        if not items:
+            return None
+
+        item = items[0]
+        return {
+            'price': float(item.get('close', 0)),
+            'date': item.get('date', ''),
+            'datetime': item.get('datetime', ''),
+            'open': float(item.get('open', 0)),
+            'high': float(item.get('high', 0)),
+            'low': float(item.get('low', 0)),
+            'volume': item.get('volume', 0),
+        }
+    except Exception as e:
+        logger.warning(f"Failed to fetch latest price for {ticker}: {e}")
+        return None
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     route_key = event.get('routeKey', '')
     path_params = event.get('pathParameters') or {}
@@ -94,12 +129,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     try:
         metrics = _get_metrics(ticker)
         ratings = _get_ratings(ticker)
+        latest_price = _get_latest_price(ticker)
 
         return _response(200, {
             'ticker': ticker,
             'metrics': metrics,
             'ratings': ratings,
             'quarters_available': len(metrics),
+            'latest_price': latest_price,
         })
     except Exception as e:
         logger.exception(f"Error fetching insights for {ticker}")
