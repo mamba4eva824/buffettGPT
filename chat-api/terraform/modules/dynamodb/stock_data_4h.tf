@@ -70,7 +70,7 @@ resource "aws_dynamodb_table" "stock_data_4h" {
     var.common_tags,
     {
       Name    = "stock-data-4h-${var.environment}"
-      Purpose = "4-hour OHLCV candle data for S&P 500 tickers"
+      Purpose = "4-hour OHLCV candle data for SP500 tickers"
     }
   )
 }
