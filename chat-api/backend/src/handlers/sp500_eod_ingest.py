@@ -17,7 +17,6 @@ Environment Variables:
 """
 
 import json
-import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -27,12 +26,18 @@ from typing import Any, Dict, List, Tuple
 import boto3
 from botocore.exceptions import ClientError
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-log_level = os.environ.get('LOG_LEVEL', 'INFO')
-logger = logging.getLogger(__name__)
-logger.setLevel(getattr(logging, log_level))
+try:
+    from aws_lambda_powertools import Logger, Metrics
+    from aws_lambda_powertools.metrics import MetricUnit
+    logger = Logger()
+    metrics = Metrics()
+    _has_powertools = True
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
+    metrics = None
+    _has_powertools = False
 
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 TABLE_NAME = os.environ.get('STOCK_DATA_4H_TABLE', f'stock-data-4h-{ENVIRONMENT}')
@@ -294,6 +299,12 @@ def already_ingested(trade_date: str) -> bool:
 # ---------------------------------------------------------------------------
 # Handler
 # ---------------------------------------------------------------------------
+def _emit_metric(name: str, value: float, unit: str = "Count"):
+    """Emit a CloudWatch custom metric via Powertools (no-op if unavailable)."""
+    if metrics and _has_powertools:
+        metrics.add_metric(name=name, unit=getattr(MetricUnit, unit, MetricUnit.Count), value=value)
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Entry point. Triggered by EventBridge on a cron schedule.
@@ -376,6 +387,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # --- 3. Write to DynamoDB ---
     written, failed = batch_write_items(all_items)
 
+    # --- 4. Emit CloudWatch metrics ---
+    _emit_metric("RecordsWritten", written)
+    _emit_metric("TickersProcessed", len(tickers))
+    _emit_metric("TickersWithData", tickers_with_data)
+    _emit_metric("TickersEmpty", tickers_empty)
+    if failed:
+        _emit_metric("RecordsFailed", failed)
+
     result = {
         "statusCode": 200,
         "body": f"Ingested {written} 4h candles for {target_date}",
@@ -387,5 +406,5 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "recordsWritten": written,
         "recordsFailed": failed,
     }
-    logger.info(f"Ingestion complete: {result}")
+    logger.info("Ingestion complete", extra=result)
     return result
