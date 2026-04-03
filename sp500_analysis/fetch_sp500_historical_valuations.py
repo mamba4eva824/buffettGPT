@@ -57,7 +57,7 @@ def get_api_key() -> str:
 
 
 def fetch_historical_valuations(ticker: str, client: httpx.Client, limit: int = 10) -> list:
-    """Fetch annual key metrics from FMP."""
+    """Fetch annual key metrics from FMP (quarterly not available on current plan)."""
     url = f"{FMP_BASE_URL}/stable/key-metrics"
     params = {
         "symbol": ticker,

@@ -1,13 +1,49 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useRef } from 'react';
 
 // Shared sub-components for Value Insights panels
 
-export function MetricBar({ label, value, displayValue, maxValue = 1, color = 'bg-vi-accent' }) {
+// Hover tooltip for explaining financial metrics in plain language
+export function MetricTooltip({ tip, children }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const ref = useRef(null);
+  if (!tip) return children;
+  const handleEnter = () => {
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceAbove = rect.top;
+      const showBelow = spaceAbove < 120;
+      setPos({
+        top: showBelow ? rect.bottom + 6 : rect.top - 6,
+        left: Math.min(rect.left, window.innerWidth - 300),
+        below: showBelow,
+      });
+    }
+    setShow(true);
+  };
+  return (
+    <span ref={ref} className="relative inline-flex items-center gap-1 cursor-help" onMouseEnter={handleEnter} onMouseLeave={() => setShow(false)}>
+      {children}
+      <span className="material-symbols-outlined text-[14px] text-sand-400 dark:text-warm-500 hover:text-vi-gold transition-colors">info</span>
+      {show && (
+        <span
+          className="fixed z-50 w-72 bg-sand-50 dark:bg-warm-900 border border-sand-200 dark:border-warm-700 rounded-lg shadow-xl px-4 py-3 text-xs leading-relaxed pointer-events-none text-sand-600 dark:text-warm-200 font-normal normal-case tracking-normal"
+          style={{ top: pos.below ? pos.top : undefined, bottom: pos.below ? undefined : `${window.innerHeight - pos.top}px`, left: pos.left }}
+        >
+          {tip}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function MetricBar({ label, value, displayValue, maxValue = 1, color = 'bg-vi-accent', tip }) {
   const width = Math.min((value / maxValue) * 100, 100);
+  const labelEl = <span className="text-sm font-semibold text-sand-600 dark:text-warm-200">{label}</span>;
   return (
     <div>
       <div className="flex justify-between items-end mb-2">
-        <span className="text-sm font-semibold text-sand-600 dark:text-warm-200">{label}</span>
+        {tip ? <MetricTooltip tip={tip}>{labelEl}</MetricTooltip> : labelEl}
         <span className="text-lg font-bold text-vi-accent">{displayValue}</span>
       </div>
       <div className="h-4 bg-sand-200 dark:bg-warm-800 rounded-full overflow-hidden">
@@ -79,10 +115,11 @@ export function DeltaChip({ value }) {
 }
 
 // Bento tile with optional sparkline or icon
-export function BentoTile({ label, value, sparkline, color, icon }) {
+export function BentoTile({ label, value, sparkline, color, icon, tip }) {
+  const labelEl = <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400">{label}</span>;
   return (
-    <div className={`${CARD} !p-4 relative overflow-hidden`}>
-      <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">{label}</div>
+    <div className={`${CARD} !p-4 relative`}>
+      <div className="mb-1">{tip ? <MetricTooltip tip={tip}>{labelEl}</MetricTooltip> : labelEl}</div>
       <div className="text-2xl font-serif text-sand-900 dark:text-warm-50">{value}</div>
       {sparkline && sparkline.length > 1 && (
         <Sparkline data={sparkline} color={color} />

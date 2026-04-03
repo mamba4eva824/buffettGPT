@@ -50,14 +50,6 @@ const SCORECARD_CONFIG = {
       { label: 'GAAP Gap', valueFn: (q) => q.earnings_quality.gaap_adjusted_gap_pct, format: 'pct' },
     ],
   },
-  dilution: {
-    sparklineFn: (q) => q.dilution.diluted_shares,
-    sparklineColor: '#6d28d9',
-    metrics: [
-      { label: 'Dilution', valueFn: (q) => q.dilution.dilution_pct, format: 'pct' },
-      { label: 'Buybacks', valueFn: (q) => q.dilution.share_buybacks, format: 'billions' },
-    ],
-  },
 };
 
 const FORMAT_MAP = {

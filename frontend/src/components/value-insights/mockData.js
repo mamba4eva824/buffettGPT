@@ -212,7 +212,6 @@ export const MOCK_RATINGS = {
   earnings_quality: { rating: "Strong",   confidence: "High",   key_factors: ["Low SBC relative to revenue", "Cash conversion excellent", "Minimal accounting adjustments"] },
   cashflow:         { rating: "Strong",   confidence: "High",   key_factors: ["FCF margin near 29%", "Capex declining as % of revenue", "Massive cash generation"] },
   debt:             { rating: "Moderate", confidence: "Medium", key_factors: ["D/E elevated but manageable", "Interest coverage strong at 29x", "Debt used for buybacks"] },
-  dilution:         { rating: "Strong",   confidence: "High",   key_factors: ["Aggressive buyback program", "Share count declining 3% annually", "Dilution well below 1%"] },
   overall_verdict: "BUY",
   conviction: "High"
 };
@@ -266,13 +265,6 @@ export const CATEGORIES = [
     icon: 'verified',
     title: 'Earnings Quality',
     description: 'Real earnings power beyond GAAP — stock-based compensation and cash conversion analysis.',
-  },
-  {
-    id: 'dilution',
-    label: 'Dilution',
-    icon: 'group_add',
-    title: 'Dilution Analysis',
-    description: 'Share count trends and buyback effectiveness — is management creating or destroying value?',
   },
 ];
 

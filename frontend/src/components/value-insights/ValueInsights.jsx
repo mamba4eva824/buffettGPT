@@ -1,17 +1,43 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CATEGORIES } from './mockData';
 import { PANEL_MAP } from './panelMap';
 import useInsightsData from '../../hooks/useInsightsData';
 import sp500Companies from '../../data/sp500Companies.json';
 
+const VALID_TABS = new Set(CATEGORIES.map(c => c.id));
+const VALID_RANGES = new Set(['5Y', '3Y', '1Y']);
+
 export default function ValueInsights() {
-  const [activeCategory, setActiveCategory] = useState('dashboard');
-  const [timeRange, setTimeRange] = useState('5Y');
-  const [ticker, setTicker] = useState('AAPL');
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Initialize state from URL search params
+  const [activeCategory, setActiveCategory] = useState(() => {
+    const tab = searchParams.get('tab');
+    return tab && VALID_TABS.has(tab) ? tab : 'dashboard';
+  });
+  const [timeRange, setTimeRange] = useState(() => {
+    const range = searchParams.get('range');
+    return range && VALID_RANGES.has(range) ? range : '5Y';
+  });
+  const [ticker, setTicker] = useState(() => {
+    const t = searchParams.get('ticker');
+    return t ? t.toUpperCase() : 'AAPL';
+  });
   const [searchInput, setSearchInput] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
 
-  const { data, ratings, loading, error } = useInsightsData(ticker);
+  // Sync state changes to URL search params
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams);
+    params.set('mode', 'value-insights');
+    if (ticker !== 'AAPL') { params.set('ticker', ticker); } else { params.delete('ticker'); }
+    if (activeCategory !== 'dashboard') { params.set('tab', activeCategory); } else { params.delete('tab'); }
+    if (timeRange !== '5Y') { params.set('range', timeRange); } else { params.delete('range'); }
+    setSearchParams(params, { replace: true });
+  }, [ticker, activeCategory, timeRange]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data, ratings, latestPrice, loading, error } = useInsightsData(ticker);
 
   // Client-side fuzzy search over S&P 500 index
   const searchResults = useMemo(() => {
@@ -48,9 +74,9 @@ export default function ValueInsights() {
     <div className="flex flex-col h-full bg-sand-50 dark:bg-warm-950 text-sand-800 dark:text-warm-50 overflow-hidden">
       {/* Horizontal category nav bar */}
       <div className="shrink-0 border-b border-sand-200 dark:border-warm-800 bg-sand-50 dark:bg-warm-950">
-        <div className="flex items-center gap-3 px-4 md:px-6 py-2 overflow-x-auto scrollbar-none">
-          {/* Ticker badge */}
-          <div className="shrink-0 flex items-center gap-2.5 pr-4 border-r border-sand-200 dark:border-warm-800 mr-1">
+        <div className="flex items-center gap-3 px-4 md:px-6 py-2">
+          {/* Ticker search — outside overflow container so dropdown isn't clipped */}
+          <div className="shrink-0 flex items-center gap-2.5">
             <div className="relative">
               <input
                 type="text"
@@ -95,24 +121,28 @@ export default function ValueInsights() {
             )}
           </div>
 
-          {/* Category tabs */}
-          {CATEGORIES.map(cat => {
-            const isActive = cat.id === activeCategory;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id)}
-                className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all ${
-                  isActive
-                    ? 'bg-sand-200 dark:bg-warm-800 text-vi-gold border-b-2 border-vi-gold'
-                    : 'text-sand-500 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-900 hover:text-vi-gold'
-                }`}
-              >
-                <span className="material-symbols-outlined text-base">{cat.icon}</span>
-                <span className="hidden sm:inline">{cat.label}</span>
-              </button>
-            );
-          })}
+          {/* Category tabs — scrollable independently */}
+          <div className="flex-1 overflow-x-auto scrollbar-none min-w-0">
+            <div className="flex items-center gap-1">
+              {CATEGORIES.map(cat => {
+                const isActive = cat.id === activeCategory;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                      isActive
+                        ? 'bg-sand-200 dark:bg-warm-800 text-vi-gold border-b-2 border-vi-gold'
+                        : 'text-sand-500 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-900 hover:text-vi-gold'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-base">{cat.icon}</span>
+                    <span className="hidden sm:inline">{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Spacer */}
           <div className="flex-1" />
@@ -187,6 +217,7 @@ export default function ValueInsights() {
           <PanelComponent
             data={data}
             ratings={ratings}
+            latestPrice={latestPrice}
             timeRange={timeRange}
             onSelectCategory={setActiveCategory}
           />

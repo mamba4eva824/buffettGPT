@@ -1,17 +1,17 @@
 import { useMemo, useCallback } from 'react';
 import { fmt } from './mockData';
-import { MetricBar, DataTable, RatingBadge, CARD, DeltaChip, BentoTile, CagrChart, DuPontBlock, useFilteredData } from './shared';
+import { MetricBar, RatingBadge, CARD, DeltaChip, BentoTile, CagrChart, DuPontBlock, MetricTooltip, useFilteredData } from './shared';
 
 export function GrowthPanel({ data, ratings, timeRange }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
   const earliest = filtered[0];
 
-  // Chart bars — last 8 quarters
-  const chartQuarters = filtered.slice(-8);
+  // Chart bars — all quarters in the selected time range
+  const chartQuarters = filtered;
   const maxRevenue = Math.max(...chartQuarters.map(q => q.revenue_profit.revenue));
 
-  // --- CAGR calculations (#1 + #6) ---
+  // CAGR calculations
   const years = useMemo(() => {
     if (!earliest || !latest) return 0;
     return (new Date(latest.fiscal_date) - new Date(earliest.fiscal_date)) / (365.25 * 24 * 3600 * 1000);
@@ -24,15 +24,12 @@ export function GrowthPanel({ data, ratings, timeRange }) {
 
   const revCagr = useMemo(() => calcCagr(latest?.revenue_profit.revenue, earliest?.revenue_profit.revenue), [latest, earliest, calcCagr]);
   const epsCagr = useMemo(() => calcCagr(latest?.revenue_profit.eps, earliest?.revenue_profit.eps), [latest, earliest, calcCagr]);
-  const niCagr = useMemo(() => calcCagr(latest?.revenue_profit.net_income, earliest?.revenue_profit.net_income), [latest, earliest, calcCagr]);
-  const fcfCagr = useMemo(() => calcCagr(latest?.cashflow.free_cash_flow, earliest?.cashflow.free_cash_flow), [latest, earliest, calcCagr]);
-  const roicCagr = useMemo(() => calcCagr(latest?.valuation.roic, earliest?.valuation.roic), [latest, earliest, calcCagr]);
 
-  // #6 Acceleration: latest YoY vs CAGR
+  // Acceleration: latest YoY vs CAGR
   const latestRevYoY = latest?.revenue_profit.revenue_growth_yoy;
   const isAccelerating = (latestRevYoY != null && revCagr != null) ? latestRevYoY > revCagr : null;
 
-  // --- TTM calculations (#4) ---
+  // TTM calculations
   const ttm = useMemo(() => {
     if (filtered.length < 4) return null;
     const last4 = filtered.slice(-4);
@@ -42,20 +39,17 @@ export function GrowthPanel({ data, ratings, timeRange }) {
     const ttmNI = sum(last4, q => q.revenue_profit.net_income);
     const ttmEPS = sum(last4, q => q.revenue_profit.eps);
     const ttmFCF = sum(last4, q => q.cashflow.free_cash_flow);
-    const ttmGP = sum(last4, q => q.revenue_profit.gross_profit);
-    let revGrowth = null, niGrowth = null, epsGrowth = null;
+    let revGrowth = null, epsGrowth = null;
     if (prior4) {
       const pRev = sum(prior4, q => q.revenue_profit.revenue);
-      const pNI = sum(prior4, q => q.revenue_profit.net_income);
       const pEPS = sum(prior4, q => q.revenue_profit.eps);
       if (pRev > 0) revGrowth = (ttmRev - pRev) / Math.abs(pRev);
-      if (pNI !== 0) niGrowth = (ttmNI - pNI) / Math.abs(pNI);
       if (pEPS !== 0) epsGrowth = (ttmEPS - pEPS) / Math.abs(pEPS);
     }
-    return { revenue: ttmRev, netIncome: ttmNI, eps: ttmEPS, fcf: ttmFCF, grossProfit: ttmGP, revGrowth, niGrowth, epsGrowth };
+    return { revenue: ttmRev, netIncome: ttmNI, eps: ttmEPS, fcf: ttmFCF, revGrowth, epsGrowth };
   }, [filtered]);
 
-  // --- Growth consistency (#3) ---
+  // Growth consistency
   const consistency = useMemo(() => {
     const withGrowth = filtered.filter(q => q.revenue_profit.revenue_growth_yoy != null);
     if (withGrowth.length === 0) return null;
@@ -63,216 +57,175 @@ export function GrowthPanel({ data, ratings, timeRange }) {
     return { positive, total: withGrowth.length };
   }, [filtered]);
 
-  // Table data — most recent first, with QoQ deltas + new YoY columns (#1, #7)
+  // Growth quality: revenue growth vs EPS growth
+  const growthQuality = useMemo(() => {
+    if (!ttm?.revGrowth || !ttm?.epsGrowth) return null;
+    const diff = ttm.epsGrowth - ttm.revGrowth;
+    if (diff > 0.05) return { label: 'Buyback Boosted', desc: 'EPS growing faster than revenue due to share repurchases', color: 'text-vi-gold', bg: 'bg-vi-gold/10' };
+    if (diff < -0.05) return { label: 'Margin Pressure', desc: 'Earnings lagging revenue — costs growing faster', color: 'text-vi-rose', bg: 'bg-vi-rose/10' };
+    return { label: 'Organic Growth', desc: 'Earnings keep pace with revenue — healthy fundamental growth', color: 'text-vi-sage', bg: 'bg-vi-sage/10' };
+  }, [ttm]);
+
+  // Table data — simplified to 6 columns
   const reversed = filtered.slice().reverse();
   const tableData = reversed.map((q, i) => {
     const prev = reversed[i + 1];
     return {
       quarter: `${q.fiscal_quarter} ${q.fiscal_year}`,
       revenue: q.revenue_profit.revenue,
+      revYoY: q.revenue_profit.revenue_growth_yoy,
       netIncome: q.revenue_profit.net_income,
-      eps: q.revenue_profit.eps,
-      yoyGrowth: q.revenue_profit.revenue_growth_yoy,
-      epsYoY: q.revenue_profit.eps_growth_yoy,
       niYoY: q.revenue_profit.net_income_growth_yoy,
-      gpYoY: q.revenue_profit.gross_profit_growth_yoy,
+      eps: q.revenue_profit.eps,
       revDelta: prev ? fmt.delta(q.revenue_profit.revenue, prev.revenue_profit.revenue) : null,
-      niDelta: prev ? fmt.delta(q.revenue_profit.net_income, prev.revenue_profit.net_income) : null,
       epsDelta: prev ? fmt.delta(q.revenue_profit.eps, prev.revenue_profit.eps) : null,
     };
   });
 
-  // Sparkline data for bento tiles
+  // Sparkline data
   const revenueSparkline = filtered.map(q => q.revenue_profit.revenue);
   const epsSparkline = filtered.map(q => q.revenue_profit.eps);
-  const niSparkline = filtered.map(q => q.revenue_profit.net_income);
-  const fcfSparkline = filtered.map(q => q.cashflow.free_cash_flow);
-  const roicSparkline = filtered.map(q => q.valuation.roic);
+  const netMarginSparkline = filtered.map(q => q.revenue_profit.net_margin);
+  const grossProfitSparkline = filtered.map(q => q.revenue_profit.gross_profit);
 
-  // Color helper for YoY cells
   const yoyColor = (v) => v == null ? 'text-sand-400 dark:text-warm-400' : v < 0 ? 'text-vi-rose font-bold' : 'text-vi-sage font-bold';
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-      {/* Left column: Chart + TTM + Table */}
+      {/* Left column */}
       <section className="xl:col-span-8 space-y-6">
-        {/* Bar Chart */}
+        {/* Revenue & Earnings Bar Chart */}
         <div className={CARD}>
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Revenue & Net Income Growth</h3>
+            <RatingBadge rating={ratings?.growth?.rating} />
           </div>
-
-          {/* Bar visualization */}
-          <div className="relative h-[320px] w-full mt-4 flex items-end justify-between gap-2 md:gap-4 px-2">
+          <div className="relative h-[320px] w-full mt-4 flex items-end justify-between gap-1 md:gap-2 px-2">
             {chartQuarters.map((q) => {
               const revHeight = (q.revenue_profit.revenue / maxRevenue) * 100;
               const niRatio = q.revenue_profit.net_income / q.revenue_profit.revenue;
               const growth = q.revenue_profit.revenue_growth_yoy;
-              const barColor = growth == null
-                ? 'bg-sand-300 dark:bg-warm-700'
-                : growth >= 0
-                  ? 'bg-vi-sage/30 dark:bg-vi-sage/20'
-                  : 'bg-vi-rose/30 dark:bg-vi-rose/20';
-              const barHover = growth == null
-                ? 'group-hover:bg-sand-400 dark:group-hover:bg-warm-600'
-                : growth >= 0
-                  ? 'group-hover:bg-vi-sage/50'
-                  : 'group-hover:bg-vi-rose/50';
+              const barColor = growth == null ? 'bg-sand-300 dark:bg-warm-700' : growth >= 0 ? 'bg-vi-sage/30 dark:bg-vi-sage/20' : 'bg-vi-rose/30 dark:bg-vi-rose/20';
+              const barHover = growth == null ? 'group-hover:bg-sand-400 dark:group-hover:bg-warm-600' : growth >= 0 ? 'group-hover:bg-vi-sage/50' : 'group-hover:bg-vi-rose/50';
               return (
                 <div key={q.fiscal_date} className="relative flex-1 group" style={{ height: `${revHeight}%` }}>
                   <div className={`absolute inset-0 ${barColor} ${barHover} rounded-t-lg transition-all`} />
-                  <div
-                    className="absolute inset-x-0 bottom-0 bg-vi-gold/50 rounded-t-lg group-hover:bg-vi-gold/70 transition-all"
-                    style={{ height: `${niRatio * 100}%` }}
-                  />
-                  <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[9px] font-medium text-sand-400 dark:text-warm-400 whitespace-nowrap">
-                    {q.fiscal_quarter}
-                  </div>
-                  <div className="absolute -top-[72px] left-1/2 -translate-x-1/2 text-[10px] font-mono text-sand-600 dark:text-warm-200 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-sand-100 dark:bg-warm-900 px-2.5 py-1.5 rounded shadow-lg z-10 border border-sand-200 dark:border-warm-700">
+                  <div className="absolute inset-x-0 bottom-0 bg-vi-gold/50 rounded-t-lg group-hover:bg-vi-gold/70 transition-all" style={{ height: `${niRatio * 100}%` }} />
+                  {growth != null && (
+                    <div className={`absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold whitespace-nowrap ${growth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                      {growth >= 0 ? '+' : ''}{(growth * 100).toFixed(0)}%
+                    </div>
+                  )}
+                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] font-medium text-sand-500 dark:text-warm-300 whitespace-nowrap">{q.fiscal_quarter}</div>
+                  <div className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 text-[8px] text-sand-400 dark:text-warm-500 whitespace-nowrap">{q.fiscal_year}</div>
+                  <div className="absolute -top-[82px] left-1/2 -translate-x-1/2 text-[10px] font-mono text-sand-600 dark:text-warm-200 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-sand-100 dark:bg-warm-900 px-2.5 py-1.5 rounded shadow-lg z-10 border border-sand-200 dark:border-warm-700">
                     <div className="font-bold">{q.fiscal_quarter} {q.fiscal_year}</div>
                     <div>Rev: {fmt.billions(q.revenue_profit.revenue)}</div>
                     <div>NI: {fmt.billions(q.revenue_profit.net_income)}</div>
-                    {growth != null && (
-                      <div className={growth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}>YoY: {fmt.pctSigned(growth)}</div>
-                    )}
+                    <div>Margin: {fmt.pct(q.revenue_profit.net_margin)}</div>
+                    {growth != null && (<div className={growth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}>YoY: {fmt.pctSigned(growth)}</div>)}
                   </div>
                 </div>
               );
             })}
-
-            {/* Growth line SVG overlay */}
-            <svg className="absolute inset-0 h-full w-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <polyline
-                points={chartQuarters.map((q, i) => {
-                  const maxGrowth = Math.max(...chartQuarters.map(d => Math.abs(d.revenue_profit.revenue_growth_yoy || 0)), 0.01);
-                  const x = ((i + 0.5) / chartQuarters.length) * 100;
-                  const g = q.revenue_profit.revenue_growth_yoy || 0;
-                  const y = 50 - (g / maxGrowth) * 40;
-                  return `${x},${y}`;
-                }).join(' ')}
-                fill="none"
-                stroke="#a0d6ad"
-                strokeWidth="0.5"
-                strokeDasharray="1.5"
-                className="opacity-80"
-              />
-            </svg>
           </div>
-
-          {/* Legend */}
           <div className="mt-10 flex flex-wrap items-center gap-6 justify-center text-xs font-medium text-sand-500 dark:text-warm-300">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-vi-sage/30 rounded-sm border border-vi-sage/50" />
-              Revenue (growth)
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-sage/30 rounded-sm border border-vi-sage/50" />Revenue (growth)</div>
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-rose/30 rounded-sm border border-vi-rose/50" />Revenue (decline)</div>
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-gold/60 rounded-sm" />Net Income</div>
+          </div>
+        </div>
+
+        {/* Growth Snapshot — BentoTiles replacing flat TTM */}
+        <div className={CARD}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="material-symbols-outlined text-vi-gold text-lg">calendar_today</span>
+            <h3 className="font-serif text-lg text-sand-800 dark:text-warm-50">Growth Snapshot</h3>
+          </div>
+          <p className="text-[11px] text-sand-500 dark:text-warm-400 mb-4 italic">Trailing twelve months vs prior period</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className={`${CARD} !p-4 relative overflow-hidden`}>
+              <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">TTM Revenue</div>
+              <div className="text-xl font-serif text-sand-900 dark:text-warm-50">{ttm ? fmt.billions(ttm.revenue) : '—'}</div>
+              {ttm?.revGrowth != null && (<div className={`text-[10px] mt-1 font-bold ${ttm.revGrowth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>{fmt.pctSigned(ttm.revGrowth)} YoY</div>)}
+              {revenueSparkline.length > 1 && <div className="absolute right-2 bottom-2 opacity-40"><svg width="60" height="20"><polyline points={revenueSparkline.map((v, i) => `${(i / (revenueSparkline.length - 1)) * 60},${20 - ((v - Math.min(...revenueSparkline)) / (Math.max(...revenueSparkline) - Math.min(...revenueSparkline) || 1)) * 16 - 2}`).join(' ')} fill="none" stroke="#a0d6ad" strokeWidth="1.5" /></svg></div>}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-vi-rose/30 rounded-sm border border-vi-rose/50" />
-              Revenue (decline)
+            <div className={`${CARD} !p-4 relative overflow-hidden`}>
+              <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">TTM EPS</div>
+              <div className="text-xl font-serif text-sand-900 dark:text-warm-50">{ttm ? fmt.eps(ttm.eps) : '—'}</div>
+              {ttm?.epsGrowth != null && (<div className={`text-[10px] mt-1 font-bold ${ttm.epsGrowth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>{fmt.pctSigned(ttm.epsGrowth)} YoY</div>)}
+              {epsSparkline.length > 1 && <div className="absolute right-2 bottom-2 opacity-40"><svg width="60" height="20"><polyline points={epsSparkline.map((v, i) => `${(i / (epsSparkline.length - 1)) * 60},${20 - ((v - Math.min(...epsSparkline)) / (Math.max(...epsSparkline) - Math.min(...epsSparkline) || 1)) * 16 - 2}`).join(' ')} fill="none" stroke="#f2c35b" strokeWidth="1.5" /></svg></div>}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 bg-vi-gold/60 rounded-sm" />
-              Net Income
+            <div className={`${CARD} !p-4`}>
+              <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Revenue CAGR</div>
+              <div className={`text-xl font-serif ${revCagr != null && revCagr >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>{revCagr != null ? fmt.pctSigned(revCagr) : '—'}</div>
+              <div className="text-[10px] text-sand-500 dark:text-warm-400 mt-0.5">avg annual growth rate</div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-4 border-b border-dashed border-vi-sage" />
-              YoY Growth
+            <div className={`${CARD} !p-4 relative overflow-hidden`}>
+              <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Consistency</div>
+              {consistency ? (
+                <>
+                  <div className="text-xl font-serif text-sand-900 dark:text-warm-50">{consistency.positive}/{consistency.total}</div>
+                  <div className="text-[10px] text-sand-500 dark:text-warm-400 mt-0.5">quarters with growth</div>
+                  <svg className="absolute right-2 bottom-2 opacity-40" width="24" height="24" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="currentColor" strokeWidth="4" className="text-sand-200 dark:text-warm-700" />
+                    <circle cx="18" cy="18" r="14" fill="none" stroke="#a0d6ad" strokeWidth="4" strokeDasharray={`${(consistency.positive / consistency.total) * 88} 88`} strokeDashoffset="22" strokeLinecap="round" />
+                  </svg>
+                </>
+              ) : (<div className="text-xl font-serif text-sand-900 dark:text-warm-50">—</div>)}
             </div>
           </div>
         </div>
 
-        {/* #4 TTM Summary */}
-        {ttm && (
+        {/* Growth Quality Signal */}
+        {growthQuality && ttm && (
           <div className={CARD}>
             <div className="flex items-center gap-2 mb-4">
-              <span className="material-symbols-outlined text-vi-gold text-lg">calendar_today</span>
-              <h3 className="font-serif text-lg text-sand-800 dark:text-warm-50">Trailing Twelve Months (TTM)</h3>
+              <span className="material-symbols-outlined text-lg text-sand-500 dark:text-warm-300">compare_arrows</span>
+              <h3 className="font-serif text-lg text-sand-800 dark:text-warm-50">Growth Quality</h3>
+              <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-2 py-1 rounded ${growthQuality.bg} ${growthQuality.color}`}>{growthQuality.label}</span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 gap-6 mb-4">
               <div>
-                <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Revenue</div>
-                <div className="text-xl font-serif text-sand-900 dark:text-warm-50">{fmt.billions(ttm.revenue)}</div>
-                {ttm.revGrowth != null && (
-                  <div className={`text-xs mt-1 ${ttm.revGrowth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
-                    {fmt.pctSigned(ttm.revGrowth)} vs prior TTM
-                  </div>
-                )}
+                <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-2">Revenue Growth (TTM)</div>
+                <div className={`text-2xl font-serif font-bold ${ttm.revGrowth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>{fmt.pctSigned(ttm.revGrowth)}</div>
+                <div className="h-2 bg-sand-200 dark:bg-warm-800 rounded-full mt-2 overflow-hidden">
+                  <div className={`h-full rounded-full ${ttm.revGrowth >= 0 ? 'bg-vi-sage' : 'bg-vi-rose'}`} style={{ width: `${Math.min(Math.abs(ttm.revGrowth) * 200, 100)}%` }} />
+                </div>
               </div>
               <div>
-                <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Net Income</div>
-                <div className="text-xl font-serif text-sand-900 dark:text-warm-50">{fmt.billions(ttm.netIncome)}</div>
-                {ttm.niGrowth != null && (
-                  <div className={`text-xs mt-1 ${ttm.niGrowth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
-                    {fmt.pctSigned(ttm.niGrowth)} vs prior TTM
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">EPS</div>
-                <div className="text-xl font-serif text-sand-900 dark:text-warm-50">{fmt.eps(ttm.eps)}</div>
-                {ttm.epsGrowth != null && (
-                  <div className={`text-xs mt-1 ${ttm.epsGrowth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
-                    {fmt.pctSigned(ttm.epsGrowth)} vs prior TTM
-                  </div>
-                )}
-              </div>
-              <div>
-                <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Free Cash Flow</div>
-                <div className="text-xl font-serif text-sand-900 dark:text-warm-50">{fmt.billions(ttm.fcf)}</div>
+                <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-2">EPS Growth (TTM)</div>
+                <div className={`text-2xl font-serif font-bold ${ttm.epsGrowth >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>{fmt.pctSigned(ttm.epsGrowth)}</div>
+                <div className="h-2 bg-sand-200 dark:bg-warm-800 rounded-full mt-2 overflow-hidden">
+                  <div className={`h-full rounded-full ${ttm.epsGrowth >= 0 ? 'bg-vi-sage' : 'bg-vi-rose'}`} style={{ width: `${Math.min(Math.abs(ttm.epsGrowth) * 200, 100)}%` }} />
+                </div>
               </div>
             </div>
+            <p className="text-[11px] text-sand-500 dark:text-warm-400 italic">{growthQuality.desc}</p>
           </div>
         )}
 
-        {/* Enhanced Data Table — #1 EPS YoY, NI YoY + #7 GP YoY columns */}
-        <div className="bg-sand-100 dark:bg-warm-900 rounded-xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-sand-200/50 dark:border-warm-800/50">
-            <h3 className="font-serif text-lg text-sand-800 dark:text-warm-50">Quarterly Performance Breakdown</h3>
-          </div>
-          <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-sand-200/50 dark:bg-warm-800/50 text-[10px] uppercase tracking-wider text-sand-500 dark:text-warm-300 sticky top-0 z-10">
-                <tr>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">Quarter</th>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">Revenue</th>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">Rev YoY</th>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">GP YoY</th>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">Net Income</th>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">NI YoY</th>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">EPS</th>
-                  <th className="px-4 py-4 font-semibold bg-sand-200/80 dark:bg-warm-800/80 backdrop-blur-sm">EPS YoY</th>
+        {/* Quarterly Performance Table — simplified */}
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Quarterly Performance</h3>
+          <div className="overflow-x-auto -mx-8">
+            <table className="w-full text-left min-w-[600px]">
+              <thead>
+                <tr className="bg-sand-200/50 dark:bg-warm-800/50">
+                  {['Quarter', 'Revenue', 'Rev YoY', 'Net Income', 'NI YoY', 'EPS'].map((col, i) => (
+                    <th key={i} className={`px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-300 ${i > 0 ? 'text-right' : ''}`}>{col}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="text-sm divide-y divide-sand-200/30 dark:divide-warm-800/30">
+              <tbody className="divide-y divide-sand-200/50 dark:divide-warm-800/50">
                 {tableData.map((row, i) => (
-                  <tr
-                    key={i}
-                    className={`hover:bg-sand-200/40 dark:hover:bg-warm-800/40 transition-colors ${i % 2 === 1 ? 'bg-sand-50/50 dark:bg-warm-950/30' : ''}`}
-                  >
-                    <td className="px-4 py-4 font-medium text-sand-800 dark:text-warm-50 whitespace-nowrap">{row.quarter}</td>
-                    <td className="px-4 py-4 text-sand-600 dark:text-warm-200 whitespace-nowrap">
-                      {fmt.billions(row.revenue)}
-                      <DeltaChip value={row.revDelta} />
-                    </td>
-                    <td className={`px-4 py-4 whitespace-nowrap ${yoyColor(row.yoyGrowth)}`}>
-                      {row.yoyGrowth != null ? fmt.pctSigned(row.yoyGrowth) : '—'}
-                    </td>
-                    <td className={`px-4 py-4 whitespace-nowrap ${yoyColor(row.gpYoY)}`}>
-                      {row.gpYoY != null ? fmt.pctSigned(row.gpYoY) : '—'}
-                    </td>
-                    <td className="px-4 py-4 text-sand-600 dark:text-warm-200 whitespace-nowrap">
-                      {fmt.billions(row.netIncome)}
-                      <DeltaChip value={row.niDelta} />
-                    </td>
-                    <td className={`px-4 py-4 whitespace-nowrap ${yoyColor(row.niYoY)}`}>
-                      {row.niYoY != null ? fmt.pctSigned(row.niYoY) : '—'}
-                    </td>
-                    <td className="px-4 py-4 text-sand-600 dark:text-warm-200 whitespace-nowrap">
-                      {fmt.eps(row.eps)}
-                      <DeltaChip value={row.epsDelta} />
-                    </td>
-                    <td className={`px-4 py-4 whitespace-nowrap ${yoyColor(row.epsYoY)}`}>
-                      {row.epsYoY != null ? fmt.pctSigned(row.epsYoY) : '—'}
-                    </td>
+                  <tr key={i} className={`hover:bg-sand-200/50 dark:hover:bg-warm-800 transition-colors ${i % 2 === 1 ? 'bg-sand-50 dark:bg-warm-950/50' : ''}`}>
+                    <td className={`px-4 py-4 font-bold text-sand-800 dark:text-warm-50 whitespace-nowrap border-l-2 ${row.revYoY == null ? 'border-sand-300 dark:border-warm-600' : row.revYoY >= 0 ? 'border-vi-sage' : 'border-vi-rose'}`}>{row.quarter}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200 whitespace-nowrap">{fmt.billions(row.revenue)}<DeltaChip value={row.revDelta} /></td>
+                    <td className={`px-4 py-4 text-right whitespace-nowrap ${yoyColor(row.revYoY)}`}>{row.revYoY != null ? fmt.pctSigned(row.revYoY) : '—'}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.billions(row.netIncome)}</td>
+                    <td className={`px-4 py-4 text-right whitespace-nowrap ${yoyColor(row.niYoY)}`}>{row.niYoY != null ? fmt.pctSigned(row.niYoY) : '—'}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200 whitespace-nowrap">{fmt.eps(row.eps)}<DeltaChip value={row.epsDelta} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -283,14 +236,21 @@ export function GrowthPanel({ data, ratings, timeRange }) {
 
       {/* Right column: Insights */}
       <aside className="xl:col-span-4 space-y-6">
-        {/* Oracle's Perspective */}
+        {/* Oracle's Perspective — dynamic */}
         <div className={`${CARD} border-l-4 border-vi-gold-container shadow-xl`}>
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-vi-gold" style={{ fontVariationSettings: "'FILL' 1" }}>format_quote</span>
             <span className="text-xs font-bold uppercase tracking-widest text-vi-gold-dim">Oracle&apos;s Perspective</span>
           </div>
           <p className="font-serif italic text-lg leading-relaxed text-sand-700 dark:text-warm-100 mb-6">
-            &ldquo;Buffett looks for consistent earnings power. {latest?.ticker || 'AAPL'} shows {fmt.pct(latest?.revenue_profit.revenue_growth_yoy)} growth with net margin at {fmt.pct(latest?.revenue_profit.net_margin)} — high margins remain their moat.&rdquo;
+            {isAccelerating && latest?.revenue_profit.is_margin_expanding
+              ? <>&ldquo;Revenue is accelerating and margins are expanding — the hallmark of a business hitting its stride. {latest?.ticker || 'AAPL'} is growing {fmt.pct(latestRevYoY)} while widening its moat. This is compound growth in action.&rdquo;</>
+              : isAccelerating === false && latest?.revenue_profit.is_margin_expanding
+                ? <>&ldquo;The top line is slowing but margins are still expanding — management is finding efficiency. {latest?.ticker || 'AAPL'} earns more per dollar even as revenue growth moderates to {fmt.pct(latestRevYoY)}.&rdquo;</>
+                : isAccelerating === false && !latest?.revenue_profit.is_margin_expanding
+                  ? <>&ldquo;Both growth and margins are under pressure. At {fmt.pct(latestRevYoY)} revenue growth with compressing margins, focus on whether this is cyclical or structural. The best businesses bounce back.&rdquo;</>
+                  : <>&ldquo;Consistent earnings power is what matters. {latest?.ticker || 'AAPL'} shows {fmt.pct(latestRevYoY)} growth with net margin at {fmt.pct(latest?.revenue_profit.net_margin)} — steady compounding creates the most wealth over time.&rdquo;</>
+            }
           </p>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-sand-200 dark:bg-warm-800 flex items-center justify-center border border-sand-300 dark:border-warm-700">
@@ -303,9 +263,8 @@ export function GrowthPanel({ data, ratings, timeRange }) {
           </div>
         </div>
 
-        {/* Growth CAGR Charts + Metrics */}
+        {/* Revenue CAGR Chart with acceleration badge */}
         <div className="grid grid-cols-2 gap-4">
-          {/* Revenue CAGR chart with #6 acceleration badge */}
           <div className={`col-span-2 ${CARD} !p-4`}>
             <div className="flex items-center gap-2 mb-1">
               {isAccelerating != null && (
@@ -317,49 +276,12 @@ export function GrowthPanel({ data, ratings, timeRange }) {
             </div>
             <CagrChart data={revenueSparkline} quarters={filtered} cagr={revCagr} label="Revenue Growth" color="#a0d6ad" formatFn={fmt.billions} />
           </div>
-          {/* EPS & NI CAGR Charts */}
-          <div className={`col-span-2 ${CARD} !p-4 space-y-4`}>
-            <CagrChart data={epsSparkline} quarters={filtered} cagr={epsCagr} label="EPS Growth" color="#f2c35b" formatFn={fmt.eps} />
-            <div className="border-t border-sand-200/30 dark:border-warm-800/30 pt-4">
-              <CagrChart data={niSparkline} quarters={filtered} cagr={niCagr} label="Net Income Growth" color="#6d28d9" formatFn={fmt.billions} />
-            </div>
-          </div>
-          {/* #5 FCF Growth chart */}
           <div className={`col-span-2 ${CARD} !p-4`}>
-            <CagrChart data={fcfSparkline} quarters={filtered} cagr={fcfCagr} label="Free Cash Flow" color="#38bdf8" formatFn={fmt.billions} />
-          </div>
-          {/* #8 ROIC Trend chart */}
-          <div className={`col-span-2 ${CARD} !p-4`}>
-            <CagrChart data={roicSparkline} quarters={filtered} cagr={roicCagr} label="Return on Invested Capital" color="#f59e0b" formatFn={fmt.pct} />
-          </div>
-          {/* #3 Growth Consistency */}
-          <div className={`${CARD} !p-4 relative overflow-hidden`}>
-            <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Consistency</div>
-            {consistency ? (
-              <>
-                <div className="text-2xl font-serif text-sand-900 dark:text-warm-50">
-                  {consistency.positive}/{consistency.total}
-                </div>
-                <div className="text-[10px] text-sand-500 dark:text-warm-400 mt-0.5">
-                  quarters with YoY growth
-                </div>
-                {/* Mini donut */}
-                <svg className="absolute right-3 bottom-3 opacity-40" width="28" height="28" viewBox="0 0 36 36">
-                  <circle cx="18" cy="18" r="14" fill="none" stroke="currentColor" strokeWidth="4" className="text-sand-200 dark:text-warm-700" />
-                  <circle
-                    cx="18" cy="18" r="14" fill="none" stroke="#a0d6ad" strokeWidth="4"
-                    strokeDasharray={`${(consistency.positive / consistency.total) * 88} 88`}
-                    strokeDashoffset="22" strokeLinecap="round"
-                  />
-                </svg>
-              </>
-            ) : (
-              <div className="text-2xl font-serif text-sand-900 dark:text-warm-50">—</div>
-            )}
+            <CagrChart data={epsSparkline} quarters={filtered} cagr={epsCagr} label="Earnings Per Share" color="#f2c35b" formatFn={fmt.eps} />
           </div>
         </div>
 
-        {/* #2 Margin Expansion Card */}
+        {/* Margin Trend Card */}
         <div className={CARD}>
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-lg text-sand-500 dark:text-warm-300">expand</span>
@@ -391,6 +313,14 @@ export function GrowthPanel({ data, ratings, timeRange }) {
           <div className="text-[10px] text-sand-400 dark:text-warm-500 mt-2">vs same quarter 1 year ago</div>
         </div>
 
+        {/* Bento Tiles */}
+        <div className="grid grid-cols-2 gap-4">
+          <BentoTile label="Net Margin" value={fmt.pct(latest?.revenue_profit.net_margin)} sparkline={netMarginSparkline} color="#6d28d9" />
+          <BentoTile label="Rev QoQ" value={latest?.revenue_profit.revenue_growth_qoq != null ? fmt.pctSigned(latest.revenue_profit.revenue_growth_qoq) : '—'} icon="swap_vert" />
+          <BentoTile label="Gross Profit" value={fmt.billions(latest?.revenue_profit.gross_profit)} sparkline={grossProfitSparkline} color="#a0d6ad" />
+          <BentoTile label="CapEx Intensity" value={fmt.pct(latest?.cashflow.capex_intensity)} icon="precision_manufacturing" />
+        </div>
+
         {/* Growth Rating */}
         <div className={`${CARD} !p-4 flex items-center justify-between`}>
           <div>
@@ -399,7 +329,7 @@ export function GrowthPanel({ data, ratings, timeRange }) {
               {ratings?.growth?.rating || 'Moderate'} <span className="text-sm font-sans text-sand-500 dark:text-warm-400">Conviction</span>
             </div>
           </div>
-          <span className="material-symbols-outlined text-3xl text-vi-sage/30">visibility</span>
+          <span className="material-symbols-outlined text-3xl text-vi-sage/30">trending_up</span>
         </div>
 
         {/* Market Context */}
@@ -409,7 +339,7 @@ export function GrowthPanel({ data, ratings, timeRange }) {
           </div>
           <h4 className="font-serif text-lg mb-3">Market Context</h4>
           <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed">
-            Revenue growth of {fmt.pct(latest?.revenue_profit.revenue_growth_yoy)} with net margin at {fmt.pct(latest?.revenue_profit.net_margin)} demonstrates pricing power. CapEx intensity at just {fmt.pct(latest?.cashflow.capex_intensity)} signals an asset-light model — a hallmark Buffett trait.
+            Revenue growth of {fmt.pct(latest?.revenue_profit.revenue_growth_yoy)} with net margin at {fmt.pct(latest?.revenue_profit.net_margin)} demonstrates pricing power. {latest?.cashflow.capex_intensity < 0.05 ? `CapEx intensity at just ${fmt.pct(latest?.cashflow.capex_intensity)} signals an asset-light model — a hallmark Buffett trait.` : `The business reinvests ${fmt.pct(latest?.cashflow.capex_intensity)} of revenue back into growth.`}
           </p>
         </div>
       </aside>
@@ -421,7 +351,7 @@ export function ProfitabilityPanel({ data, ratings, timeRange }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
   const earliest = filtered[0];
-  const chartQuarters = filtered.slice(-8);
+  const chartQuarters = filtered;
 
   // Margin trend direction (expanding or compressing vs prior quarter)
   const reversed = filtered.slice().reverse();
@@ -725,10 +655,21 @@ export function ProfitabilityPanel({ data, ratings, timeRange }) {
   );
 }
 
-export function ValuationPanel({ data, ratings, timeRange }) {
+export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
   const earliest = filtered[0];
+
+  // Live P/E from latest market close + most recent TTM earnings
+  const livePE = useMemo(() => {
+    if (!latestPrice?.price || !latest?.valuation.earnings_yield) return null;
+    // earnings_yield is already decimal (e.g., 0.035 = 3.5%)
+    const ey = latest.valuation.earnings_yield;
+    if (!ey || ey <= 0) return null;
+    const ttmEPS = ey * (latest.valuation.stock_price || 0);
+    if (!ttmEPS || ttmEPS <= 0) return null;
+    return latestPrice.price / ttmEPS;
+  }, [latestPrice, latest]);
 
   // Quarters with valid valuation multiples (non-null P/E)
   const withMultiples = useMemo(() => filtered.filter(q => q.valuation.pe_ratio != null), [filtered]);
@@ -795,13 +736,27 @@ export function ValuationPanel({ data, ratings, timeRange }) {
   }, [withMultiples]);
 
   // Assessment helper: compare current to historical average + percentile
+  const timeLabel = timeRange === '1Y' ? '1-year' : timeRange === '3Y' ? '3-year' : '5-year';
   const assess = (current, avg, allValues) => {
     if (current == null || avg == null || avg === 0) return { label: '—', color: 'text-sand-400' };
     const pct = allValues ? percentile(current, allValues) : null;
     const ratio = current / avg;
-    if (ratio < 0.8) return { label: 'Near Historical Low', color: 'text-vi-sage', bg: 'bg-vi-sage/10', percentile: pct };
-    if (ratio > 1.2) return { label: 'Near Historical High', color: 'text-vi-rose', bg: 'bg-vi-rose/10', percentile: pct };
-    return { label: 'Near Average', color: 'text-vi-gold', bg: 'bg-vi-gold/10', percentile: pct };
+    const discount = Math.abs((1 - ratio) * 100).toFixed(0);
+    if (ratio < 0.8) return {
+      label: 'Below Average',
+      color: 'text-vi-sage', bg: 'bg-vi-sage/10', percentile: pct,
+      hint: `${discount}% below its ${timeLabel} average — you\'re paying less than usual for this stock relative to its own history.`,
+    };
+    if (ratio > 1.2) return {
+      label: 'Above Average',
+      color: 'text-vi-rose', bg: 'bg-vi-rose/10', percentile: pct,
+      hint: `${discount}% above its ${timeLabel} average — the market is pricing in higher growth expectations than usual.`,
+    };
+    return {
+      label: 'Fair Range',
+      color: 'text-vi-gold', bg: 'bg-vi-gold/10', percentile: pct,
+      hint: `Within normal range of its ${timeLabel} average — priced roughly in line with what investors have typically paid.`,
+    };
   };
 
   // Price multiple cards config — includes historical values for percentile computation
@@ -815,6 +770,7 @@ export function ValuationPanel({ data, ratings, timeRange }) {
       allValues: withMultiples.map(q => q.valuation.pe_ratio),
       explain: 'How many years of profits you\'re paying for',
       format: fmt.x,
+      tip: 'The P/E ratio divides the stock price by the company\'s earnings per share over the last 12 months. A P/E of 30x means you\'re paying $30 for every $1 the company earns. Lower P/E can mean a cheaper stock, but very low P/E might signal problems. Compare it to the company\'s own history, not just other companies.',
     },
     {
       label: 'Price-to-Book',
@@ -825,6 +781,7 @@ export function ValuationPanel({ data, ratings, timeRange }) {
       allValues: withMultiples.map(q => q.valuation.pb_ratio).filter(v => v != null),
       explain: 'What premium you\'re paying over the company\'s net assets',
       format: fmt.x,
+      tip: 'Price-to-Book compares what the stock market values the company at vs. what the company actually owns minus what it owes (its "book value"). A P/B of 40x means investors pay $40 for every $1 of net assets — common for tech companies with valuable brands and IP that don\'t show up on the balance sheet.',
     },
     {
       label: 'Enterprise Value Multiple',
@@ -835,6 +792,7 @@ export function ValuationPanel({ data, ratings, timeRange }) {
       allValues: withMultiples.map(q => q.valuation.ev_ebitda).filter(v => v != null),
       explain: 'What the entire business costs relative to its cash earnings',
       format: fmt.x,
+      tip: 'EV/EBITDA looks at the total cost to buy the entire business (including its debt, minus its cash) relative to its operating earnings before interest, taxes, and accounting adjustments. It\'s often considered more accurate than P/E because it accounts for debt and isn\'t distorted by tax strategies.',
     },
     {
       label: 'Price-to-Free Cash',
@@ -845,6 +803,7 @@ export function ValuationPanel({ data, ratings, timeRange }) {
       allValues: withMultiples.map(q => q.valuation.price_to_fcf).filter(v => v != null),
       explain: 'What you pay per dollar the business actually generates',
       format: fmt.x,
+      tip: 'Free cash flow is the actual cash left over after the company pays all its bills and invests in its business. P/FCF tells you how much you\'re paying for each dollar of real cash the company generates. Many investors consider this the most honest valuation metric because cash is harder to manipulate than earnings.',
     },
   ];
 
@@ -879,13 +838,39 @@ export function ValuationPanel({ data, ratings, timeRange }) {
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
       {/* Left column: Charts + Data */}
       <section className="xl:col-span-8 space-y-6">
+        {/* Current Market Price Banner */}
+        {latestPrice && (
+          <div className={`${CARD} !py-4 border-l-4 border-vi-gold`}>
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mr-2">Last Close</span>
+                <span className="text-2xl font-serif font-bold text-sand-900 dark:text-warm-50">${latestPrice.price.toFixed(2)}</span>
+              </div>
+              {livePE != null && (
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mr-2">Live P/E</span>
+                  <span className="text-2xl font-serif font-bold text-sand-900 dark:text-warm-50">{fmt.x(livePE)}</span>
+                  {latest?.valuation.pe_ratio != null && (
+                    <span className={`ml-2 text-xs font-bold ${livePE > latest.valuation.pe_ratio ? 'text-vi-rose' : 'text-vi-sage'}`}>
+                      {livePE > latest.valuation.pe_ratio ? '+' : ''}{fmt.x(livePE - latest.valuation.pe_ratio)} vs last quarter
+                    </span>
+                  )}
+                </div>
+              )}
+              <span className="text-[10px] text-sand-400 dark:text-warm-500 ml-auto">
+                as of {latestPrice.date}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Price Multiples Overview */}
         <div className={CARD}>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">What Are You Paying?</h3>
             <RatingBadge rating={ratings?.valuation?.rating} />
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
             {multipleCards.map((m) => {
               const assessment = assess(m.value, m.avg, m.allValues);
               const rangeMin = m.range?.min;
@@ -893,49 +878,53 @@ export function ValuationPanel({ data, ratings, timeRange }) {
               const rangeSpan = (rangeMin != null && rangeMax != null && rangeMax > rangeMin) ? rangeMax - rangeMin : null;
               const rangePosition = (rangeSpan && m.value != null) ? Math.max(0, Math.min(1, (m.value - rangeMin) / rangeSpan)) : null;
               return (
-                <div key={m.abbr} className={`${CARD} !p-5 relative overflow-hidden`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400">{m.label}</span>
+                <div key={m.abbr} className={`${CARD} !p-6 relative flex flex-col`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <MetricTooltip tip={m.tip}>
+                      <span className="text-xs uppercase font-bold text-sand-500 dark:text-warm-400 tracking-wide">{m.label}</span>
+                    </MetricTooltip>
                     {assessment.bg && (
-                      <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${assessment.bg} ${assessment.color}`}>
+                      <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${assessment.bg} ${assessment.color}`}>
                         {assessment.label}
                       </span>
                     )}
                   </div>
-                  <div className="text-3xl font-serif font-bold text-sand-900 dark:text-warm-50 mb-1">
+                  <div className="text-4xl font-serif font-bold text-sand-900 dark:text-warm-50 mb-2">
                     {m.value != null ? m.format(m.value) : '—'}
                   </div>
-                  <p className="text-[11px] text-sand-500 dark:text-warm-400 leading-snug italic">{m.explain}</p>
+                  <p className="text-sm text-sand-500 dark:text-warm-400 leading-snug italic mb-1">{m.explain}</p>
                   {/* Historical range bar */}
-                  {rangePosition != null && (
-                    <div className="mt-3">
-                      <div className="flex items-center justify-between text-[9px] text-sand-400 dark:text-warm-500 mb-1">
-                        <span>Low {m.format(rangeMin)}</span>
-                        {m.avg != null && <span className="text-vi-gold">Avg {m.format(m.avg)}</span>}
-                        <span>High {m.format(rangeMax)}</span>
-                      </div>
-                      <div className="relative h-1.5 bg-sand-200/60 dark:bg-warm-800/60 rounded-full overflow-hidden">
-                        <div
-                          className="absolute top-0 left-0 h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${rangePosition * 100}%`,
-                            background: rangePosition < 0.33 ? '#6d9e78' : rangePosition > 0.66 ? '#c47a7a' : '#d4a843',
-                          }}
-                        />
-                      </div>
-                      {assessment.percentile != null && (
-                        <div className="text-[9px] text-sand-400 dark:text-warm-500 mt-1">
-                          {assessment.percentile}th percentile of historical range
+                  <div className="mt-auto pt-3">
+                    {rangePosition != null && (
+                      <>
+                        <div className="flex items-center justify-between text-[11px] text-sand-400 dark:text-warm-500 mb-1.5">
+                          <span>{timeLabel} low: {m.format(rangeMin)}</span>
+                          {m.avg != null && <span className="text-vi-gold font-bold">avg: {m.format(m.avg)}</span>}
+                          <span>high: {m.format(rangeMax)}</span>
                         </div>
-                      )}
-                    </div>
-                  )}
-                  {/* Fallback: show average without range bar */}
-                  {rangePosition == null && m.avg != null && (
-                    <div className="text-[10px] text-sand-400 dark:text-warm-500 mt-2">
-                      Avg: {m.format(m.avg)}
-                    </div>
-                  )}
+                        <div className="relative h-2 bg-sand-200/60 dark:bg-warm-800/60 rounded-full overflow-hidden">
+                          <div
+                            className="absolute top-0 left-0 h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${rangePosition * 100}%`,
+                              background: rangePosition < 0.33 ? '#6d9e78' : rangePosition > 0.66 ? '#c47a7a' : '#d4a843',
+                            }}
+                          />
+                        </div>
+                        {assessment.hint && (
+                          <p className={`text-xs leading-relaxed mt-2.5 ${assessment.color}`}>
+                            {assessment.hint}
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {/* Fallback: show average without range bar */}
+                    {rangePosition == null && m.avg != null && (
+                      <div className="text-xs text-sand-400 dark:text-warm-500">
+                        {timeLabel} avg: {m.format(m.avg)}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -973,9 +962,9 @@ export function ValuationPanel({ data, ratings, timeRange }) {
         <div className={CARD}>
           <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-8">Capital Efficiency</h3>
           <div className="space-y-10">
-            <MetricBar label="Return on Equity (ROE)" value={latest?.valuation.roe} displayValue={fmt.pct(latest?.valuation.roe)} maxValue={2} color="bg-vi-accent" />
-            <MetricBar label="Return on Invested Capital (ROIC)" value={latest?.valuation.roic} displayValue={fmt.pct(latest?.valuation.roic)} maxValue={1} color="bg-vi-accent/80" />
-            <MetricBar label="Return on Assets (ROA)" value={latest?.valuation.roa} displayValue={fmt.pct(latest?.valuation.roa)} maxValue={0.5} color="bg-vi-accent/60" />
+            <MetricBar label="Return on Equity (ROE)" value={latest?.valuation.roe} displayValue={fmt.pct(latest?.valuation.roe)} maxValue={2} color="bg-vi-accent" tip="ROE measures how much profit a company generates with the money shareholders have invested. A higher ROE means the company is better at turning your investment into profits. Buffett looks for companies with consistently high ROE (above 15%) as a sign of a competitive advantage." />
+            <MetricBar label="Return on Invested Capital (ROIC)" value={latest?.valuation.roic} displayValue={fmt.pct(latest?.valuation.roic)} maxValue={1} color="bg-vi-accent/80" tip="ROIC measures how efficiently a company uses ALL the capital invested in it (both from shareholders and lenders) to generate profits. It's considered the single best measure of business quality. An ROIC above 15% suggests the company has a durable competitive moat." />
+            <MetricBar label="Return on Assets (ROA)" value={latest?.valuation.roa} displayValue={fmt.pct(latest?.valuation.roa)} maxValue={0.5} color="bg-vi-accent/60" tip="ROA shows how efficiently a company uses everything it owns to make money. A higher ROA means the company doesn't need a lot of expensive factories, equipment, or inventory to generate profits — it's doing more with less." />
           </div>
           <div className="mt-8">
             <CagrChart data={roicSparkline} quarters={filtered} cagr={roicCagr} label="ROIC Trend" color="#6d28d9" formatFn={fmt.pct} />
@@ -1049,23 +1038,25 @@ export function ValuationPanel({ data, ratings, timeRange }) {
 
         {/* Bento Tiles */}
         <div className="grid grid-cols-2 gap-4">
-          <BentoTile label="P/E Ratio" value={latest?.valuation.pe_ratio != null ? fmt.x(latest.valuation.pe_ratio) : '—'} sparkline={peSparkline} color="#6d28d9" />
-          <BentoTile label="Earnings Yield" value={latest?.valuation.earnings_yield != null ? fmt.pct(latest.valuation.earnings_yield) : '—'} sparkline={earningsYieldSparkline} color="#a0d6ad" />
-          <BentoTile label="Price / FCF" value={latest?.valuation.price_to_fcf != null ? fmt.x(latest.valuation.price_to_fcf) : '—'} sparkline={pFcfSparkline} color="#f2c35b" />
-          <BentoTile label="Book Value / Share" value={latest?.valuation.book_value_per_share != null ? fmt.eps(latest.valuation.book_value_per_share) : '—'} icon="menu_book" />
+          <BentoTile label="P/E Ratio" value={latest?.valuation.pe_ratio != null ? fmt.x(latest.valuation.pe_ratio) : '—'} sparkline={peSparkline} color="#6d28d9" tip="Price divided by trailing 12-month earnings per share. Shows how the market values each dollar of profit." />
+          <BentoTile label="Earnings Yield" value={latest?.valuation.earnings_yield != null ? fmt.pct(latest.valuation.earnings_yield) : '—'} sparkline={earningsYieldSparkline} color="#a0d6ad" tip="The inverse of P/E — shows the percentage return the stock 'earns' for you. Compare this to bond yields or savings account rates to gauge if the stock offers a better return." />
+          <BentoTile label="Price / FCF" value={latest?.valuation.price_to_fcf != null ? fmt.x(latest.valuation.price_to_fcf) : '—'} sparkline={pFcfSparkline} color="#f2c35b" tip="Price relative to the actual cash the business generates after all expenses and reinvestment. Lower means more cash per dollar you invest." />
+          <BentoTile label="Book Value / Share" value={latest?.valuation.book_value_per_share != null ? fmt.eps(latest.valuation.book_value_per_share) : '—'} icon="menu_book" tip="The company's total assets minus its total debts, divided by the number of shares. This is what each share would theoretically be worth if the company sold everything and paid off all debts." />
         </div>
 
         {/* Margin of Safety */}
         <div className={CARD}>
           <div className="flex items-center gap-2 mb-4">
             <span className="material-symbols-outlined text-vi-accent text-lg">shield</span>
-            <h4 className="font-serif text-lg text-sand-800 dark:text-warm-50">Margin of Safety</h4>
+            <MetricTooltip tip="Warren Buffett's core principle: only buy when the price is meaningfully below what you think the business is worth. The 'margin of safety' is the gap between the current price and fair value — the bigger the gap, the more room for error in your analysis. This chart shows how today's P/E compares to its own historical range.">
+              <h4 className="font-serif text-lg text-sand-800 dark:text-warm-50">Margin of Safety</h4>
+            </MetricTooltip>
           </div>
           {currentPE != null && avgPE != null ? (
             <>
-              <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-3">P/E vs Historical Average</div>
+              <div className="text-xs uppercase font-bold text-sand-500 dark:text-warm-400 mb-3">P/E vs {timeLabel} average</div>
               {/* Range bar */}
-              <div className="relative h-3 bg-sand-200 dark:bg-warm-800 rounded-full mb-2">
+              <div className="relative h-3.5 bg-sand-200 dark:bg-warm-800 rounded-full mb-2">
                 {/* Average marker */}
                 <div
                   className="absolute top-0 bottom-0 w-0.5 bg-vi-gold z-10"
@@ -1073,7 +1064,7 @@ export function ValuationPanel({ data, ratings, timeRange }) {
                 />
                 {/* Current P/E dot */}
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white dark:border-warm-900 shadow-md z-20"
+                  className="absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 border-white dark:border-warm-900 shadow-md z-20"
                   style={{
                     left: `${Math.max(0, Math.min(100, ((currentPE - peRange.min) / (peRange.max - peRange.min)) * 100))}%`,
                     transform: 'translate(-50%, -50%)',
@@ -1081,17 +1072,17 @@ export function ValuationPanel({ data, ratings, timeRange }) {
                   }}
                 />
               </div>
-              <div className="flex justify-between text-[9px] text-sand-400 dark:text-warm-500 mb-4">
+              <div className="flex justify-between text-[11px] text-sand-400 dark:text-warm-500 mb-4">
                 <span>{fmt.x(peRange.min)}</span>
                 <span className="text-vi-gold font-bold">Avg {fmt.x(avgPE)}</span>
                 <span>{fmt.x(peRange.max)}</span>
               </div>
-              <p className={`text-sm leading-relaxed italic ${marginOfSafety > 0 ? 'text-vi-sage' : marginOfSafety < -0.2 ? 'text-vi-rose' : 'text-vi-gold'}`}>
+              <p className={`text-sm leading-relaxed ${marginOfSafety > 0 ? 'text-vi-sage' : marginOfSafety < -0.2 ? 'text-vi-rose' : 'text-vi-gold'}`}>
                 {marginOfSafety > 0
-                  ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% below its historical average P/E. "Be greedy when others are fearful."`
+                  ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% below its ${timeLabel} average P/E. "Be greedy when others are fearful."`
                   : marginOfSafety < -0.2
-                    ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% above its historical average. Premium pricing demands premium conviction.`
-                    : 'Near its historical fair value. Focus on the quality of the business.'}
+                    ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% above its ${timeLabel} average. Premium pricing demands premium conviction.`
+                    : `Near its ${timeLabel} fair value. Focus on the quality of the business.`}
               </p>
             </>
           ) : (
@@ -1100,9 +1091,9 @@ export function ValuationPanel({ data, ratings, timeRange }) {
         </div>
 
         {/* Valuation Rating */}
-        <div className={`${CARD} !p-4 flex items-center justify-between`}>
+        <div className={`${CARD} !p-5 flex items-center justify-between`}>
           <div>
-            <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Valuation Rating</div>
+            <div className="text-xs uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Valuation Rating</div>
             <div className="text-xl font-serif text-vi-accent">
               {ratings?.valuation?.rating || 'Moderate'} <span className="text-sm font-sans text-sand-500 dark:text-warm-400">Conviction</span>
             </div>
@@ -1130,31 +1121,170 @@ export function ValuationPanel({ data, ratings, timeRange }) {
 export function CashFlowPanel({ data, ratings, timeRange }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
-  const rows = filtered.slice().reverse().map(q => [
-    `${q.fiscal_quarter} ${q.fiscal_year}`,
-    fmt.billions(q.cashflow.operating_cash_flow),
-    fmt.billions(Math.abs(q.cashflow.capex)),
-    fmt.billions(q.cashflow.free_cash_flow),
-    fmt.pct(q.cashflow.fcf_margin),
-  ]);
+  const earliest = filtered[0];
+
+  // CAGR calculations
+  const years = useMemo(() => {
+    if (!earliest || !latest) return 0;
+    return (new Date(latest.fiscal_date) - new Date(earliest.fiscal_date)) / (365.25 * 24 * 3600 * 1000);
+  }, [earliest, latest]);
+
+  const calcCagr = useCallback((latestVal, earliestVal) => {
+    if (!latestVal || !earliestVal || earliestVal <= 0 || years <= 0) return null;
+    return Math.pow(latestVal / earliestVal, 1 / years) - 1;
+  }, [years]);
+
+  const fcfCagr = useMemo(() => calcCagr(latest?.cashflow.free_cash_flow, earliest?.cashflow.free_cash_flow), [latest, earliest, calcCagr]);
+  const ocfCagr = useMemo(() => calcCagr(latest?.cashflow.operating_cash_flow, earliest?.cashflow.operating_cash_flow), [latest, earliest, calcCagr]);
+
+  // Sparkline data
+  const fcfSparkline = filtered.map(q => q.cashflow.free_cash_flow);
+  const ocfSparkline = filtered.map(q => q.cashflow.operating_cash_flow);
+  const fcfMarginSparkline = filtered.map(q => q.cashflow.fcf_margin);
+  const capexSparkline = filtered.map(q => Math.abs(q.cashflow.capex));
+
+  // Bar chart — all quarters in selected time range
+  const chartQuarters = filtered;
+  const maxOCF = Math.max(...chartQuarters.map(q => q.cashflow.operating_cash_flow));
+
+  // Cash conversion ratio (FCF / Net Income)
+  const cashConversion = latest?.cashflow.free_cash_flow && latest?.revenue_profit.net_income
+    ? latest.cashflow.free_cash_flow / latest.revenue_profit.net_income
+    : null;
+
+  // Table data
+  const reversed = filtered.slice().reverse();
+  const tableData = reversed.map((q, i) => {
+    const prev = reversed[i + 1];
+    return {
+      quarter: `${q.fiscal_quarter} ${q.fiscal_year}`,
+      ocf: q.cashflow.operating_cash_flow,
+      capex: q.cashflow.capex,
+      fcf: q.cashflow.free_cash_flow,
+      fcfMargin: q.cashflow.fcf_margin,
+      ocfToRev: q.cashflow.ocf_to_revenue,
+      fcfDelta: prev ? fmt.delta(q.cashflow.free_cash_flow, prev.cashflow.free_cash_flow) : null,
+      fcfYoY: q.cashflow.fcf_change_yoy,
+    };
+  });
+
+  const yoyColor = (v) => v == null ? 'text-sand-400 dark:text-warm-400' : v < 0 ? 'text-vi-rose font-bold' : 'text-vi-sage font-bold';
 
   return (
-    <div className="grid grid-cols-12 gap-6">
-      <div className={`col-span-12 lg:col-span-5 ${CARD}`}>
-        <div className="flex justify-between items-center mb-8">
-          <h3 className="font-serif text-xl font-bold">Cash Generation</h3>
-          <RatingBadge rating={ratings?.cashflow?.rating} />
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      <section className="xl:col-span-8 space-y-6">
+        <div className={CARD}>
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Cash Flow Generation</h3>
+            <RatingBadge rating={ratings?.cashflow?.rating} />
+          </div>
+          <div className="relative h-[280px] w-full flex items-end justify-between gap-1 md:gap-2 px-2">
+            {chartQuarters.map((q) => {
+              const ocfHeight = (q.cashflow.operating_cash_flow / maxOCF) * 100;
+              const fcfRatio = q.cashflow.free_cash_flow / q.cashflow.operating_cash_flow;
+              return (
+                <div key={q.fiscal_date} className="relative flex-1 group" style={{ height: `${ocfHeight}%` }}>
+                  <div className="absolute inset-0 bg-vi-sage/25 group-hover:bg-vi-sage/40 rounded-t-lg transition-all" />
+                  <div className="absolute inset-x-0 bottom-0 bg-vi-gold/50 rounded-t-lg group-hover:bg-vi-gold/70 transition-all" style={{ height: `${fcfRatio * 100}%` }} />
+                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] font-medium text-sand-400 dark:text-warm-400 whitespace-nowrap">{q.fiscal_quarter}</div>
+                  <div className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 text-[8px] text-sand-400 dark:text-warm-500 whitespace-nowrap">{q.fiscal_year}</div>
+                  <div className="absolute -top-[72px] left-1/2 -translate-x-1/2 text-[10px] font-mono text-sand-600 dark:text-warm-200 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-sand-100 dark:bg-warm-900 px-2.5 py-1.5 rounded shadow-lg z-10 border border-sand-200 dark:border-warm-700">
+                    <div className="font-bold">{q.fiscal_quarter} {q.fiscal_year}</div>
+                    <div>OCF: {fmt.billions(q.cashflow.operating_cash_flow)}</div>
+                    <div>FCF: {fmt.billions(q.cashflow.free_cash_flow)}</div>
+                    <div>Margin: {fmt.pct(q.cashflow.fcf_margin)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-10 flex flex-wrap items-center gap-6 justify-center text-xs font-medium text-sand-500 dark:text-warm-300">
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-sage/30 rounded-sm border border-vi-sage/50" />Operating Cash Flow</div>
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-gold/60 rounded-sm" />Free Cash Flow</div>
+          </div>
         </div>
-        <div className="space-y-10">
-          <MetricBar label="Operating Cash Flow" value={latest?.cashflow.operating_cash_flow} displayValue={fmt.billions(latest?.cashflow.operating_cash_flow)} maxValue={Math.max(...filtered.map(d => d.cashflow.operating_cash_flow)) * 1.2} color="bg-vi-sage" />
-          <MetricBar label="Free Cash Flow" value={latest?.cashflow.free_cash_flow} displayValue={fmt.billions(latest?.cashflow.free_cash_flow)} maxValue={Math.max(...filtered.map(d => d.cashflow.operating_cash_flow)) * 1.2} color="bg-vi-gold" />
-          <MetricBar label="FCF Margin" value={latest?.cashflow.fcf_margin} displayValue={fmt.pct(latest?.cashflow.fcf_margin)} maxValue={0.4} color="bg-vi-accent" />
-        </div>
-      </div>
 
-      <div className="col-span-12 lg:col-span-7">
-        <DataTable columns={['Quarter', 'Op. CF', 'CapEx', 'FCF', 'FCF Margin']} rows={rows} />
-      </div>
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-8">Cash Efficiency</h3>
+          <div className="space-y-10">
+            <MetricBar label="Operating Cash Flow" value={latest?.cashflow.operating_cash_flow} displayValue={fmt.billions(latest?.cashflow.operating_cash_flow)} maxValue={Math.max(...filtered.map(d => d.cashflow.operating_cash_flow)) * 1.2} color="bg-vi-sage" />
+            <MetricBar label="Free Cash Flow" value={latest?.cashflow.free_cash_flow} displayValue={fmt.billions(latest?.cashflow.free_cash_flow)} maxValue={Math.max(...filtered.map(d => d.cashflow.operating_cash_flow)) * 1.2} color="bg-vi-gold" />
+            <MetricBar label="FCF Margin" value={latest?.cashflow.fcf_margin} displayValue={fmt.pct(latest?.cashflow.fcf_margin)} maxValue={0.4} color="bg-vi-accent" />
+          </div>
+        </div>
+
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Quarterly Cash Flow Detail</h3>
+          <div className="overflow-x-auto -mx-8">
+            <table className="w-full text-left min-w-[700px]">
+              <thead>
+                <tr className="bg-sand-200/50 dark:bg-warm-800/50">
+                  {['Quarter', 'Op. Cash Flow', 'CapEx', 'Free Cash Flow', 'FCF Margin', 'OCF/Revenue', 'FCF YoY'].map((col, i) => (
+                    <th key={i} className={`px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-300 ${i > 0 ? 'text-right' : ''}`}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-sand-200/50 dark:divide-warm-800/50">
+                {tableData.map((row, i) => (
+                  <tr key={i} className={`hover:bg-sand-200/50 dark:hover:bg-warm-800 transition-colors ${i % 2 === 1 ? 'bg-sand-50 dark:bg-warm-950/50' : ''}`}>
+                    <td className="px-4 py-4 font-bold text-sand-800 dark:text-warm-50 whitespace-nowrap">{row.quarter}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.billions(row.ocf)}</td>
+                    <td className="px-4 py-4 text-right text-vi-rose">{fmt.billions(row.capex)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200 whitespace-nowrap">{fmt.billions(row.fcf)}<DeltaChip value={row.fcfDelta} /></td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.pct(row.fcfMargin)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.pct(row.ocfToRev)}</td>
+                    <td className={`px-4 py-4 text-right whitespace-nowrap ${yoyColor(row.fcfYoY)}`}>{row.fcfYoY != null ? fmt.pctSigned(row.fcfYoY) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <aside className="xl:col-span-4 space-y-6">
+        <div className={`${CARD} border-l-4 border-vi-gold-container shadow-xl`}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-vi-gold" style={{ fontVariationSettings: "'FILL' 1" }}>format_quote</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-vi-gold-dim">Oracle&apos;s Perspective</span>
+          </div>
+          <p className="font-serif italic text-lg leading-relaxed text-sand-700 dark:text-warm-100 mb-6">
+            &ldquo;Free cash flow is what a business actually earns for its owners. {latest?.ticker || 'AAPL'} converts {fmt.pct(latest?.cashflow.fcf_margin)} of revenue into free cash — that&apos;s the real earning power behind the earnings.&rdquo;
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-sand-200 dark:bg-warm-800 flex items-center justify-center border border-sand-300 dark:border-warm-700"><span className="material-symbols-outlined text-vi-gold text-lg">psychology</span></div>
+            <div><div className="text-sm font-bold">Insight Engine</div><div className="text-[10px] text-sand-500 dark:text-warm-400 uppercase tracking-tighter">Value Synthesis AI</div></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className={`col-span-2 ${CARD} !p-4`}><CagrChart data={fcfSparkline} quarters={filtered} cagr={fcfCagr} label="Free Cash Flow" color="#f2c35b" formatFn={fmt.billions} /></div>
+          <div className={`col-span-2 ${CARD} !p-4`}><CagrChart data={ocfSparkline} quarters={filtered} cagr={ocfCagr} label="Operating Cash Flow" color="#a0d6ad" formatFn={fmt.billions} /></div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <BentoTile label="FCF Margin" value={fmt.pct(latest?.cashflow.fcf_margin)} sparkline={fcfMarginSparkline} color="#6d28d9" />
+          <BentoTile label="CapEx" value={fmt.billions(Math.abs(latest?.cashflow.capex))} sparkline={capexSparkline} color="#ffb4ab" />
+          <BentoTile label="Cash Conversion" value={cashConversion != null ? `${(cashConversion * 100).toFixed(0)}%` : '—'} icon="swap_vert" />
+          <BentoTile label="OCF / Revenue" value={fmt.pct(latest?.cashflow.ocf_to_revenue)} icon="percent" />
+        </div>
+
+        <div className={`${CARD} !p-4 flex items-center justify-between`}>
+          <div>
+            <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Cash Flow Rating</div>
+            <div className="text-xl font-serif text-vi-sage">{ratings?.cashflow?.rating || 'Moderate'} <span className="text-sm font-sans text-sand-500 dark:text-warm-400">Conviction</span></div>
+          </div>
+          <span className="material-symbols-outlined text-3xl text-vi-sage/30">savings</span>
+        </div>
+
+        <div className={`${CARD} relative overflow-hidden group`}>
+          <div className="absolute -right-8 -bottom-8 opacity-5 group-hover:opacity-10 transition-opacity"><span className="material-symbols-outlined text-[120px]">savings</span></div>
+          <h4 className="font-serif text-lg mb-3">Market Context</h4>
+          <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed">
+            FCF margin of {fmt.pct(latest?.cashflow.fcf_margin)} with CapEx at just {fmt.pct(latest?.cashflow.capex_intensity)} of revenue signals an asset-light model. {cashConversion != null && cashConversion > 1 ? 'Cash conversion above 100% means the business generates more cash than its reported earnings — a quality signal.' : 'Strong cash generation supports dividends and buybacks.'}
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -1162,32 +1292,156 @@ export function CashFlowPanel({ data, ratings, timeRange }) {
 export function DebtPanel({ data, ratings, timeRange }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
-  const rows = filtered.slice().reverse().map(q => [
-    `${q.fiscal_quarter} ${q.fiscal_year}`,
-    fmt.billions(q.balance_sheet.total_debt),
-    fmt.billions(q.balance_sheet.cash_position),
-    fmt.billions(q.balance_sheet.net_debt),
-    fmt.ratio(q.debt_leverage.debt_to_equity),
-    fmt.x(q.debt_leverage.interest_coverage),
-  ]);
+  const earliest = filtered[0];
+
+  const deSparkline = filtered.map(q => q.debt_leverage.debt_to_equity);
+  const icSparkline = filtered.map(q => q.debt_leverage.interest_coverage);
+  const netDebtSparkline = filtered.map(q => q.balance_sheet.net_debt);
+  const currentRatioSparkline = filtered.map(q => q.debt_leverage.current_ratio);
+
+  const debtTrend = earliest && latest
+    ? ((latest.balance_sheet.total_debt - earliest.balance_sheet.total_debt) / earliest.balance_sheet.total_debt)
+    : null;
+
+  const chartQuarters = filtered;
+  const maxDebt = Math.max(...chartQuarters.map(q => q.balance_sheet.total_debt));
+
+  const reversed = filtered.slice().reverse();
+  const tableData = reversed.map((q, i) => {
+    const prev = reversed[i + 1];
+    return {
+      quarter: `${q.fiscal_quarter} ${q.fiscal_year}`,
+      totalDebt: q.balance_sheet.total_debt,
+      cash: q.balance_sheet.cash_position,
+      netDebt: q.balance_sheet.net_debt,
+      de: q.debt_leverage.debt_to_equity,
+      ic: q.debt_leverage.interest_coverage,
+      currentRatio: q.debt_leverage.current_ratio,
+      deDelta: prev ? fmt.delta(q.debt_leverage.debt_to_equity, prev.debt_leverage.debt_to_equity) : null,
+    };
+  });
 
   return (
-    <div className="grid grid-cols-12 gap-6">
-      <div className={`col-span-12 lg:col-span-5 ${CARD}`}>
-        <div className="flex justify-between items-center mb-8">
-          <h3 className="font-serif text-xl font-bold">Balance Sheet Strength</h3>
-          <RatingBadge rating={ratings?.debt?.rating} />
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      <section className="xl:col-span-8 space-y-6">
+        <div className={CARD}>
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Debt vs Cash Position</h3>
+            <RatingBadge rating={ratings?.debt?.rating} />
+          </div>
+          <div className="relative h-[280px] w-full flex items-end justify-between gap-1 md:gap-2 px-2">
+            {chartQuarters.map((q) => {
+              const debtHeight = (q.balance_sheet.total_debt / maxDebt) * 100;
+              const cashRatio = q.balance_sheet.cash_position / q.balance_sheet.total_debt;
+              return (
+                <div key={q.fiscal_date} className="relative flex-1 group" style={{ height: `${debtHeight}%` }}>
+                  <div className="absolute inset-0 bg-vi-rose/25 group-hover:bg-vi-rose/40 rounded-t-lg transition-all" />
+                  <div className="absolute inset-x-0 bottom-0 bg-vi-sage/50 rounded-t-lg group-hover:bg-vi-sage/70 transition-all" style={{ height: `${Math.min(cashRatio * 100, 100)}%` }} />
+                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] font-medium text-sand-400 dark:text-warm-400 whitespace-nowrap">{q.fiscal_quarter}</div>
+                  <div className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 text-[8px] text-sand-400 dark:text-warm-500 whitespace-nowrap">{q.fiscal_year}</div>
+                  <div className="absolute -top-[82px] left-1/2 -translate-x-1/2 text-[10px] font-mono text-sand-600 dark:text-warm-200 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-sand-100 dark:bg-warm-900 px-2.5 py-1.5 rounded shadow-lg z-10 border border-sand-200 dark:border-warm-700">
+                    <div className="font-bold">{q.fiscal_quarter} {q.fiscal_year}</div>
+                    <div className="text-vi-rose">Debt: {fmt.billions(q.balance_sheet.total_debt)}</div>
+                    <div className="text-vi-sage">Cash: {fmt.billions(q.balance_sheet.cash_position)}</div>
+                    <div>D/E: {fmt.ratio(q.debt_leverage.debt_to_equity)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-10 flex flex-wrap items-center gap-6 justify-center text-xs font-medium text-sand-500 dark:text-warm-300">
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-rose/30 rounded-sm border border-vi-rose/50" />Total Debt</div>
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-sage/50 rounded-sm border border-vi-sage/60" />Cash Position</div>
+          </div>
         </div>
-        <div className="space-y-10">
-          <MetricBar label="Total Debt" value={latest?.balance_sheet.total_debt} displayValue={fmt.billions(latest?.balance_sheet.total_debt)} maxValue={Math.max(...filtered.map(d => d.balance_sheet.total_debt)) * 1.2} color="bg-vi-rose" />
-          <MetricBar label="Cash Position" value={latest?.balance_sheet.cash_position} displayValue={fmt.billions(latest?.balance_sheet.cash_position)} maxValue={Math.max(...filtered.map(d => d.balance_sheet.total_debt)) * 1.2} color="bg-vi-sage" />
-          <MetricBar label="D/E Ratio" value={latest?.debt_leverage.debt_to_equity} displayValue={fmt.ratio(latest?.debt_leverage.debt_to_equity)} maxValue={3} color="bg-vi-gold" />
-        </div>
-      </div>
 
-      <div className="col-span-12 lg:col-span-7">
-        <DataTable columns={['Quarter', 'Total Debt', 'Cash', 'Net Debt', 'D/E', 'Int. Coverage']} rows={rows} />
-      </div>
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-8">Balance Sheet Strength</h3>
+          <div className="space-y-10">
+            <MetricBar label="Total Debt" value={latest?.balance_sheet.total_debt} displayValue={fmt.billions(latest?.balance_sheet.total_debt)} maxValue={Math.max(...filtered.map(d => d.balance_sheet.total_debt)) * 1.2} color="bg-vi-rose" />
+            <MetricBar label="Cash Position" value={latest?.balance_sheet.cash_position} displayValue={fmt.billions(latest?.balance_sheet.cash_position)} maxValue={Math.max(...filtered.map(d => d.balance_sheet.total_debt)) * 1.2} color="bg-vi-sage" />
+            <MetricBar label="D/E Ratio" value={latest?.debt_leverage.debt_to_equity} displayValue={fmt.ratio(latest?.debt_leverage.debt_to_equity)} maxValue={3} color="bg-vi-gold" />
+          </div>
+        </div>
+
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Quarterly Debt Detail</h3>
+          <div className="overflow-x-auto -mx-8">
+            <table className="w-full text-left min-w-[700px]">
+              <thead>
+                <tr className="bg-sand-200/50 dark:bg-warm-800/50">
+                  {['Quarter', 'Total Debt', 'Cash', 'Net Debt', 'D/E Ratio', 'Int. Coverage', 'Current Ratio'].map((col, i) => (
+                    <th key={i} className={`px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-300 ${i > 0 ? 'text-right' : ''}`}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-sand-200/50 dark:divide-warm-800/50">
+                {tableData.map((row, i) => (
+                  <tr key={i} className={`hover:bg-sand-200/50 dark:hover:bg-warm-800 transition-colors ${i % 2 === 1 ? 'bg-sand-50 dark:bg-warm-950/50' : ''}`}>
+                    <td className="px-4 py-4 font-bold text-sand-800 dark:text-warm-50 whitespace-nowrap">{row.quarter}</td>
+                    <td className="px-4 py-4 text-right text-vi-rose">{fmt.billions(row.totalDebt)}</td>
+                    <td className="px-4 py-4 text-right text-vi-sage">{fmt.billions(row.cash)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.billions(row.netDebt)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200 whitespace-nowrap">{fmt.ratio(row.de)}<DeltaChip value={row.deDelta} /></td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.x(row.ic)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.ratio(row.currentRatio)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <aside className="xl:col-span-4 space-y-6">
+        <div className={`${CARD} border-l-4 border-vi-gold-container shadow-xl`}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-vi-gold" style={{ fontVariationSettings: "'FILL' 1" }}>format_quote</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-vi-gold-dim">Oracle&apos;s Perspective</span>
+          </div>
+          <p className="font-serif italic text-lg leading-relaxed text-sand-700 dark:text-warm-100 mb-6">
+            {latest?.debt_leverage.interest_coverage > 10
+              ? <>&ldquo;Interest coverage at {fmt.x(latest?.debt_leverage.interest_coverage)} means this company earns its interest expense many times over. Debt used wisely — like borrowing at low rates to buy back shares — can create value.&rdquo;</>
+              : <>&ldquo;A D/E ratio of {fmt.ratio(latest?.debt_leverage.debt_to_equity)} warrants attention. The balance sheet should be a fortress, not a liability. Look for declining debt and growing cash reserves.&rdquo;</>
+            }
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-sand-200 dark:bg-warm-800 flex items-center justify-center border border-sand-300 dark:border-warm-700"><span className="material-symbols-outlined text-vi-gold text-lg">psychology</span></div>
+            <div><div className="text-sm font-bold">Insight Engine</div><div className="text-[10px] text-sand-500 dark:text-warm-400 uppercase tracking-tighter">Value Synthesis AI</div></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className={`col-span-2 ${CARD} !p-4`}><CagrChart data={deSparkline} quarters={filtered} cagr={deSparkline.length > 1 ? deSparkline.reduce((a, b) => a + b, 0) / deSparkline.length : 0} label="Debt-to-Equity Trend" color="#ffb4ab" formatFn={fmt.ratio} summaryLabel={`Avg ${fmt.ratio(deSparkline.reduce((a, b) => a + b, 0) / deSparkline.length)}`} /></div>
+          <div className={`col-span-2 ${CARD} !p-4`}><CagrChart data={icSparkline} quarters={filtered} cagr={icSparkline.length > 1 ? icSparkline.reduce((a, b) => a + b, 0) / icSparkline.length : 0} label="Interest Coverage" color="#a0d6ad" formatFn={fmt.x} summaryLabel={`Avg ${fmt.x(icSparkline.reduce((a, b) => a + b, 0) / icSparkline.length)}`} /></div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <BentoTile label="D/E Ratio" value={fmt.ratio(latest?.debt_leverage.debt_to_equity)} sparkline={deSparkline} color="#ffb4ab" />
+          <BentoTile label="Interest Cov." value={fmt.x(latest?.debt_leverage.interest_coverage)} sparkline={icSparkline} color="#a0d6ad" />
+          <BentoTile label="Net Debt" value={fmt.billions(latest?.balance_sheet.net_debt)} sparkline={netDebtSparkline} color="#f2c35b" />
+          <BentoTile label="Current Ratio" value={fmt.ratio(latest?.debt_leverage.current_ratio)} sparkline={currentRatioSparkline} color="#6d28d9" />
+        </div>
+
+        <div className={`${CARD} !p-4 flex items-center justify-between`}>
+          <div>
+            <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Debt Trajectory</div>
+            <div className={`text-xl font-serif ${debtTrend != null && debtTrend < 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+              {debtTrend != null ? (debtTrend < 0 ? 'Deleveraging' : 'Increasing') : '—'}
+              <span className="text-sm font-sans text-sand-500 dark:text-warm-400 ml-2">{debtTrend != null ? fmt.pctSigned(debtTrend) : ''}</span>
+            </div>
+          </div>
+          <span className={`material-symbols-outlined text-3xl ${debtTrend != null && debtTrend < 0 ? 'text-vi-sage/30' : 'text-vi-rose/30'}`}>{debtTrend != null && debtTrend < 0 ? 'trending_down' : 'trending_up'}</span>
+        </div>
+
+        <div className={`${CARD} relative overflow-hidden group`}>
+          <div className="absolute -right-8 -bottom-8 opacity-5 group-hover:opacity-10 transition-opacity"><span className="material-symbols-outlined text-[120px]">account_balance</span></div>
+          <h4 className="font-serif text-lg mb-3">Market Context</h4>
+          <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed">
+            D/E ratio at {fmt.ratio(latest?.debt_leverage.debt_to_equity)} with interest coverage of {fmt.x(latest?.debt_leverage.interest_coverage)} — {latest?.debt_leverage.interest_coverage > 15 ? 'the company can service its debt comfortably. Cash reserves of ' + fmt.billions(latest?.balance_sheet.cash_position) + ' provide a strong buffer.' : 'leverage requires monitoring but remains manageable.'}
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -1195,68 +1449,169 @@ export function DebtPanel({ data, ratings, timeRange }) {
 export function EarningsQualityPanel({ data, ratings, timeRange }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
-  const rows = filtered.slice().reverse().map(q => [
-    `${q.fiscal_quarter} ${q.fiscal_year}`,
-    fmt.billions(q.earnings_quality.gaap_net_income),
-    fmt.billions(q.earnings_quality.sbc_actual),
-    fmt.pct(q.earnings_quality.sbc_to_revenue_pct),
-  ]);
-
-  return (
-    <div className="grid grid-cols-12 gap-6">
-      <div className={`col-span-12 lg:col-span-5 ${CARD}`}>
-        <div className="flex justify-between items-center mb-8">
-          <h3 className="font-serif text-xl font-bold">Earnings Authenticity</h3>
-          <RatingBadge rating={ratings?.earnings_quality?.rating} />
-        </div>
-        <div className="space-y-10">
-          <MetricBar label="GAAP Net Income" value={latest?.earnings_quality.gaap_net_income} displayValue={fmt.billions(latest?.earnings_quality.gaap_net_income)} maxValue={Math.max(...filtered.map(d => d.earnings_quality.gaap_net_income)) * 1.2} color="bg-vi-sage" />
-          <MetricBar label="Stock-Based Comp" value={latest?.earnings_quality.sbc_actual} displayValue={fmt.billions(latest?.earnings_quality.sbc_actual)} maxValue={Math.max(...filtered.map(d => d.earnings_quality.gaap_net_income)) * 1.2} color="bg-vi-rose" />
-          <MetricBar label="SBC / Revenue" value={latest?.earnings_quality.sbc_to_revenue_pct} displayValue={fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} maxValue={0.1} color="bg-vi-gold" />
-        </div>
-      </div>
-
-      <div className="col-span-12 lg:col-span-7">
-        <DataTable columns={['Quarter', 'GAAP Income', 'SBC', 'SBC/Revenue']} rows={rows} />
-      </div>
-    </div>
-  );
-}
-
-export function DilutionPanel({ data, ratings, timeRange }) {
-  const filtered = useFilteredData(data, timeRange);
-  const latest = filtered[filtered.length - 1];
   const earliest = filtered[0];
-  const shareChange = earliest && latest
-    ? ((latest.dilution.diluted_shares - earliest.dilution.diluted_shares) / earliest.dilution.diluted_shares * 100).toFixed(1)
-    : 0;
 
-  const rows = filtered.slice().reverse().map(q => [
-    `${q.fiscal_quarter} ${q.fiscal_year}`,
-    fmt.shares(q.dilution.basic_shares),
-    fmt.shares(q.dilution.diluted_shares),
-    fmt.pct(q.dilution.dilution_pct / 100),
-  ]);
+  const sbcSparkline = filtered.map(q => q.earnings_quality.sbc_actual);
+  const sbcPctSparkline = filtered.map(q => q.earnings_quality.sbc_to_revenue_pct);
+  const gaapSparkline = filtered.map(q => q.earnings_quality.gaap_net_income);
+
+  const years = useMemo(() => {
+    if (!earliest || !latest) return 0;
+    return (new Date(latest.fiscal_date) - new Date(earliest.fiscal_date)) / (365.25 * 24 * 3600 * 1000);
+  }, [earliest, latest]);
+
+  const gaapCagr = useMemo(() => {
+    if (!latest?.earnings_quality.gaap_net_income || !earliest?.earnings_quality.gaap_net_income || earliest.earnings_quality.gaap_net_income <= 0 || years <= 0) return null;
+    return Math.pow(latest.earnings_quality.gaap_net_income / earliest.earnings_quality.gaap_net_income, 1 / years) - 1;
+  }, [latest, earliest, years]);
+
+  const gaapGap = latest?.earnings_quality.gaap_adjusted_gap_pct;
+
+  const sbcTrend = earliest && latest && earliest.earnings_quality.sbc_to_revenue_pct > 0
+    ? latest.earnings_quality.sbc_to_revenue_pct - earliest.earnings_quality.sbc_to_revenue_pct
+    : null;
+
+  const chartQuarters = filtered;
+  const maxEarnings = Math.max(...chartQuarters.map(q => Math.max(q.earnings_quality.gaap_net_income, q.earnings_quality.adjusted_earnings)));
+
+  const reversed = filtered.slice().reverse();
+  const tableData = reversed.map((q, i) => {
+    const prev = reversed[i + 1];
+    return {
+      quarter: `${q.fiscal_quarter} ${q.fiscal_year}`,
+      gaap: q.earnings_quality.gaap_net_income,
+      sbc: q.earnings_quality.sbc_actual,
+      sbcPct: q.earnings_quality.sbc_to_revenue_pct,
+      adjusted: q.earnings_quality.adjusted_earnings,
+      gaapGap: q.earnings_quality.gaap_adjusted_gap_pct,
+      dna: q.earnings_quality.d_and_a,
+      sbcDelta: prev ? fmt.delta(q.earnings_quality.sbc_to_revenue_pct, prev.earnings_quality.sbc_to_revenue_pct) : null,
+    };
+  });
 
   return (
-    <div className="grid grid-cols-12 gap-6">
-      <div className={`col-span-12 lg:col-span-5 ${CARD}`}>
-        <div className="flex justify-between items-center mb-8">
-          <h3 className="font-serif text-xl font-bold">Shareholder Value</h3>
-          <RatingBadge rating={ratings?.dilution?.rating} />
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      <section className="xl:col-span-8 space-y-6">
+        <div className={CARD}>
+          <div className="flex items-center justify-between mb-8">
+            <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">GAAP vs Adjusted Earnings</h3>
+            <RatingBadge rating={ratings?.earnings_quality?.rating} />
+          </div>
+          <div className="relative h-[280px] w-full flex items-end justify-between gap-1 md:gap-2 px-2">
+            {chartQuarters.map((q) => {
+              const adjustedHeight = (q.earnings_quality.adjusted_earnings / maxEarnings) * 100;
+              const gaapRatio = q.earnings_quality.gaap_net_income / q.earnings_quality.adjusted_earnings;
+              return (
+                <div key={q.fiscal_date} className="relative flex-1 group" style={{ height: `${adjustedHeight}%` }}>
+                  <div className="absolute inset-0 bg-vi-gold/25 group-hover:bg-vi-gold/40 rounded-t-lg transition-all" />
+                  <div className="absolute inset-x-0 bottom-0 bg-vi-sage/50 rounded-t-lg group-hover:bg-vi-sage/70 transition-all" style={{ height: `${Math.min(gaapRatio * 100, 100)}%` }} />
+                  <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] font-medium text-sand-400 dark:text-warm-400 whitespace-nowrap">{q.fiscal_quarter}</div>
+                  <div className="absolute -bottom-[18px] left-1/2 -translate-x-1/2 text-[8px] text-sand-400 dark:text-warm-500 whitespace-nowrap">{q.fiscal_year}</div>
+                  <div className="absolute -top-[72px] left-1/2 -translate-x-1/2 text-[10px] font-mono text-sand-600 dark:text-warm-200 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-sand-100 dark:bg-warm-900 px-2.5 py-1.5 rounded shadow-lg z-10 border border-sand-200 dark:border-warm-700">
+                    <div className="font-bold">{q.fiscal_quarter} {q.fiscal_year}</div>
+                    <div className="text-vi-sage">GAAP: {fmt.billions(q.earnings_quality.gaap_net_income)}</div>
+                    <div className="text-vi-gold">Adjusted: {fmt.billions(q.earnings_quality.adjusted_earnings)}</div>
+                    <div>SBC: {fmt.billions(q.earnings_quality.sbc_actual)}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-10 flex flex-wrap items-center gap-6 justify-center text-xs font-medium text-sand-500 dark:text-warm-300">
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-sage/50 rounded-sm border border-vi-sage/60" />GAAP Net Income</div>
+            <div className="flex items-center gap-2"><span className="w-3 h-3 bg-vi-gold/30 rounded-sm border border-vi-gold/50" />Adjusted Earnings</div>
+          </div>
         </div>
-        <div className="space-y-10">
-          <MetricBar label="Diluted Shares" value={latest?.dilution.diluted_shares} displayValue={fmt.shares(latest?.dilution.diluted_shares)} maxValue={Math.max(...filtered.map(d => d.dilution.diluted_shares)) * 1.05} color="bg-vi-accent" />
-          <MetricBar label="Dilution %" value={latest?.dilution.dilution_pct} displayValue={`${latest?.dilution.dilution_pct}%`} maxValue={2} color="bg-vi-gold" />
-        </div>
-        <p className="mt-8 text-xs text-sand-500 dark:text-warm-300 leading-relaxed italic border-l-2 border-vi-sage pl-4">
-          Share count changed {shareChange}% over {filtered.length} quarters — {parseFloat(shareChange) < 0 ? 'buybacks reducing float' : 'dilution increasing'}.
-        </p>
-      </div>
 
-      <div className="col-span-12 lg:col-span-7">
-        <DataTable columns={['Quarter', 'Basic Shares', 'Diluted Shares', 'Dilution']} rows={rows} />
-      </div>
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-8">Earnings Authenticity</h3>
+          <div className="space-y-10">
+            <MetricBar label="GAAP Net Income" value={latest?.earnings_quality.gaap_net_income} displayValue={fmt.billions(latest?.earnings_quality.gaap_net_income)} maxValue={Math.max(...filtered.map(d => d.earnings_quality.gaap_net_income)) * 1.2} color="bg-vi-sage" />
+            <MetricBar label="Stock-Based Compensation" value={latest?.earnings_quality.sbc_actual} displayValue={fmt.billions(latest?.earnings_quality.sbc_actual)} maxValue={Math.max(...filtered.map(d => d.earnings_quality.gaap_net_income)) * 1.2} color="bg-vi-rose" />
+            <MetricBar label="SBC / Revenue" value={latest?.earnings_quality.sbc_to_revenue_pct} displayValue={fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} maxValue={0.1} color="bg-vi-gold" />
+          </div>
+          <p className="mt-6 text-[11px] text-sand-500 dark:text-warm-400 italic">SBC is a real cost — it dilutes existing shareholders. Low SBC relative to revenue means more of the reported profit is actual cash profit.</p>
+        </div>
+
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Quarterly Earnings Quality</h3>
+          <div className="overflow-x-auto -mx-8">
+            <table className="w-full text-left min-w-[700px]">
+              <thead>
+                <tr className="bg-sand-200/50 dark:bg-warm-800/50">
+                  {['Quarter', 'GAAP Income', 'SBC', 'SBC/Revenue', 'Adjusted', 'GAAP Gap', 'D&A'].map((col, i) => (
+                    <th key={i} className={`px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-300 ${i > 0 ? 'text-right' : ''}`}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-sand-200/50 dark:divide-warm-800/50">
+                {tableData.map((row, i) => (
+                  <tr key={i} className={`hover:bg-sand-200/50 dark:hover:bg-warm-800 transition-colors ${i % 2 === 1 ? 'bg-sand-50 dark:bg-warm-950/50' : ''}`}>
+                    <td className="px-4 py-4 font-bold text-sand-800 dark:text-warm-50 whitespace-nowrap">{row.quarter}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.billions(row.gaap)}</td>
+                    <td className="px-4 py-4 text-right text-vi-rose">{fmt.billions(row.sbc)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200 whitespace-nowrap">{fmt.pct(row.sbcPct)}<DeltaChip value={row.sbcDelta} /></td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.billions(row.adjusted)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.pct(row.gaapGap)}</td>
+                    <td className="px-4 py-4 text-right text-sand-600 dark:text-warm-200">{fmt.billions(row.dna)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <aside className="xl:col-span-4 space-y-6">
+        <div className={`${CARD} border-l-4 border-vi-gold-container shadow-xl`}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-vi-gold" style={{ fontVariationSettings: "'FILL' 1" }}>format_quote</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-vi-gold-dim">Oracle&apos;s Perspective</span>
+          </div>
+          <p className="font-serif italic text-lg leading-relaxed text-sand-700 dark:text-warm-100 mb-6">
+            {latest?.earnings_quality.sbc_to_revenue_pct < 0.03
+              ? <>&ldquo;SBC at just {fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} of revenue is remarkably low. This means nearly all reported earnings translate into real cash — a hallmark of shareholder-friendly management.&rdquo;</>
+              : <>&ldquo;Stock-based compensation at {fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} of revenue is a hidden cost. True owner earnings should subtract SBC — it&apos;s real dilution even if it doesn&apos;t hit the cash flow statement.&rdquo;</>
+            }
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-sand-200 dark:bg-warm-800 flex items-center justify-center border border-sand-300 dark:border-warm-700"><span className="material-symbols-outlined text-vi-gold text-lg">psychology</span></div>
+            <div><div className="text-sm font-bold">Insight Engine</div><div className="text-[10px] text-sand-500 dark:text-warm-400 uppercase tracking-tighter">Value Synthesis AI</div></div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className={`col-span-2 ${CARD} !p-4`}><CagrChart data={gaapSparkline} quarters={filtered} cagr={gaapCagr} label="GAAP Net Income" color="#a0d6ad" formatFn={fmt.billions} /></div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <BentoTile label="SBC / Revenue" value={fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} sparkline={sbcPctSparkline} color="#ffb4ab" />
+          <BentoTile label="GAAP Gap" value={fmt.pct(gaapGap)} icon="compare_arrows" />
+          <BentoTile label="SBC (Quarterly)" value={fmt.billions(latest?.earnings_quality.sbc_actual)} sparkline={sbcSparkline} color="#f2c35b" />
+          <BentoTile label="D&A" value={fmt.billions(latest?.earnings_quality.d_and_a)} icon="engineering" />
+        </div>
+
+        <div className={`${CARD} !p-4 flex items-center justify-between`}>
+          <div>
+            <div className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">SBC Trend</div>
+            <div className={`text-xl font-serif ${sbcTrend != null && sbcTrend < 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+              {sbcTrend != null ? (sbcTrend < 0 ? 'Declining' : 'Rising') : '—'}
+              <span className="text-sm font-sans text-sand-500 dark:text-warm-400 ml-2">{sbcTrend != null ? fmt.pctPts(sbcTrend) : ''}</span>
+            </div>
+          </div>
+          <span className={`material-symbols-outlined text-3xl ${sbcTrend != null && sbcTrend < 0 ? 'text-vi-sage/30' : 'text-vi-rose/30'}`}>{sbcTrend != null && sbcTrend < 0 ? 'trending_down' : 'trending_up'}</span>
+        </div>
+
+        <div className={`${CARD} relative overflow-hidden group`}>
+          <div className="absolute -right-8 -bottom-8 opacity-5 group-hover:opacity-10 transition-opacity"><span className="material-symbols-outlined text-[120px]">verified</span></div>
+          <h4 className="font-serif text-lg mb-3">Market Context</h4>
+          <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed">
+            {latest?.earnings_quality.sbc_to_revenue_pct < 0.03
+              ? `With SBC at just ${fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} of revenue, earnings quality is high. The gap between GAAP and adjusted earnings of ${fmt.pct(gaapGap)} reflects depreciation, not accounting games.`
+              : `SBC of ${fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} relative to revenue should be monitored. Compare this to the company's buyback spending to see if management is offsetting dilution.`}
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }
