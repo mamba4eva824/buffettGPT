@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 os.environ['ENVIRONMENT'] = 'test'
 os.environ['METRICS_HISTORY_CACHE_TABLE'] = 'metrics-history-test'
 os.environ['INVESTMENT_REPORTS_V2_TABLE'] = 'investment-reports-v2-test'
+os.environ['STOCK_DATA_4H_TABLE'] = 'stock-data-4h-test'
 
 
 def create_metrics_table(dynamodb):
@@ -138,6 +139,40 @@ SAMPLE_RATINGS_DICT = {
 }
 
 
+def create_stock_data_4h_table(dynamodb):
+    table = dynamodb.create_table(
+        TableName='stock-data-4h-test',
+        KeySchema=[
+            {'AttributeName': 'PK', 'KeyType': 'HASH'},
+            {'AttributeName': 'SK', 'KeyType': 'RANGE'},
+        ],
+        AttributeDefinitions=[
+            {'AttributeName': 'PK', 'AttributeType': 'S'},
+            {'AttributeName': 'SK', 'AttributeType': 'S'},
+        ],
+        BillingMode='PAY_PER_REQUEST',
+    )
+    table.wait_until_exists()
+    return table
+
+
+SAMPLE_4H_CANDLE = {
+    'PK': 'TICKER#AAPL',
+    'SK': 'DATETIME#2026-04-02 13:30:00',
+    'GSI_PK': 'DATE#2026-04-02',
+    'GSI_SK': 'TICKER#AAPL',
+    'symbol': 'AAPL',
+    'date': '2026-04-02',
+    'datetime': '2026-04-02 13:30:00',
+    'open': Decimal('255.35'),
+    'high': Decimal('256.13'),
+    'low': Decimal('254.31'),
+    'close': Decimal('255.92'),
+    'volume': 7012489,
+    'ingested_at': '2026-04-02T22:00:00+00:00',
+}
+
+
 def _make_event(ticker, method='GET'):
     return {
         'routeKey': f'GET /insights/{ticker}',
@@ -152,6 +187,7 @@ def aws_resources():
         dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
         metrics_table = create_metrics_table(dynamodb)
         reports_table = create_reports_table(dynamodb)
+        stock_data_4h_table = create_stock_data_4h_table(dynamodb)
 
         # Import/reload handler inside moto context
         if 'handlers.value_insights_handler' in sys.modules:
@@ -163,11 +199,14 @@ def aws_resources():
         mod.dynamodb = dynamodb
         mod.metrics_table = dynamodb.Table('metrics-history-test')
         mod.reports_table = dynamodb.Table('investment-reports-v2-test')
+        mod.STOCK_DATA_4H_TABLE = 'stock-data-4h-test'
 
         yield {
             'handler': mod.lambda_handler,
+            'mod': mod,
             'metrics_table': metrics_table,
             'reports_table': reports_table,
+            'stock_data_4h_table': stock_data_4h_table,
         }
 
 
@@ -314,3 +353,79 @@ def test_cors_headers_present(aws_resources):
 
     assert response['headers']['Access-Control-Allow-Origin'] == '*'
     assert 'GET' in response['headers']['Access-Control-Allow-Methods']
+
+
+# ============================================================================
+# Latest Price Tests (_get_latest_price + integration)
+# ============================================================================
+
+def test_latest_price_returned_when_4h_data_exists(aws_resources):
+    """latest_price is populated when stock-data-4h has candle data."""
+    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_4H_CANDLE)
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER)
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    assert body['latest_price'] is not None
+    assert body['latest_price']['price'] == 255.92
+    assert body['latest_price']['date'] == '2026-04-02'
+    assert body['latest_price']['volume'] == 7012489
+
+
+def test_latest_price_null_when_no_4h_data(aws_resources):
+    """latest_price is None when no candle data exists for ticker."""
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER)
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    assert body['latest_price'] is None
+
+
+def test_latest_price_returns_most_recent_candle(aws_resources):
+    """When multiple candles exist, the most recent is returned."""
+    # Earlier candle
+    aws_resources['stock_data_4h_table'].put_item(Item={
+        **SAMPLE_4H_CANDLE,
+        'SK': 'DATETIME#2026-04-02 09:30:00',
+        'datetime': '2026-04-02 09:30:00',
+        'close': Decimal('254.00'),
+    })
+    # Later candle (should be returned)
+    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_4H_CANDLE)
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert body['latest_price']['price'] == 255.92
+    assert body['latest_price']['datetime'] == '2026-04-02 13:30:00'
+
+
+def test_latest_price_null_when_table_not_configured(aws_resources):
+    """latest_price is None when STOCK_DATA_4H_TABLE env var is empty."""
+    aws_resources['mod'].STOCK_DATA_4H_TABLE = ''
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert body['latest_price'] is None
+
+    # Restore for other tests
+    aws_resources['mod'].STOCK_DATA_4H_TABLE = 'stock-data-4h-test'
+
+
+def test_latest_price_includes_ohlv_fields(aws_resources):
+    """latest_price includes open, high, low, volume for the banner."""
+    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_4H_CANDLE)
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    lp = body['latest_price']
+    assert lp['open'] == 255.35
+    assert lp['high'] == 256.13
+    assert lp['low'] == 254.31
+    assert lp['volume'] == 7012489

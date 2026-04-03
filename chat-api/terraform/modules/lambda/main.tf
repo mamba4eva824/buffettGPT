@@ -78,6 +78,12 @@ locals {
       memory_size = 256
       description = "Value Insights API - serves financial metrics and ratings"
     }
+    sp500_eod_ingest = {
+      handler     = "sp500_eod_ingest.lambda_handler"
+      timeout     = 900
+      memory_size = 512
+      description = "S&P 500 daily 4-hour candle ingestion after market close"
+    }
   }
 }
 

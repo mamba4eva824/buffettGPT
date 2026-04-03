@@ -745,7 +745,7 @@ export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
     if (ratio < 0.8) return {
       label: 'Below Average',
       color: 'text-vi-sage', bg: 'bg-vi-sage/10', percentile: pct,
-      hint: `${discount}% below its ${timeLabel} average — you\'re paying less than usual for this stock relative to its own history.`,
+      hint: `${discount}% below its ${timeLabel} average — you're paying less than usual for this stock relative to its own history.`,
     };
     if (ratio > 1.2) return {
       label: 'Above Average',

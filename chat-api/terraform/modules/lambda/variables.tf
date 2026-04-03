@@ -148,3 +148,10 @@ variable "metrics_history_cache_table_name" {
   type        = string
   default     = ""
 }
+
+# EventBridge EOD Ingest Schedule
+variable "enable_eod_ingest_schedule" {
+  description = "Enable EventBridge schedule for daily S&P 500 4h candle ingestion"
+  type        = bool
+  default     = false
+}

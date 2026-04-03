@@ -22,6 +22,7 @@ BuffettGPT runs entirely on AWS with infrastructure managed through Terraform:
 | [Lambda Functions](lambda-functions.md) | Handler documentation and triggers |
 | [DynamoDB Schema](dynamodb-schema.md) | Table schemas and migration history |
 | [Deployment](deployment.md) | CI/CD pipelines and environment promotion |
+| [EventBridge EOD Pipeline](eventbridge-eod-pipeline.md) | Daily S&P 500 price ingestion via EventBridge |
 
 ## Terraform Modules
 
