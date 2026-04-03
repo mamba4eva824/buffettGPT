@@ -19,6 +19,10 @@ All notable changes to the Market Intelligence feature are documented here.
 - 365-day TTL (`expires_at`) on ingested records
 - Ticker format conversion (`BRK.B` → `BRK-B`) for FMP API compatibility
 - Executive documentation: `docs/infrastructure/eventbridge-eod-pipeline.md`
+- `reserved_concurrent_executions = 1` to prevent duplicate parallel Lambda runs
+- SQS dead letter queue + CloudWatch alarm on DLQ depth for failure alerting
+- Lambda Powertools: structured JSON logs (`Logger`) + custom CloudWatch metrics (`Metrics`)
+- `aws-lambda-powertools` added to shared dependencies layer
 - 58 tests (42 unit + 16 integration) covering full pipeline
 
 ### Staging Environment + Stripe Subscription Fix (2026-03-24)
