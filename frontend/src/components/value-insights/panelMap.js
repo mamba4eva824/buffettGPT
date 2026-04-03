@@ -5,7 +5,6 @@ import {
   CashFlowPanel,
   DebtPanel,
   EarningsQualityPanel,
-  DilutionPanel,
 } from './CategoryPanels';
 import ExecutiveDashboard from './ExecutiveDashboard';
 
@@ -17,5 +16,4 @@ export const PANEL_MAP = {
   cashflow: CashFlowPanel,
   debt: DebtPanel,
   earnings_quality: EarningsQualityPanel,
-  dilution: DilutionPanel,
 };
