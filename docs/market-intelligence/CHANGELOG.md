@@ -50,6 +50,25 @@ All notable changes to the Market Intelligence feature are documented here.
 - Backend: `_fetch_daily_prices_from_fmp()` fetches 5yr daily prices, `_compute_post_earnings()` calculates price reactions around each earnings date
 - 63 tests (42 unit + 21 integration) all passing
 
+### Automated Earnings Update Pipeline (2026-04-04)
+
+**Added**
+- `earnings_update` Lambda: checks FMP earnings calendar for recently reported S&P 500 companies, fetches full financials + earnings + dividends + TTM valuations, writes via `update_item`
+- EventBridge 2x daily schedule: 9 PM UTC (6 PM ET) post-close + 4:30 PM UTC (11:30 AM ET) post-open
+- Auto mode (checks calendar) + manual mode (`{"tickers": ["AAPL"]}`) for on-demand processing
+- Structured response for future notifications: `tickers_updated`, `eps_beat`, `eps_surprise_pct`, `upcoming` earnings
+- `fetch_ttm_valuations()` in `fmp_client.py` — `/stable/key-metrics-ttm` for live P/E, EV/EBITDA, market_cap
+- 12 new unit tests for earnings_update handler
+
+**Removed**
+- `sp500_pipeline` Lambda (bulk 498 tickers) — moved to local-only script for ad-hoc full refreshes
+- `sp500_backfill` Lambda — already local
+- `earnings_calendar_checker` Lambda — functionality merged into `earnings_update`
+
+**Fixed**
+- `sp500_pipeline._batch_write_items` replaced with `_update_items` using `update_item` — preserves `market_valuation` on all pipeline runs
+- 95 tests passing (12 earnings_update + 43 eod_ingest + 21 pipeline + 21 value_insights)
+
 ### Staging Environment + Stripe Subscription Fix (2026-03-24)
 
 **Added**
