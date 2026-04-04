@@ -35,9 +35,7 @@ FUNCTIONS=(
     "stripe_webhook_handler"
     "subscription_handler"
     "waitlist_handler"
-    "sp500_pipeline"
-    "sp500_backfill"
-    "earnings_calendar_checker"
+    "earnings_update"
     "sp500_aggregator"
     "market_intel_chat"
     "value_insights_handler"
@@ -76,7 +74,7 @@ for FUNCTION in "${FUNCTIONS[@]}"; do
 
     # Copy investment_research module for sp500 pipeline functions
     INVEST_DIR="${BACKEND_DIR}/investment_research"
-    if [[ "${FUNCTION}" == sp500_* || "${FUNCTION}" == "earnings_calendar_checker" || "${FUNCTION}" == "market_intel_chat" ]]; then
+    if [[ "${FUNCTION}" == sp500_* || "${FUNCTION}" == "earnings_update" || "${FUNCTION}" == "market_intel_chat" ]]; then
         if [ -d "${INVEST_DIR}" ]; then
             cp -r "${INVEST_DIR}" "${TEMP_DIR}/"
         fi

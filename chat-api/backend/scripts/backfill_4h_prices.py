@@ -2,8 +2,8 @@
 """
 Local backfill script for stock-data-4h table.
 
-Fetches 4-hour candle data from FMP for all S&P 500 tickers
-and writes to DynamoDB. Designed to run locally with AWS credentials.
+Fetches daily EOD closing prices from FMP for all S&P 500 tickers
+and writes to DynamoDB as DAILY# records. Designed to run locally with AWS credentials.
 
 Usage:
     python scripts/backfill_4h_prices.py                      # Latest trading day
@@ -64,10 +64,11 @@ def get_sp500_tickers():
         return sorted({item["symbol"] for item in data})
 
 
-def fetch_4h_candles(ticker, trade_date):
+def fetch_daily_eod(ticker, trade_date):
+    """Fetch daily EOD closing price for a single date."""
     api_key = get_fmp_api_key()
     fmp_ticker = ticker.replace('.', '-')
-    url = f"{FMP_BASE_URL}/historical-chart/4hour?symbol={fmp_ticker}&apikey={api_key}"
+    url = f"{FMP_BASE_URL}/historical-price-eod/light?symbol={fmp_ticker}&from={trade_date}&to={trade_date}&apikey={api_key}"
     try:
         resp = http.request("GET", url, timeout=15.0)
         if resp.status == 429:
@@ -75,14 +76,18 @@ def fetch_4h_candles(ticker, trade_date):
             time.sleep(2)
             resp = http.request("GET", url, timeout=15.0)
         if resp.status != 200:
-            return []
+            return None
         data = json.loads(resp.data.decode("utf-8"))
-        if not isinstance(data, list):
-            return []
-        return [c for c in data if c.get("date", "").startswith(trade_date)]
+        if not isinstance(data, list) or not data:
+            return None
+        # Find the record matching the trade date
+        for record in data:
+            if record.get("date") == trade_date:
+                return record
+        return data[0] if data else None
     except Exception as e:
         print(f"  Error fetching {ticker}: {e}")
-        return []
+        return None
 
 
 def to_decimal(value):
@@ -94,29 +99,20 @@ def to_decimal(value):
         return Decimal("0")
 
 
-def build_items(ticker, candles, trade_date):
-    items = []
+def build_daily_item(ticker, eod, trade_date):
+    """Build a single DAILY# DynamoDB item from EOD data."""
     now_iso = datetime.now(timezone.utc).isoformat()
-    for c in candles:
-        dt = c.get("date", "")
-        if not dt:
-            continue
-        items.append({
-            "PK": f"TICKER#{ticker}",
-            "SK": f"DATETIME#{dt}",
-            "GSI_PK": f"DATE#{trade_date}",
-            "GSI_SK": f"TICKER#{ticker}",
-            "symbol": ticker,
-            "date": trade_date,
-            "datetime": dt,
-            "open": to_decimal(c.get("open")),
-            "high": to_decimal(c.get("high")),
-            "low": to_decimal(c.get("low")),
-            "close": to_decimal(c.get("close")),
-            "volume": int(c.get("volume") or 0),
-            "ingested_at": now_iso,
-        })
-    return items
+    return {
+        "PK": f"TICKER#{ticker}",
+        "SK": f"DAILY#{trade_date}",
+        "GSI_PK": f"DATE#{trade_date}",
+        "GSI_SK": f"TICKER#{ticker}",
+        "symbol": ticker,
+        "date": trade_date,
+        "close": to_decimal(eod.get("price") or eod.get("close")),
+        "volume": int(eod.get("volume") or 0),
+        "ingested_at": now_iso,
+    }
 
 
 def batch_write(items):
@@ -144,7 +140,7 @@ def already_ingested(trade_date):
     try:
         response = table.query(
             KeyConditionExpression=boto3.dynamodb.conditions.Key('PK').eq('TICKER#AAPL')
-                & boto3.dynamodb.conditions.Key('SK').begins_with(f'DATETIME#{trade_date}'),
+                & boto3.dynamodb.conditions.Key('SK').eq(f'DAILY#{trade_date}'),
             Limit=1,
         )
         return len(response.get("Items", [])) > 0
@@ -189,23 +185,22 @@ def main():
     empty = 0
 
     for i, ticker in enumerate(tickers):
-        candles = fetch_4h_candles(ticker, trade_date)
-        if candles:
-            items = build_items(ticker, candles, trade_date)
-            all_items.extend(items)
+        eod = fetch_daily_eod(ticker, trade_date)
+        if eod:
+            all_items.append(build_daily_item(ticker, eod, trade_date))
             with_data += 1
         else:
             empty += 1
 
         if (i + 1) % 50 == 0 or (i + 1) == len(tickers):
-            print(f"  [{i+1}/{len(tickers)}] {with_data} with data, {empty} empty, {len(all_items)} candles")
+            print(f"  [{i+1}/{len(tickers)}] {with_data} with data, {empty} empty, {len(all_items)} records")
 
         if i + 1 < len(tickers):
             time.sleep(0.5)
 
     print()
     if not all_items:
-        print(f"No candles returned for {trade_date} — possible market holiday.")
+        print(f"No EOD data returned for {trade_date} — possible market holiday.")
         return
 
     print(f"Writing {len(all_items)} items to DynamoDB...")
