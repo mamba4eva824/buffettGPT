@@ -47,7 +47,7 @@ FMP_BASE_URL = "https://financialmodelingprep.com/stable"
 BATCH_WRITE_SIZE = 25
 MAX_DDB_RETRIES = 5
 FMP_BATCH_SIZE = 5  # Tickers per FMP request (stable API is per-ticker)
-FMP_RATE_LIMIT_DELAY = 0.35  # Seconds between FMP calls
+FMP_RATE_LIMIT_DELAY = 0.5  # Seconds between FMP calls (300 calls/min FMP limit)
 
 # ---------------------------------------------------------------------------
 # AWS Clients
@@ -144,6 +144,69 @@ def fetch_4h_candles(ticker: str, trade_date: str) -> List[Dict]:
     except Exception as e:
         logger.error(f"Failed to fetch 4h candles for {ticker}: {e}")
         return []
+
+
+def fetch_daily_eod(ticker: str, trade_date: str) -> Dict | None:
+    """
+    Fetch single-day EOD price from FMP stable API.
+
+    Uses /stable/historical-price-eod/full with from/to set to trade_date.
+    Returns a single dict with date, open, high, low, close, volume, change,
+    changePercent, vwap — or None if unavailable.
+    """
+    import urllib3
+    http = urllib3.PoolManager()
+    api_key = get_fmp_api_key()
+
+    fmp_ticker = ticker.replace('.', '-')
+    url = (
+        f"{FMP_BASE_URL}/historical-price-eod/full"
+        f"?symbol={fmp_ticker}&from={trade_date}&to={trade_date}&apikey={api_key}"
+    )
+
+    try:
+        resp = http.request("GET", url, timeout=15.0)
+        if resp.status == 429:
+            logger.warning(f"Rate limited on {ticker} (daily EOD), waiting 2s")
+            time.sleep(2)
+            resp = http.request("GET", url, timeout=15.0)
+
+        if resp.status != 200:
+            return None
+
+        data = json.loads(resp.data.decode("utf-8"))
+        if isinstance(data, list) and data:
+            return data[0]
+        return None
+
+    except Exception as e:
+        logger.error(f"Failed to fetch daily EOD for {ticker}: {e}")
+        return None
+
+
+def build_daily_item(ticker: str, eod: Dict, trade_date: str) -> Dict:
+    """Convert a daily EOD record to a DynamoDB item with SK prefix DAILY#."""
+    now = datetime.now(timezone.utc)
+    expires_at = int((now + timedelta(days=365)).timestamp())
+
+    return {
+        "PK": f"TICKER#{ticker}",
+        "SK": f"DAILY#{trade_date}",
+        "GSI_PK": f"DATE#{trade_date}",
+        "GSI_SK": f"TICKER#{ticker}",
+        "symbol": ticker,
+        "date": trade_date,
+        "open": _to_decimal(eod.get("open")),
+        "high": _to_decimal(eod.get("high")),
+        "low": _to_decimal(eod.get("low")),
+        "close": _to_decimal(eod.get("close")),
+        "volume": int(eod.get("volume") or 0),
+        "change": _to_decimal(eod.get("change")),
+        "change_percent": _to_decimal(eod.get("changePercent")),
+        "vwap": _to_decimal(eod.get("vwap")),
+        "ingested_at": now.isoformat(),
+        "expires_at": expires_at,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -351,36 +414,35 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     else:
         tickers = get_sp500_tickers()
 
-    # --- 2. Fetch 4h candles per ticker ---
+    # --- 2. Fetch daily EOD + 4h candles per ticker ---
     all_items = []
     tickers_with_data = 0
     tickers_empty = 0
 
     for i, ticker in enumerate(tickers):
-        candles = fetch_4h_candles(ticker, target_date)
-
-        if candles:
-            items = build_dynamo_items(ticker, candles, target_date)
-            all_items.extend(items)
+        # Fetch daily EOD price (primary data source)
+        eod = fetch_daily_eod(ticker, target_date)
+        if eod:
+            all_items.append(build_daily_item(ticker, eod, target_date))
             tickers_with_data += 1
         else:
             tickers_empty += 1
-
-        # Progress logging every 50 tickers
-        if (i + 1) % 50 == 0:
-            logger.info(f"Progress: {i + 1}/{len(tickers)} tickers processed, {len(all_items)} candles collected")
 
         # Rate limit between FMP calls
         if i + 1 < len(tickers):
             time.sleep(FMP_RATE_LIMIT_DELAY)
 
+        # Progress logging every 50 tickers
+        if (i + 1) % 50 == 0:
+            logger.info(f"Progress: {i + 1}/{len(tickers)} tickers processed, {len(all_items)} records collected")
+
     logger.info(
         f"Fetch complete: {tickers_with_data} tickers with data, "
-        f"{tickers_empty} empty, {len(all_items)} total candles"
+        f"{tickers_empty} empty, {len(all_items)} total records"
     )
 
     if not all_items:
-        msg = f"No 4h candles returned for {target_date} — possible market holiday"
+        msg = f"No EOD data returned for {target_date} — possible market holiday"
         logger.warning(msg)
         return {"statusCode": 200, "body": msg, "recordsWritten": 0}
 
@@ -397,7 +459,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     result = {
         "statusCode": 200,
-        "body": f"Ingested {written} 4h candles for {target_date}",
+        "body": f"Ingested {written} daily EOD records for {target_date}",
         "date": target_date,
         "tickersProcessed": len(tickers),
         "tickersWithData": tickers_with_data,

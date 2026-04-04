@@ -201,7 +201,7 @@ def main():
             print(f"  [{i+1}/{len(tickers)}] {with_data} with data, {empty} empty, {len(all_items)} candles")
 
         if i + 1 < len(tickers):
-            time.sleep(0.35)
+            time.sleep(0.5)
 
     print()
     if not all_items:
