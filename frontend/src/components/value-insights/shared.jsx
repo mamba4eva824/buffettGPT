@@ -158,7 +158,8 @@ export function Sparkline({ data, color = '#a0d6ad', width = 80, height = 24 }) 
 
 // Growth chart — actual values as solid line with rolling 4Q average dashed overlay
 // Interactive: hover crosshair + tooltip showing quarter, value, and rolling avg
-export function CagrChart({ data, quarters, cagr, label, color, formatFn, summaryLabel }) {
+// refLine: optional { value, label, color } to draw a horizontal reference line (e.g., sector median)
+export function CagrChart({ data, quarters, cagr, label, color, formatFn, summaryLabel, refLine }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
 
   if (!data || data.length < 2 || cagr == null) return null;
@@ -176,8 +177,9 @@ export function CagrChart({ data, quarters, cagr, label, color, formatFn, summar
   });
   const rollingValid = rolling4Q.filter(v => v != null);
 
-  // Min/max across both actual and rolling to keep them on the same scale
+  // Min/max across both actual, rolling, and reference line to keep them on the same scale
   const allVals = [...data, ...rollingValid];
+  if (refLine?.value != null) allVals.push(refLine.value);
   const min = Math.min(...allVals);
   const max = Math.max(...allVals);
   const range = max - min || 1;
@@ -276,6 +278,21 @@ export function CagrChart({ data, quarters, cagr, label, color, formatFn, summar
               </text>
             </g>
           ))}
+          {/* Reference line (e.g., sector median) */}
+          {refLine?.value != null && refLine.value >= min && refLine.value <= max && (
+            <g>
+              <line
+                x1={PAD.left} y1={toY(refLine.value)} x2={W - PAD.right} y2={toY(refLine.value)}
+                stroke={refLine.color || '#6d28d9'} strokeWidth="1" strokeDasharray="6 3" opacity="0.5"
+              />
+              <text
+                x={W - PAD.right + 2} y={toY(refLine.value) + 3}
+                fill={refLine.color || '#6d28d9'} fontSize="7" opacity="0.7"
+              >
+                {refLine.label || ''}
+              </text>
+            </g>
+          )}
           {/* Rolling 4Q average (dashed) */}
           {rollingPoints && (
             <polyline points={rollingPoints} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.5" />
@@ -322,6 +339,9 @@ export function CagrChart({ data, quarters, cagr, label, color, formatFn, summar
               {rolling4Q[hoveredIdx] != null && (
                 <div className="text-sand-400 dark:text-warm-500">4Q Avg: {formatFn(rolling4Q[hoveredIdx])}</div>
               )}
+              {refLine?.value != null && (
+                <div style={{ color: refLine.color || '#6d28d9' }}>{refLine.label}: {formatFn(refLine.value)}</div>
+              )}
             </div>
           </div>
         )}
@@ -330,6 +350,7 @@ export function CagrChart({ data, quarters, cagr, label, color, formatFn, summar
         <div className="flex items-center gap-3 text-[9px] text-sand-400 dark:text-warm-500">
           <span className="flex items-center gap-1"><span className="inline-block w-3 border-t-2" style={{ borderColor: color }} />Quarterly</span>
           <span className="flex items-center gap-1"><span className="inline-block w-3 border-t-2 border-dashed" style={{ borderColor: color, opacity: 0.5 }} />4Q Avg</span>
+          {refLine?.label && <span className="flex items-center gap-1"><span className="inline-block w-3 border-t border-dashed" style={{ borderColor: refLine.color || '#6d28d9', opacity: 0.5 }} />{refLine.label}</span>}
         </div>
       </div>
     </div>

@@ -939,6 +939,68 @@ def fetch_earnings_calendar_upcoming(ticker: str) -> dict:
             return {}
 
 
+def fetch_ttm_valuations(ticker: str) -> dict:
+    """
+    Fetch TTM (Trailing Twelve Month) valuation metrics from FMP.
+
+    Maps FMP key-metrics-ttm fields to the market_valuation schema used
+    in the metrics-history DynamoDB table.
+
+    Args:
+        ticker: Stock ticker symbol (e.g., 'AAPL')
+
+    Returns:
+        Dict with pe_ratio, ev_to_ebitda, ev_to_sales, ev_to_fcf,
+        price_to_fcf, market_cap, enterprise_value, earnings_yield, fcf_yield.
+        Returns empty dict on error.
+    """
+    api_key = get_fmp_api_key()
+    url = "https://financialmodelingprep.com/stable/key-metrics-ttm"
+
+    with httpx.Client(timeout=15.0) as client:
+        try:
+            response = _request_with_retry(client, url, {
+                'symbol': ticker.upper(),
+                'apikey': api_key
+            })
+            data = response.json()
+            if not isinstance(data, list) or not data:
+                return {}
+
+            raw = data[0]
+            market_cap = raw.get('marketCap')
+            enterprise_value = raw.get('enterpriseValueTTM')
+            earnings_yield = raw.get('earningsYieldTTM')
+
+            result = {}
+            if market_cap:
+                result['market_cap'] = market_cap
+            if enterprise_value:
+                result['enterprise_value'] = enterprise_value
+            if earnings_yield and earnings_yield > 0:
+                result['pe_ratio'] = round(1.0 / earnings_yield, 2)
+                result['earnings_yield'] = round(earnings_yield * 100, 2)
+            if raw.get('evToEBITDATTM'):
+                result['ev_to_ebitda'] = round(raw['evToEBITDATTM'], 2)
+            if raw.get('evToSalesTTM'):
+                result['ev_to_sales'] = round(raw['evToSalesTTM'], 2)
+            if raw.get('evToFreeCashFlowTTM'):
+                result['ev_to_fcf'] = round(raw['evToFreeCashFlowTTM'], 2)
+            if raw.get('freeCashFlowYieldTTM') and raw['freeCashFlowYieldTTM'] > 0:
+                result['price_to_fcf'] = round(1.0 / raw['freeCashFlowYieldTTM'], 2)
+                result['fcf_yield'] = round(raw['freeCashFlowYieldTTM'] * 100, 2)
+
+            logger.info(f"[FMP] Fetched TTM valuations for {ticker}: {len(result)} fields")
+            return result
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"[FMP] HTTP error fetching TTM valuations for {ticker}: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"[FMP] Error fetching TTM valuations for {ticker}: {e}")
+            return {}
+
+
 def fetch_dividends(ticker: str, limit: int = 40) -> list:
     """
     Fetch historical dividend data for a ticker.

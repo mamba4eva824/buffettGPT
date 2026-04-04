@@ -2,8 +2,9 @@ import logger from '../utils/logger';
 
 const API_BASE_URL = import.meta.env.VITE_REST_API_URL || '';
 
-export async function fetchInsights(ticker) {
-  const url = `${API_BASE_URL}/insights/${encodeURIComponent(ticker)}`;
+export async function fetchInsights(ticker, sector = '') {
+  const params = sector ? `?sector=${encodeURIComponent(sector)}` : '';
+  const url = `${API_BASE_URL}/insights/${encodeURIComponent(ticker)}${params}`;
 
   logger.info(`Fetching insights for ${ticker}`);
 
