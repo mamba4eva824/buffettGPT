@@ -37,7 +37,9 @@ export default function ValueInsights() {
     setSearchParams(params, { replace: true });
   }, [ticker, activeCategory, timeRange]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { data, ratings, latestPrice, loading, error } = useInsightsData(ticker);
+  const companyInfo = sp500Companies.find(c => c.ticker === ticker);
+  const sector = companyInfo?.sector || '';
+  const { data, ratings, latestPrice, sectorAggregate, postEarnings, loading, error } = useInsightsData(ticker, sector);
 
   // Client-side fuzzy search over S&P 500 index
   const searchResults = useMemo(() => {
@@ -67,7 +69,6 @@ export default function ValueInsights() {
 
   const category = CATEGORIES.find(c => c.id === activeCategory);
   const PanelComponent = PANEL_MAP[activeCategory];
-  const companyInfo = sp500Companies.find(c => c.ticker === ticker);
   const currency = data?.[0]?.currency || 'USD';
 
   return (
@@ -83,11 +84,23 @@ export default function ValueInsights() {
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onFocus={() => setIsSearchFocused(true)}
-                onBlur={() => setTimeout(() => setIsSearchFocused(false), 200)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder={ticker}
-                className="w-24 bg-sand-100 dark:bg-warm-900 border border-sand-200 dark:border-warm-700 rounded-lg px-3 py-1.5 pr-8 text-sm font-serif font-bold text-vi-gold focus:outline-none focus:ring-2 focus:ring-vi-gold/50 focus:border-vi-gold transition-all placeholder:text-vi-gold"
+                onBlur={() => setTimeout(() => setIsSearchFocused(false), 250)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSearch();
+                  if (e.key === 'Escape') { setSearchInput(''); setIsSearchFocused(false); e.target.blur(); }
+                }}
+                placeholder={`Search (${ticker})`}
+                className="w-44 md:w-52 bg-sand-100 dark:bg-warm-900 border border-sand-200 dark:border-warm-700 rounded-lg px-3 py-1.5 pr-16 text-sm font-serif font-bold text-vi-gold focus:outline-none focus:ring-2 focus:ring-vi-gold/50 focus:border-vi-gold transition-all placeholder:text-vi-gold/60 placeholder:font-normal placeholder:text-xs"
               />
+              {/* Clear button — visible when there's input */}
+              {searchInput && (
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); setSearchInput(''); }}
+                  className="absolute right-8 top-1/2 -translate-y-1/2 text-sand-400 hover:text-sand-600 dark:hover:text-warm-200 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-sm">close</span>
+                </button>
+              )}
               <button
                 onClick={() => handleSearch()}
                 className="absolute right-1.5 top-1/2 -translate-y-1/2 text-vi-gold/60 hover:text-vi-gold transition-colors"
@@ -121,31 +134,28 @@ export default function ValueInsights() {
             )}
           </div>
 
-          {/* Category tabs — scrollable independently */}
-          <div className="flex-1 overflow-x-auto scrollbar-none min-w-0">
-            <div className="flex items-center gap-1">
+          {/* Category tabs — wrap on small screens so all tabs are always visible */}
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-1">
               {CATEGORIES.map(cat => {
                 const isActive = cat.id === activeCategory;
                 return (
                   <button
                     key={cat.id}
                     onClick={() => setActiveCategory(cat.id)}
-                    className={`shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                    className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
                       isActive
                         ? 'bg-sand-200 dark:bg-warm-800 text-vi-gold border-b-2 border-vi-gold'
                         : 'text-sand-500 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-900 hover:text-vi-gold'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-base">{cat.icon}</span>
-                    <span className="hidden sm:inline">{cat.label}</span>
+                    <span className="material-symbols-outlined text-sm">{cat.icon}</span>
+                    <span className="hidden md:inline">{cat.label}</span>
                   </button>
                 );
               })}
             </div>
           </div>
-
-          {/* Spacer */}
-          <div className="flex-1" />
 
           {/* Time range + currency */}
           <div className="shrink-0 flex items-center gap-2">
@@ -218,7 +228,10 @@ export default function ValueInsights() {
             data={data}
             ratings={ratings}
             latestPrice={latestPrice}
+            postEarnings={postEarnings}
             timeRange={timeRange}
+            sectorAggregate={sectorAggregate}
+            sector={sector}
             onSelectCategory={setActiveCategory}
           />
         )}

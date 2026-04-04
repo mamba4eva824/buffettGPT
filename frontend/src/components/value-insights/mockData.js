@@ -212,6 +212,7 @@ export const MOCK_RATINGS = {
   earnings_quality: { rating: "Strong",   confidence: "High",   key_factors: ["Low SBC relative to revenue", "Cash conversion excellent", "Minimal accounting adjustments"] },
   cashflow:         { rating: "Strong",   confidence: "High",   key_factors: ["FCF margin near 29%", "Capex declining as % of revenue", "Massive cash generation"] },
   debt:             { rating: "Moderate", confidence: "Medium", key_factors: ["D/E elevated but manageable", "Interest coverage strong at 29x", "Debt used for buybacks"] },
+  moat:             { rating: "Strong",   confidence: "High",   key_factors: ["ROIC consistently above cost of capital", "Stable margins over multiple cycles", "Strong cash conversion"] },
   overall_verdict: "BUY",
   conviction: "High"
 };
@@ -239,11 +240,25 @@ export const CATEGORIES = [
     description: 'Margin trends and operational efficiency through the lens of owner earnings.',
   },
   {
+    id: 'moat',
+    label: 'Moat',
+    icon: 'shield',
+    title: 'Competitive Moat',
+    description: 'How durable is this company\'s competitive advantage? Measuring pricing power, capital efficiency, and cash generation consistency.',
+  },
+  {
     id: 'valuation',
     label: 'Valuation',
     icon: 'analytics',
     title: 'Valuation Framework',
     description: 'Intrinsic value and capital allocation efficiency through the lens of concentrated value investing.',
+  },
+  {
+    id: 'earnings_performance',
+    label: 'Earnings',
+    icon: 'candlestick_chart',
+    title: 'Earnings Performance',
+    description: 'Earnings beats, misses, and post-announcement stock price reactions over 12-16 quarters.',
   },
   {
     id: 'cashflow',

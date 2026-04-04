@@ -655,7 +655,7 @@ export function ProfitabilityPanel({ data, ratings, timeRange }) {
   );
 }
 
-export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
+export function ValuationPanel({ data, ratings, latestPrice, timeRange, sectorAggregate, sector }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered[filtered.length - 1];
   const earliest = filtered[0];
@@ -699,10 +699,14 @@ export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
     return (new Date(latest.fiscal_date) - new Date(earliest.fiscal_date)) / (365.25 * 24 * 3600 * 1000);
   }, [earliest, latest]);
 
-  const roicCagr = useMemo(() => {
-    if (!latest?.valuation.roic || !earliest?.valuation.roic || earliest.valuation.roic <= 0 || years <= 0) return null;
-    return Math.pow(latest.valuation.roic / earliest.valuation.roic, 1 / years) - 1;
-  }, [latest, earliest, years]);
+  const calcCagr = useCallback((latestVal, earliestVal) => {
+    if (!latestVal || !earliestVal || earliestVal <= 0 || years <= 0) return null;
+    return Math.pow(latestVal / earliestVal, 1 / years) - 1;
+  }, [years]);
+
+  const roicCagr = useMemo(() => calcCagr(latest?.valuation.roic, earliest?.valuation.roic), [latest, earliest, calcCagr]);
+  const roeCagr = useMemo(() => calcCagr(latest?.valuation.roe, earliest?.valuation.roe), [latest, earliest, calcCagr]);
+  const roaCagr = useMemo(() => calcCagr(latest?.valuation.roa, earliest?.valuation.roa), [latest, earliest, calcCagr]);
 
   // Sparkline data
   const peSparkline = withMultiples.map(q => q.valuation.pe_ratio);
@@ -710,6 +714,8 @@ export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
   const earningsYieldSparkline = withMultiples.map(q => q.valuation.earnings_yield).filter(v => v != null);
   const pFcfSparkline = withMultiples.map(q => q.valuation.price_to_fcf).filter(v => v != null);
   const roicSparkline = filtered.map(q => q.valuation.roic);
+  const roeSparkline = filtered.map(q => q.valuation.roe);
+  const roaSparkline = filtered.map(q => q.valuation.roa);
 
   // Percentile helper: where does `value` sit within sorted `arr`? Returns 0–100.
   const percentile = (value, arr) => {
@@ -931,45 +937,161 @@ export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
           </div>
         </div>
 
-        {/* Valuation Over Time */}
-        <div className={CARD}>
-          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Valuation Over Time</h3>
-          <div className="space-y-6">
-            <CagrChart
-              data={peSparkline}
-              quarters={withMultiples}
-              cagr={histAvg.pe || 0}
-              label="P/E Ratio"
-              color="#6d28d9"
-              formatFn={fmt.x}
-              summaryLabel={histAvg.pe != null ? `Avg ${fmt.x(histAvg.pe)}` : ''}
-            />
-            <div className="border-t border-sand-200/30 dark:border-warm-800/30 pt-6">
-              <CagrChart
-                data={evEbitdaSparkline}
-                quarters={withMultiples}
-                cagr={histAvg.evEbitda || 0}
-                label="EV / EBITDA"
-                color="#f59e0b"
-                formatFn={fmt.x}
-                summaryLabel={histAvg.evEbitda != null ? `Avg ${fmt.x(histAvg.evEbitda)}` : ''}
-              />
-            </div>
-          </div>
-        </div>
+        {/* Capital Efficiency — with sector comparison */}
+        {(() => {
+          const sectorMetrics = sectorAggregate?.metrics || {};
+          const sMedianROE = sectorMetrics.roe?.median != null ? sectorMetrics.roe.median / 100 : null;
+          const sMedianROIC = sectorMetrics.roic?.median != null ? sectorMetrics.roic.median / 100 : null;
+          const sMedianROA = sectorMetrics.roa?.median != null ? sectorMetrics.roa.median / 100 : null;
 
-        {/* Capital Efficiency */}
-        <div className={CARD}>
-          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-8">Capital Efficiency</h3>
-          <div className="space-y-10">
-            <MetricBar label="Return on Equity (ROE)" value={latest?.valuation.roe} displayValue={fmt.pct(latest?.valuation.roe)} maxValue={2} color="bg-vi-accent" tip="ROE measures how much profit a company generates with the money shareholders have invested. A higher ROE means the company is better at turning your investment into profits. Buffett looks for companies with consistently high ROE (above 15%) as a sign of a competitive advantage." />
-            <MetricBar label="Return on Invested Capital (ROIC)" value={latest?.valuation.roic} displayValue={fmt.pct(latest?.valuation.roic)} maxValue={1} color="bg-vi-accent/80" tip="ROIC measures how efficiently a company uses ALL the capital invested in it (both from shareholders and lenders) to generate profits. It's considered the single best measure of business quality. An ROIC above 15% suggests the company has a durable competitive moat." />
-            <MetricBar label="Return on Assets (ROA)" value={latest?.valuation.roa} displayValue={fmt.pct(latest?.valuation.roa)} maxValue={0.5} color="bg-vi-accent/60" tip="ROA shows how efficiently a company uses everything it owns to make money. A higher ROA means the company doesn't need a lot of expensive factories, equipment, or inventory to generate profits — it's doing more with less." />
-          </div>
-          <div className="mt-8">
-            <CagrChart data={roicSparkline} quarters={filtered} cagr={roicCagr} label="ROIC Trend" color="#6d28d9" formatFn={fmt.pct} />
-          </div>
-        </div>
+          // Grade helper: compare company value to sector median
+          const grade = (val, median) => {
+            if (val == null || median == null || median === 0) return { letter: '—', color: 'text-sand-400', bg: 'bg-sand-200 dark:bg-warm-700' };
+            const ratio = val / median;
+            if (ratio >= 2.0) return { letter: 'A+', color: 'text-vi-sage', bg: 'bg-vi-sage/20' };
+            if (ratio >= 1.5) return { letter: 'A', color: 'text-vi-sage', bg: 'bg-vi-sage/15' };
+            if (ratio >= 1.0) return { letter: 'B', color: 'text-vi-gold', bg: 'bg-vi-gold/15' };
+            if (ratio >= 0.7) return { letter: 'C', color: 'text-vi-gold', bg: 'bg-vi-gold/10' };
+            return { letter: 'D', color: 'text-vi-rose', bg: 'bg-vi-rose/15' };
+          };
+
+          const metrics = [
+            {
+              label: 'Return on Invested Capital',
+              abbr: 'ROIC',
+              value: latest?.valuation.roic,
+              sectorMedian: sMedianROIC,
+              sparkline: roicSparkline,
+              cagr: roicCagr,
+              color: '#6d28d9',
+              tip: 'ROIC measures how efficiently a company uses ALL the capital invested in it to generate profits. It\'s considered the single best measure of business quality. An ROIC above 15% suggests a durable competitive moat.',
+              primary: true,
+            },
+            {
+              label: 'Return on Equity',
+              abbr: 'ROE',
+              value: latest?.valuation.roe,
+              sectorMedian: sMedianROE,
+              sparkline: roeSparkline,
+              cagr: roeCagr,
+              color: '#f59e0b',
+              tip: 'ROE measures profit generated per dollar of shareholder equity. Very high ROE (like Apple\'s) can be inflated by share buybacks reducing equity — compare with ROIC for a clearer picture.',
+            },
+            {
+              label: 'Return on Assets',
+              abbr: 'ROA',
+              value: latest?.valuation.roa,
+              sectorMedian: sMedianROA,
+              sparkline: roaSparkline,
+              cagr: roaCagr,
+              color: '#a0d6ad',
+              tip: 'ROA shows how efficiently a company uses everything it owns to generate profits. Higher ROA means the company does more with less — it doesn\'t need expensive assets to make money.',
+            },
+          ];
+
+          // Build rich dynamic narrative from actual data
+          const roicGrade = grade(latest?.valuation.roic, sMedianROIC);
+          const tk = latest?.ticker || 'This company';
+          const roicPct = latest?.valuation.roic != null ? (latest.valuation.roic * 100).toFixed(1) : null;
+          const roePct = latest?.valuation.roe != null ? (latest.valuation.roe * 100).toFixed(1) : null;
+          const sMedianROICPct = sMedianROIC != null ? (sMedianROIC * 100).toFixed(1) : null;
+          const roicMultiple = (latest?.valuation.roic && sMedianROIC) ? (latest.valuation.roic / sMedianROIC).toFixed(1) : null;
+
+          // ROE vs ROIC divergence check (buyback signal)
+          const roeRoicDivergence = (latest?.valuation.roe && latest?.valuation.roic)
+            ? latest.valuation.roe / latest.valuation.roic
+            : null;
+
+          // All-metrics grade check
+          const allGrades = [grade(latest?.valuation.roic, sMedianROIC), grade(latest?.valuation.roe, sMedianROE), grade(latest?.valuation.roa, sMedianROA)];
+          const allStrong = allGrades.every(g => g.letter === 'A+' || g.letter === 'A');
+
+          let summaryLines = [];
+          if (roicPct != null && sMedianROICPct != null) {
+            // Primary ROIC narrative
+            if (parseFloat(roicMultiple) >= 2.0) {
+              summaryLines.push(`${tk} earns ${roicPct} cents of profit on every dollar of capital — ${roicMultiple}x the ${sector} sector median of ${sMedianROICPct}%. This exceptional capital efficiency, sustained over multiple years, is the clearest signal of a durable competitive moat.`);
+            } else if (parseFloat(roicMultiple) >= 1.2) {
+              summaryLines.push(`${tk} earns ${roicPct}% return on invested capital, above the ${sector} median of ${sMedianROICPct}%. Solid efficiency that suggests competitive advantages are working in the company's favor.`);
+            } else if (parseFloat(roicMultiple) >= 1.0) {
+              summaryLines.push(`${tk} earns ${roicPct}% on invested capital, roughly in line with the ${sector} median of ${sMedianROICPct}%. Adequate but not exceptional — the business competes but doesn't dominate.`);
+            } else if (latest.valuation.roic >= 0.10) {
+              summaryLines.push(`${tk} earns ${roicPct}% on invested capital — below the ${sector} sector median of ${sMedianROICPct}%. Still above the cost of capital, but there's room for improvement.`);
+            } else {
+              summaryLines.push(`${tk} earns ${roicPct}% on invested capital — half the ${sector} sector median of ${sMedianROICPct}%. When ROIC falls below the cost of capital (~10%), the business may be destroying value rather than creating it.`);
+            }
+
+            // ROE vs ROIC divergence narrative
+            if (roeRoicDivergence != null && roeRoicDivergence > 2.0 && roePct) {
+              summaryLines.push(`ROE of ${roePct}% looks extraordinary, but ROIC of ${roicPct}% tells the real story. The gap means share buybacks have shrunk equity, inflating ROE. Focus on ROIC — it's the truer measure.`);
+            }
+
+            // All-strong narrative
+            if (allStrong) {
+              summaryLines.push('A+ across the board: ROIC, ROE, and ROA all exceed their sector medians by wide margins. This is rare and suggests pricing power, operational efficiency, and low capital needs working together.');
+            }
+          }
+
+          return (
+            <div className={CARD}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Capital Efficiency</h3>
+                {sector && <span className="text-xs font-bold text-sand-400 dark:text-warm-500 uppercase tracking-wider">vs {sector} Sector</span>}
+              </div>
+
+              {/* Rich dynamic summary */}
+              {summaryLines.length > 0 && (
+                <div className="space-y-2 mb-6">
+                  {summaryLines.map((line, i) => (
+                    <p key={i} className={`text-sm leading-relaxed ${i === 0 ? roicGrade.color : 'text-sand-500 dark:text-warm-400 italic'}`}>{line}</p>
+                  ))}
+                </div>
+              )}
+
+              {/* Metric cards — compact 3-column grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {metrics.map((m) => {
+                  const g = grade(m.value, m.sectorMedian);
+                  const companyPct = m.value != null ? (m.value * 100).toFixed(1) : null;
+                  const sectorPct = m.sectorMedian != null ? (m.sectorMedian * 100).toFixed(1) : null;
+
+                  return (
+                    <div key={m.abbr} className={`${CARD} !p-4 ${m.primary ? 'border-t-2 border-vi-accent' : ''}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <MetricTooltip tip={m.tip}>
+                          <span className="text-xs font-bold text-sand-700 dark:text-warm-100">{m.abbr}</span>
+                        </MetricTooltip>
+                        <span className={`text-sm font-serif font-bold w-8 h-8 rounded-lg flex items-center justify-center ${g.bg} ${g.color}`}>
+                          {g.letter}
+                        </span>
+                      </div>
+
+                      <div className="mb-1">
+                        <span className="text-2xl font-serif font-bold text-sand-900 dark:text-warm-50">{companyPct != null ? `${companyPct}%` : '—'}</span>
+                      </div>
+                      {sectorPct != null && (
+                        <div className="text-[11px] text-sand-400 dark:text-warm-500 mb-2">
+                          vs <span className="font-bold text-vi-accent">{sectorPct}%</span> median
+                        </div>
+                      )}
+
+                      {/* Compact trend chart with sector median reference line */}
+                      <CagrChart
+                        data={m.sparkline}
+                        quarters={filtered}
+                        cagr={m.cagr}
+                        label={`${m.abbr} Trend`}
+                        color={m.color}
+                        formatFn={fmt.pct}
+                        refLine={m.sectorMedian != null ? { value: m.sectorMedian, label: `${sector} median`, color: '#6d28d9' } : undefined}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Quarterly Valuation Detail Table */}
         <div className={CARD}>
@@ -1020,7 +1142,7 @@ export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
             {currentPE != null && avgPE != null ? (
               currentPE < avgPE
                 ? <>&ldquo;At {fmt.x(currentPE)} earnings, {latest?.ticker || 'AAPL'} trades below its historical average of {fmt.x(avgPE)}. Price is reasonable for a business generating {fmt.pct(latest?.valuation.roic)} return on every dollar of capital.&rdquo;</>
-                : <>&ldquo;At {fmt.x(currentPE)} earnings, the market expects continued growth. With ROIC at {fmt.pct(latest?.valuation.roic)}, every dollar of capital generates strong returns — but the price demands conviction.&rdquo;</>
+                : <>&ldquo;At {fmt.x(currentPE)} earnings, the market expects continued growth. With ROIC at {fmt.pct(latest?.valuation.roic)}, every dollar of capital generates strong returns — understanding whether the premium is justified requires examining the growth trajectory.&rdquo;</>
             ) : (
               <>&ldquo;Focus on what you get for what you pay. Return on capital of {fmt.pct(latest?.valuation.roic)} means this business turns every dollar into meaningful profit — that&apos;s the foundation of intrinsic value.&rdquo;</>
             )}
@@ -1033,6 +1155,32 @@ export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
               <div className="text-sm font-bold">Insight Engine</div>
               <div className="text-[10px] text-sand-500 dark:text-warm-400 uppercase tracking-tighter">Value Synthesis AI</div>
             </div>
+          </div>
+        </div>
+
+        {/* Valuation Over Time — moved from left column */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className={`col-span-2 ${CARD} !p-4`}>
+            <CagrChart
+              data={peSparkline}
+              quarters={withMultiples}
+              cagr={histAvg.pe || 0}
+              label="P/E Ratio"
+              color="#6d28d9"
+              formatFn={fmt.x}
+              summaryLabel={histAvg.pe != null ? `Avg ${fmt.x(histAvg.pe)}` : ''}
+            />
+          </div>
+          <div className={`col-span-2 ${CARD} !p-4`}>
+            <CagrChart
+              data={evEbitdaSparkline}
+              quarters={withMultiples}
+              cagr={histAvg.evEbitda || 0}
+              label="EV / EBITDA"
+              color="#f59e0b"
+              formatFn={fmt.x}
+              summaryLabel={histAvg.evEbitda != null ? `Avg ${fmt.x(histAvg.evEbitda)}` : ''}
+            />
           </div>
         </div>
 
@@ -1079,10 +1227,10 @@ export function ValuationPanel({ data, ratings, latestPrice, timeRange }) {
               </div>
               <p className={`text-sm leading-relaxed ${marginOfSafety > 0 ? 'text-vi-sage' : marginOfSafety < -0.2 ? 'text-vi-rose' : 'text-vi-gold'}`}>
                 {marginOfSafety > 0
-                  ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% below its ${timeLabel} average P/E. "Be greedy when others are fearful."`
+                  ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% below its ${timeLabel} average P/E. Historically, this stock has traded at higher valuations — worth understanding why the market is pricing it lower today.`
                   : marginOfSafety < -0.2
-                    ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% above its ${timeLabel} average. Premium pricing demands premium conviction.`
-                    : `Near its ${timeLabel} fair value. Focus on the quality of the business.`}
+                    ? `Trading ${Math.abs(marginOfSafety * 100).toFixed(0)}% above its ${timeLabel} average. The market is pricing in higher expectations than usual — consider whether the business fundamentals support this premium.`
+                    : `Near its ${timeLabel} fair value. The current price is in line with what investors have historically paid for this stock.`}
               </p>
             </>
           ) : (
@@ -1609,6 +1757,493 @@ export function EarningsQualityPanel({ data, ratings, timeRange }) {
             {latest?.earnings_quality.sbc_to_revenue_pct < 0.03
               ? `With SBC at just ${fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} of revenue, earnings quality is high. The gap between GAAP and adjusted earnings of ${fmt.pct(gaapGap)} reflects depreciation, not accounting games.`
               : `SBC of ${fmt.pct(latest?.earnings_quality.sbc_to_revenue_pct)} relative to revenue should be monitored. Compare this to the company's buyback spending to see if management is offsetting dilution.`}
+          </p>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+export function EarningsPerformancePanel({ data, postEarnings }) {
+  // postEarnings is an array of quarterly earnings with price performance, most recent first
+  const quarters = useMemo(() => postEarnings || [], [postEarnings]);
+  const latest = quarters[0];
+  const upcoming = data?.find(q => {
+    const ee = q.earnings_events;
+    return ee?.earnings_date && !ee?.eps_actual && ee.earnings_date > new Date().toISOString().slice(0, 10);
+  });
+
+  // Stats across all quarters
+  const stats = useMemo(() => {
+    const reported = quarters.filter(q => q.eps_actual != null);
+    if (reported.length === 0) return null;
+    const beats = reported.filter(q => q.eps_beat);
+    const avgSurprise = reported.reduce((s, q) => s + (q.eps_surprise_pct || 0), 0) / reported.length;
+    const avg1d = reported.filter(q => q.price_change_1d != null);
+    const avg1dVal = avg1d.length > 0 ? avg1d.reduce((s, q) => s + q.price_change_1d, 0) / avg1d.length : null;
+    return {
+      totalQuarters: reported.length,
+      beatCount: beats.length,
+      beatRate: Math.round((beats.length / reported.length) * 100),
+      avgSurprise: avgSurprise,
+      avg1dMove: avg1dVal,
+    };
+  }, [quarters]);
+
+  // Sparkline data: EPS surprise % over time (oldest first for chart)
+  const surpriseSparkline = useMemo(() =>
+    quarters.filter(q => q.eps_surprise_pct != null).reverse().map(q => q.eps_surprise_pct),
+  [quarters]);
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      {/* Left column */}
+      <section className="xl:col-span-8 space-y-6">
+        {/* Latest Earnings Card */}
+        {latest && (
+          <div className={`${CARD} border-l-4 ${latest.eps_beat ? 'border-vi-sage' : 'border-vi-rose'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Latest Earnings</h3>
+              <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded ${
+                latest.eps_beat ? 'bg-vi-sage/10 text-vi-sage' : 'bg-vi-rose/10 text-vi-rose'
+              }`}>
+                {latest.eps_beat ? 'BEAT' : 'MISS'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block">Reported</span>
+                <span className="text-lg font-serif font-bold text-sand-900 dark:text-warm-50">{latest.earnings_date}</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block">EPS</span>
+                <span className="text-lg font-serif font-bold text-sand-900 dark:text-warm-50">
+                  ${latest.eps_actual?.toFixed(2)} <span className="text-sm text-sand-400">vs ${latest.eps_estimated?.toFixed(2)}</span>
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block">EPS Surprise</span>
+                <span className={`text-lg font-serif font-bold ${latest.eps_surprise_pct > 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                  {latest.eps_surprise_pct != null ? `${latest.eps_surprise_pct > 0 ? '+' : ''}${latest.eps_surprise_pct.toFixed(1)}%` : '—'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block">Revenue Surprise</span>
+                <span className={`text-lg font-serif font-bold ${(latest.revenue_surprise_pct || 0) > 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                  {latest.revenue_surprise_pct != null ? `${latest.revenue_surprise_pct > 0 ? '+' : ''}${latest.revenue_surprise_pct.toFixed(1)}%` : '—'}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Post-Earnings Price Reaction */}
+        {latest?.price_on_earnings_date != null && (
+          <div className={CARD}>
+            <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-4">Post-Earnings Price Reaction</h3>
+            <div className="grid grid-cols-3 gap-4">
+              {[
+                { label: '1-Day After', value: latest.price_change_1d },
+                { label: '5-Day After', value: latest.price_change_5d },
+                { label: '30-Day After', value: latest.price_change_30d },
+              ].map(({ label, value }) => (
+                <div key={label} className={`${CARD} !p-5 text-center`}>
+                  <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block mb-1">{label}</span>
+                  <span className={`text-3xl font-serif font-bold ${
+                    value == null ? 'text-sand-300' : value >= 0 ? 'text-vi-sage' : 'text-vi-rose'
+                  }`}>
+                    {value != null ? `${value >= 0 ? '+' : ''}${value.toFixed(1)}%` : '—'}
+                  </span>
+                  <span className="text-[10px] text-sand-400 dark:text-warm-500 block mt-1">
+                    from ${latest.price_on_earnings_date?.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* EPS Surprise Trend */}
+        {surpriseSparkline.length > 2 && (
+          <div className={CARD}>
+            <CagrChart
+              data={surpriseSparkline}
+              quarters={quarters.filter(q => q.eps_surprise_pct != null).reverse()}
+              cagr={stats?.avgSurprise || 0}
+              label="EPS Surprise %"
+              color="#6d9e78"
+              formatFn={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
+              summaryLabel={stats ? `Avg ${stats.avgSurprise > 0 ? '+' : ''}${stats.avgSurprise.toFixed(1)}%` : ''}
+            />
+          </div>
+        )}
+
+        {/* Earnings History Table (12-16 quarters) */}
+        <div className={CARD}>
+          <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50 mb-6">Earnings History ({quarters.length} Quarters)</h3>
+          <div className="overflow-x-auto -mx-8">
+            <table className="w-full text-left min-w-[900px]">
+              <thead>
+                <tr className="bg-sand-200/50 dark:bg-warm-800/50">
+                  {['Quarter', 'Date', 'EPS', 'Est.', 'Surprise', 'Result', 'Rev Surprise', '1-Day', '5-Day', '30-Day'].map((col, i) => (
+                    <th key={i} className={`px-4 py-4 text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-300 ${i > 1 ? 'text-right' : ''}`}>
+                      {col}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-sand-200/50 dark:divide-warm-800/50">
+                {quarters.map((q, i) => (
+                  <tr key={i} className={`hover:bg-sand-200/50 dark:hover:bg-warm-800 transition-colors ${i % 2 === 1 ? 'bg-sand-50 dark:bg-warm-950/50' : ''}`}>
+                    <td className="px-4 py-4 font-bold text-sand-800 dark:text-warm-50 whitespace-nowrap">
+                      {q.fiscal_quarter} {q.fiscal_year}
+                    </td>
+                    <td className="px-4 py-4 text-sand-600 dark:text-warm-200 whitespace-nowrap text-sm">{q.earnings_date}</td>
+                    <td className="px-4 py-4 text-right font-bold text-sand-800 dark:text-warm-50">${q.eps_actual?.toFixed(2)}</td>
+                    <td className="px-4 py-4 text-right text-sand-400 dark:text-warm-400">${q.eps_estimated?.toFixed(2)}</td>
+                    <td className={`px-4 py-4 text-right font-bold ${(q.eps_surprise_pct || 0) >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                      {q.eps_surprise_pct != null ? `${q.eps_surprise_pct >= 0 ? '+' : ''}${q.eps_surprise_pct.toFixed(1)}%` : '—'}
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                      <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                        q.eps_beat ? 'bg-vi-sage/10 text-vi-sage' : 'bg-vi-rose/10 text-vi-rose'
+                      }`}>
+                        {q.eps_beat ? 'BEAT' : 'MISS'}
+                      </span>
+                    </td>
+                    <td className={`px-4 py-4 text-right ${(q.revenue_surprise_pct || 0) >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                      {q.revenue_surprise_pct != null ? `${q.revenue_surprise_pct >= 0 ? '+' : ''}${q.revenue_surprise_pct.toFixed(1)}%` : '—'}
+                    </td>
+                    <td className={`px-4 py-4 text-right ${(q.price_change_1d || 0) >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                      {q.price_change_1d != null ? `${q.price_change_1d >= 0 ? '+' : ''}${q.price_change_1d.toFixed(1)}%` : '—'}
+                    </td>
+                    <td className={`px-4 py-4 text-right ${(q.price_change_5d || 0) >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                      {q.price_change_5d != null ? `${q.price_change_5d >= 0 ? '+' : ''}${q.price_change_5d.toFixed(1)}%` : '—'}
+                    </td>
+                    <td className={`px-4 py-4 text-right ${(q.price_change_30d || 0) >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                      {q.price_change_30d != null ? `${q.price_change_30d >= 0 ? '+' : ''}${q.price_change_30d.toFixed(1)}%` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* Right column — Insights */}
+      <aside className="xl:col-span-4 space-y-6">
+        {/* Beat Rate Summary */}
+        {stats && (
+          <div className={`${CARD} border-l-4 border-vi-gold`}>
+            <h4 className="text-sm font-bold uppercase tracking-wider text-sand-500 dark:text-warm-400 mb-4">Track Record</h4>
+            <div className="space-y-4">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block">Beat Rate</span>
+                <span className="text-3xl font-serif font-bold text-sand-900 dark:text-warm-50">{stats.beatRate}%</span>
+                <span className="text-sm text-sand-400 ml-2">{stats.beatCount}/{stats.totalQuarters} quarters</span>
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block">Avg EPS Surprise</span>
+                <span className={`text-2xl font-serif font-bold ${stats.avgSurprise >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                  {stats.avgSurprise >= 0 ? '+' : ''}{stats.avgSurprise.toFixed(1)}%
+                </span>
+              </div>
+              {stats.avg1dMove != null && (
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-sand-500 dark:text-warm-400 block">Avg 1-Day Move</span>
+                  <span className={`text-2xl font-serif font-bold ${stats.avg1dMove >= 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                    {stats.avg1dMove >= 0 ? '+' : ''}{stats.avg1dMove.toFixed(1)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Next Earnings Countdown */}
+        {upcoming && (
+          <div className={CARD}>
+            <h4 className="text-sm font-bold uppercase tracking-wider text-sand-500 dark:text-warm-400 mb-3">Next Earnings</h4>
+            <span className="text-2xl font-serif font-bold text-vi-gold block">
+              {upcoming.earnings_events?.earnings_date}
+            </span>
+            {upcoming.earnings_events?.eps_estimated && (
+              <span className="text-sm text-sand-400 dark:text-warm-400 block mt-1">
+                Consensus EPS: ${Number(upcoming.earnings_events.eps_estimated).toFixed(2)}
+              </span>
+            )}
+            <span className="text-[10px] text-sand-400 dark:text-warm-500 block mt-2">
+              {(() => {
+                const d = upcoming.earnings_events?.earnings_date;
+                if (!d) return '';
+                const diff = Math.ceil((new Date(d) - new Date()) / (1000 * 60 * 60 * 24));
+                return diff > 0 ? `${diff} days away` : diff === 0 ? 'Today' : `${Math.abs(diff)} days ago`;
+              })()}
+            </span>
+          </div>
+        )}
+
+        {/* No data state */}
+        {!latest && (
+          <div className={CARD}>
+            <p className="text-sand-400 dark:text-warm-400 text-sm italic">
+              No reported earnings data available for this ticker.
+            </p>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+export function MoatPanel({ data, ratings, timeRange, sectorAggregate, sector }) {
+  const filtered = useFilteredData(data, timeRange);
+  const latest = filtered[filtered.length - 1];
+  const earliest = filtered[0];
+
+  const COST_OF_CAPITAL = 0.10;
+
+  const roicData = filtered.map(q => q.valuation.roic);
+  const grossMarginData = filtered.map(q => q.revenue_profit.gross_margin);
+  const opMarginData = filtered.map(q => q.revenue_profit.operating_margin);
+  const capexData = filtered.map(q => q.cashflow.capex_intensity);
+
+  const fcfConversionData = filtered.map(q => {
+    if (!q.revenue_profit.net_income || q.revenue_profit.net_income <= 0) return null;
+    return q.cashflow.free_cash_flow / q.revenue_profit.net_income;
+  });
+  const fcfConversionValid = fcfConversionData.filter(v => v != null);
+  const fcfConversionQuarters = filtered.filter((_, i) => fcfConversionData[i] != null);
+
+  const years = useMemo(() => {
+    if (!earliest || !latest) return 0;
+    return (new Date(latest.fiscal_date) - new Date(earliest.fiscal_date)) / (365.25 * 24 * 3600 * 1000);
+  }, [earliest, latest]);
+
+  const roicCagr = useMemo(() => {
+    if (!latest?.valuation.roic || !earliest?.valuation.roic || earliest.valuation.roic <= 0 || years <= 0) return null;
+    return Math.pow(latest.valuation.roic / earliest.valuation.roic, 1 / years) - 1;
+  }, [latest, earliest, years]);
+
+  const sectorMetrics = sectorAggregate?.metrics || {};
+  const sMedianGrossMargin = sectorMetrics.gross_margin?.median != null ? sectorMetrics.gross_margin.median / 100 : null;
+
+  const marginStability = useMemo(() => {
+    const margins = filtered.map(q => q.revenue_profit.operating_margin).filter(v => v != null);
+    if (margins.length < 4) return null;
+    const mean = margins.reduce((a, b) => a + b, 0) / margins.length;
+    const variance = margins.reduce((sum, v) => sum + (v - mean) ** 2, 0) / margins.length;
+    const cv = mean > 0 ? Math.sqrt(variance) / mean : 1;
+    if (cv < 0.05) return { label: 'Very Stable', color: 'text-vi-sage', bg: 'bg-vi-sage/15' };
+    if (cv < 0.15) return { label: 'Stable', color: 'text-vi-sage', bg: 'bg-vi-sage/10' };
+    if (cv < 0.30) return { label: 'Moderate', color: 'text-vi-gold', bg: 'bg-vi-gold/10' };
+    return { label: 'Volatile', color: 'text-vi-rose', bg: 'bg-vi-rose/10' };
+  }, [filtered]);
+
+  const moatTrend = useMemo(() => {
+    if (filtered.length < 8) return null;
+    const mid = Math.floor(filtered.length / 2);
+    const avgFirst = filtered.slice(0, mid).reduce((s, q) => s + q.valuation.roic, 0) / mid;
+    const avgSecond = filtered.slice(mid).reduce((s, q) => s + q.valuation.roic, 0) / (filtered.length - mid);
+    const change = avgSecond - avgFirst;
+    if (change > 0.02) return { label: 'Strengthening', icon: 'trending_up', color: 'text-vi-sage', border: 'border-vi-sage', desc: 'ROIC is trending higher — the competitive advantage appears to be widening over time.' };
+    if (change < -0.02) return { label: 'Eroding', icon: 'trending_down', color: 'text-vi-rose', border: 'border-vi-rose', desc: 'ROIC is trending lower — competitors may be closing the gap. Watch margins and reinvestment rates.' };
+    return { label: 'Stable', icon: 'trending_flat', color: 'text-vi-gold', border: 'border-vi-gold', desc: 'ROIC is holding steady — the moat appears durable with consistent returns on capital.' };
+  }, [filtered]);
+
+  const avgFCFConversion = fcfConversionValid.length > 0
+    ? fcfConversionValid.reduce((a, b) => a + b, 0) / fcfConversionValid.length : null;
+
+  const currentSpread = latest?.valuation.roic != null ? latest.valuation.roic - COST_OF_CAPITAL : null;
+  const spreadPct = currentSpread != null ? (currentSpread * 100).toFixed(1) : null;
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      <section className="xl:col-span-8 space-y-6">
+        {/* Moat Trend Indicator */}
+        {moatTrend && (
+          <div className={`${CARD} !py-5 border-l-4 ${moatTrend.border}`}>
+            <div className="flex items-center gap-3">
+              <span className={`material-symbols-outlined text-2xl ${moatTrend.color}`}>{moatTrend.icon}</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-serif font-bold text-sand-800 dark:text-warm-50">Moat Trend:</span>
+                  <span className={`text-lg font-serif font-bold ${moatTrend.color}`}>{moatTrend.label}</span>
+                </div>
+                <p className="text-sm text-sand-500 dark:text-warm-400">{moatTrend.desc}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Value Creation: ROIC vs Cost of Capital */}
+        <div className={CARD}>
+          <div className="flex items-center justify-between mb-2">
+            <MetricTooltip tip="Return on Invested Capital measures how much profit the company generates per dollar of capital. When ROIC exceeds the cost of capital (roughly 10%), the business is creating real value. A consistent gap above 10% over many years is the strongest quantitative evidence of a competitive moat.">
+              <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Value Creation</h3>
+            </MetricTooltip>
+            <span className="text-xs font-bold text-sand-400 dark:text-warm-500 uppercase tracking-wider">ROIC vs 10% benchmark</span>
+          </div>
+          <p className="text-sm text-sand-500 dark:text-warm-400 mb-4 italic">Does this company earn more than its cost of capital?</p>
+
+          {currentSpread != null && (
+            <div className={`flex items-baseline gap-3 mb-5 px-4 py-3 rounded-lg ${currentSpread > 0 ? 'bg-vi-sage/10' : 'bg-vi-rose/10'}`}>
+              <span className={`text-3xl font-serif font-bold ${currentSpread > 0 ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                {currentSpread > 0 ? '+' : ''}{spreadPct}%
+              </span>
+              <span className="text-sm text-sand-600 dark:text-warm-200">
+                {currentSpread > 0
+                  ? 'above cost of capital — this business creates value for investors'
+                  : 'below cost of capital — the business is currently destroying value'}
+              </span>
+            </div>
+          )}
+
+          <CagrChart data={roicData} quarters={filtered} cagr={roicCagr} label="ROIC" color="#6d28d9" formatFn={fmt.pct}
+            refLine={{ value: COST_OF_CAPITAL, label: '10% benchmark', color: '#ef4444' }} />
+        </div>
+
+        {/* Pricing Power: Margin Stability */}
+        <div className={CARD}>
+          <div className="flex items-center justify-between mb-2">
+            <MetricTooltip tip="Stable or rising margins over time indicate pricing power — the company can maintain or increase prices without losing customers. Volatile or declining margins suggest competitive pressure or commodity-like products.">
+              <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Pricing Power</h3>
+            </MetricTooltip>
+            {marginStability && (
+              <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${marginStability.bg} ${marginStability.color}`}>{marginStability.label}</span>
+            )}
+          </div>
+          <p className="text-sm text-sand-500 dark:text-warm-400 mb-4 italic">Can this company maintain its margins without competing on price?</p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <CagrChart data={grossMarginData} quarters={filtered}
+              cagr={grossMarginData.reduce((a, b) => a + b, 0) / grossMarginData.length || 0}
+              label="Gross Margin" color="#a0d6ad" formatFn={fmt.pct}
+              summaryLabel={`Avg ${fmt.pct(grossMarginData.reduce((a, b) => a + b, 0) / grossMarginData.length)}`}
+              refLine={sMedianGrossMargin != null ? { value: sMedianGrossMargin, label: `${sector} median`, color: '#6d28d9' } : undefined} />
+            <CagrChart data={opMarginData} quarters={filtered}
+              cagr={opMarginData.reduce((a, b) => a + b, 0) / opMarginData.length || 0}
+              label="Operating Margin" color="#f2c35b" formatFn={fmt.pct}
+              summaryLabel={`Avg ${fmt.pct(opMarginData.reduce((a, b) => a + b, 0) / opMarginData.length)}`} />
+          </div>
+        </div>
+
+        {/* Cash Conversion */}
+        <div className={CARD}>
+          <div className="flex items-center justify-between mb-2">
+            <MetricTooltip tip="FCF Conversion compares actual cash generated to reported accounting profits. A ratio above 100% means the company produces more cash than it reports in earnings — the strongest sign of real profitability. Consistently below 70% may indicate earnings quality concerns.">
+              <h3 className="text-xl font-serif text-sand-800 dark:text-warm-50">Cash Conversion</h3>
+            </MetricTooltip>
+            {avgFCFConversion != null && (
+              <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${avgFCFConversion >= 1 ? 'bg-vi-sage/15 text-vi-sage' : avgFCFConversion >= 0.7 ? 'bg-vi-gold/15 text-vi-gold' : 'bg-vi-rose/15 text-vi-rose'}`}>
+                {avgFCFConversion >= 1 ? 'Excellent' : avgFCFConversion >= 0.7 ? 'Adequate' : 'Poor'}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-sand-500 dark:text-warm-400 mb-4 italic">Are the reported profits backed by real cash?</p>
+
+          {avgFCFConversion != null && (
+            <div className={`flex items-baseline gap-3 mb-5 px-4 py-3 rounded-lg ${avgFCFConversion >= 1 ? 'bg-vi-sage/10' : avgFCFConversion >= 0.7 ? 'bg-vi-gold/10' : 'bg-vi-rose/10'}`}>
+              <span className={`text-3xl font-serif font-bold ${avgFCFConversion >= 1 ? 'text-vi-sage' : avgFCFConversion >= 0.7 ? 'text-vi-gold' : 'text-vi-rose'}`}>
+                {(avgFCFConversion * 100).toFixed(0)}%
+              </span>
+              <span className="text-sm text-sand-600 dark:text-warm-200">
+                {avgFCFConversion >= 1 ? 'every dollar of profit is backed by real cash' : avgFCFConversion >= 0.7 ? 'most reported profits convert to cash' : 'reported profits aren\'t fully translating into cash'}
+              </span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <CagrChart data={fcfConversionValid} quarters={fcfConversionQuarters}
+              cagr={avgFCFConversion || 0}
+              label="FCF / Net Income" color="#38bdf8"
+              formatFn={(v) => `${(v * 100).toFixed(0)}%`}
+              summaryLabel={avgFCFConversion != null ? `Avg ${(avgFCFConversion * 100).toFixed(0)}%` : ''}
+              refLine={{ value: 1.0, label: '100%', color: '#a0d6ad' }} />
+            <CagrChart data={capexData} quarters={filtered}
+              cagr={capexData.reduce((a, b) => a + b, 0) / capexData.length || 0}
+              label="CapEx / Revenue" color="#ffb4ab"
+              formatFn={fmt.pct}
+              summaryLabel={`Avg ${fmt.pct(capexData.reduce((a, b) => a + b, 0) / capexData.length)}`} />
+          </div>
+        </div>
+      </section>
+
+      <aside className="xl:col-span-4 space-y-6">
+        {/* Oracle's Perspective */}
+        <div className={`${CARD} border-l-4 border-vi-gold-container shadow-xl`}>
+          <div className="flex items-center gap-2 mb-4">
+            <span className="material-symbols-outlined text-vi-gold" style={{ fontVariationSettings: "'FILL' 1" }}>format_quote</span>
+            <span className="text-xs font-bold uppercase tracking-widest text-vi-gold-dim">Oracle&apos;s Perspective</span>
+          </div>
+          <p className="font-serif italic text-lg leading-relaxed text-sand-700 dark:text-warm-100 mb-6">
+            {currentSpread != null && currentSpread > 0.1
+              ? <>&ldquo;A wide moat isn&apos;t about one good year — it&apos;s about sustained returns on capital that competitors can&apos;t replicate. A ROIC of {fmt.pct(latest?.valuation.roic)} with {marginStability?.label?.toLowerCase() || 'steady'} margins is the financial fingerprint of a durable competitive advantage.&rdquo;</>
+              : currentSpread != null && currentSpread > 0
+                ? <>&ldquo;This business earns above its cost of capital, which is the minimum bar for value creation. The question is whether these returns can persist — the margin trend and cash conversion offer important clues.&rdquo;</>
+                : <>&ldquo;A business that can&apos;t earn above its cost of capital is renting its position, not owning it. Look for improving ROIC trends and stabilizing margins as signs the moat may be rebuilding.&rdquo;</>
+            }
+          </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-sand-200 dark:bg-warm-800 flex items-center justify-center border border-sand-300 dark:border-warm-700">
+              <span className="material-symbols-outlined text-vi-gold text-lg">psychology</span>
+            </div>
+            <div>
+              <div className="text-sm font-bold">Insight Engine</div>
+              <div className="text-[10px] text-sand-500 dark:text-warm-400 uppercase tracking-tighter">Value Synthesis AI</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Moat Scorecard */}
+        <div className={CARD}>
+          <h4 className="font-serif text-lg text-sand-800 dark:text-warm-50 mb-4">Moat Scorecard</h4>
+          {[
+            { label: 'ROIC vs Cost of Capital', value: currentSpread != null ? (currentSpread > 0.05 ? 'Wide Spread' : currentSpread > 0 ? 'Narrow Spread' : 'Negative') : '—', pass: currentSpread != null && currentSpread > 0 },
+            { label: 'Margin Stability', value: marginStability?.label || '—', pass: marginStability && (marginStability.label === 'Very Stable' || marginStability.label === 'Stable') },
+            { label: 'FCF Conversion', value: avgFCFConversion != null ? `${(avgFCFConversion * 100).toFixed(0)}%` : '—', pass: avgFCFConversion != null && avgFCFConversion >= 0.8 },
+            { label: 'Moat Direction', value: moatTrend?.label || '—', pass: moatTrend && moatTrend.label !== 'Eroding' },
+          ].map((item) => (
+            <div key={item.label} className="flex items-center justify-between py-2.5 border-b border-sand-200/30 dark:border-warm-800/30 last:border-0">
+              <span className="text-sm text-sand-600 dark:text-warm-200">{item.label}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-sand-800 dark:text-warm-50">{item.value}</span>
+                <span className={`material-symbols-outlined text-base ${item.pass ? 'text-vi-sage' : 'text-vi-rose'}`}>
+                  {item.pass ? 'check_circle' : 'cancel'}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Bento Tiles */}
+        <div className="grid grid-cols-2 gap-4">
+          <BentoTile label="ROIC" value={fmt.pct(latest?.valuation.roic)} sparkline={roicData} color="#6d28d9" />
+          <BentoTile label="Gross Margin" value={fmt.pct(latest?.revenue_profit.gross_margin)} sparkline={grossMarginData} color="#a0d6ad" />
+          <BentoTile label="FCF Conversion" value={avgFCFConversion != null ? `${(avgFCFConversion * 100).toFixed(0)}%` : '—'} icon="swap_vert" />
+          <BentoTile label="CapEx Intensity" value={fmt.pct(latest?.cashflow.capex_intensity)} sparkline={capexData} color="#ffb4ab" />
+        </div>
+
+        {/* Moat Rating */}
+        <div className={`${CARD} !p-5 flex items-center justify-between`}>
+          <div>
+            <div className="text-xs uppercase font-bold text-sand-500 dark:text-warm-400 mb-1">Moat Rating</div>
+            <div className="text-xl font-serif text-vi-accent">
+              {ratings?.moat?.rating || 'Moderate'} <span className="text-sm font-sans text-sand-500 dark:text-warm-400">Conviction</span>
+            </div>
+          </div>
+          <span className="material-symbols-outlined text-3xl text-vi-accent/30">shield</span>
+        </div>
+
+        {/* Educational Context */}
+        <div className={`${CARD} relative overflow-hidden group`}>
+          <div className="absolute -right-8 -bottom-8 opacity-5 group-hover:opacity-10 transition-opacity">
+            <span className="material-symbols-outlined text-[120px]">shield</span>
+          </div>
+          <h4 className="font-serif text-lg mb-3">What Makes a Moat?</h4>
+          <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed">
+            A competitive moat comes from advantages that are hard to copy: strong brands, network effects, cost advantages, or high switching costs. The metrics above measure the financial evidence of a moat — they reveal whether a competitive advantage exists, even if they can&apos;t identify the source.
           </p>
         </div>
       </aside>

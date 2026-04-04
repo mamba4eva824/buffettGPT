@@ -281,16 +281,18 @@ class TestHandlerIdempotency:
         mock_http_response.status = 200
         mock_http_response.data = json.dumps(SAMPLE_FMP_CANDLES).encode("utf-8")
 
+        mock_eod = {"date": "2026-04-02", "open": 255, "high": 256, "low": 254, "close": 255.92, "volume": 31000000, "change": 1.7, "changePercent": 0.67, "vwap": 254.5}
+
         with patch("handlers.sp500_eod_ingest.table", mock_table), \
              patch("handlers.sp500_eod_ingest.dynamodb", mock_dynamodb), \
              patch("handlers.sp500_eod_ingest.get_sp500_tickers", return_value=["AAPL"]), \
-             patch("handlers.sp500_eod_ingest.fetch_4h_candles", return_value=SAMPLE_FMP_CANDLES), \
-             patch("handlers.sp500_eod_ingest.batch_write_items", return_value=(2, 0)):
+             patch("handlers.sp500_eod_ingest.fetch_daily_eod", return_value=mock_eod), \
+             patch("handlers.sp500_eod_ingest.batch_write_items", return_value=(1, 0)):
             from handlers.sp500_eod_ingest import lambda_handler
             result = lambda_handler({"date": "2026-04-02", "force": True}, None)
 
         assert "skipped" not in result
-        assert result["recordsWritten"] == 2
+        assert result["recordsWritten"] == 1
 
 
 # ============================================================================
@@ -336,32 +338,19 @@ class TestHandlerEndToEnd:
         mock_dynamodb = MagicMock()
         mock_dynamodb.meta.client.batch_write_item.side_effect = mock_batch_write
 
-        def mock_fetch_candles(ticker, trade_date):
-            return [
-                {
-                    "date": f"{trade_date} 13:30:00",
-                    "open": 100.0,
-                    "high": 105.0,
-                    "low": 99.0,
-                    "close": 104.0,
-                    "volume": 1000000,
-                },
-                {
-                    "date": f"{trade_date} 09:30:00",
-                    "open": 98.0,
-                    "high": 101.0,
-                    "low": 97.0,
-                    "close": 100.0,
-                    "volume": 2000000,
-                },
-            ]
+        def mock_fetch_eod(ticker, trade_date):
+            return {
+                "date": trade_date, "open": 100.0, "high": 105.0, "low": 99.0,
+                "close": 104.0, "volume": 1000000, "change": 2.0,
+                "changePercent": 1.96, "vwap": 102.0,
+            }
 
         tickers = ["AAPL", "MSFT", "GOOGL"]
 
         with patch("handlers.sp500_eod_ingest.table", mock_table), \
              patch("handlers.sp500_eod_ingest.dynamodb", mock_dynamodb), \
              patch("handlers.sp500_eod_ingest.get_sp500_tickers", return_value=tickers), \
-             patch("handlers.sp500_eod_ingest.fetch_4h_candles", side_effect=mock_fetch_candles), \
+             patch("handlers.sp500_eod_ingest.fetch_daily_eod", side_effect=mock_fetch_eod), \
              patch("handlers.sp500_eod_ingest.TABLE_NAME", "stock-data-4h-test"), \
              patch("handlers.sp500_eod_ingest.time"):
             from handlers.sp500_eod_ingest import lambda_handler
@@ -370,32 +359,27 @@ class TestHandlerEndToEnd:
         assert result["statusCode"] == 200
         assert result["tickersProcessed"] == 3
         assert result["tickersWithData"] == 3
-        assert result["totalCandles"] == 6
-        assert result["recordsWritten"] == 6
+        assert result["totalCandles"] == 3  # 1 daily record per ticker
+        assert result["recordsWritten"] == 3
         assert result["recordsFailed"] == 0
 
-        # Verify items written to DynamoDB
-        assert len(written_items) == 6
-
-        # Check tickers present
+        assert len(written_items) == 3
         tickers_written = {item["symbol"] for item in written_items}
         assert tickers_written == {"AAPL", "MSFT", "GOOGL"}
-
-        # Check key schema on first item
-        aapl_items = [i for i in written_items if i["symbol"] == "AAPL"]
-        assert len(aapl_items) == 2
-        assert aapl_items[0]["PK"] == "TICKER#AAPL"
-        assert aapl_items[0]["GSI_PK"] == "DATE#2026-04-02"
+        assert written_items[0]["PK"].startswith("TICKER#")
+        assert written_items[0]["SK"].startswith("DAILY#")
 
     def test_custom_tickers_override(self):
         """Event with custom tickers list uses those instead of full S&P 500."""
         mock_table = MagicMock()
         mock_table.query.return_value = {"Items": []}
 
+        mock_eod = {"date": "2026-04-02", "open": 255, "high": 256, "low": 254, "close": 255.92, "volume": 31000000, "change": 1.7, "changePercent": 0.67, "vwap": 254.5}
+
         with patch("handlers.sp500_eod_ingest.table", mock_table), \
              patch("handlers.sp500_eod_ingest.dynamodb") as mock_ddb, \
-             patch("handlers.sp500_eod_ingest.fetch_4h_candles", return_value=SAMPLE_FMP_CANDLES), \
-             patch("handlers.sp500_eod_ingest.batch_write_items", return_value=(4, 0)), \
+             patch("handlers.sp500_eod_ingest.fetch_daily_eod", return_value=mock_eod), \
+             patch("handlers.sp500_eod_ingest.batch_write_items", return_value=(2, 0)), \
              patch("handlers.sp500_eod_ingest.time"):
             from handlers.sp500_eod_ingest import lambda_handler
             result = lambda_handler({
@@ -587,7 +571,7 @@ class TestMarketClosedCheck:
 
         with patch("handlers.sp500_eod_ingest.table", mock_table), \
              patch("handlers.sp500_eod_ingest.get_sp500_tickers", return_value=["AAPL"]), \
-             patch("handlers.sp500_eod_ingest.fetch_4h_candles", return_value=[]), \
+             patch("handlers.sp500_eod_ingest.fetch_daily_eod", return_value=None), \
              patch("handlers.sp500_eod_ingest.time"):
             from handlers.sp500_eod_ingest import lambda_handler
             result = lambda_handler({"date": "2026-12-25", "force": True}, None)

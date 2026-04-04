@@ -24,6 +24,29 @@ All notable changes to the Market Intelligence feature are documented here.
 - Lambda Powertools: structured JSON logs (`Logger`) + custom CloudWatch metrics (`Metrics`)
 - `aws-lambda-powertools` added to shared dependencies layer
 - 58 tests (42 unit + 16 integration) covering full pipeline
+- `sp500_eod_ingest` upgraded to fetch daily EOD from `/stable/historical-price-eod/full` (close, change, changePercent, vwap)
+- Daily records stored with `DAILY#` SK prefix for clean separation from 4h candle data
+- `backfill_eod_prices.py` script for bulk daily EOD historical loading
+- `backfill_q4_earnings.py` script for targeted earnings updates via FMP `/stable/earnings` API
+- `_get_latest_price()` now queries `DAILY#` prefix for accurate daily close + change %
+
+**Fixed**
+- `feature_extractor._align_earnings_to_quarters`: upcoming earnings (no epsActual) no longer claim quarter slots over already-reported earnings
+- 609 S&P 500 quarters updated with Q4 2025 reported earnings (beat/miss data)
+- FMP rate limit delay increased to 0.5s (safe for 300 calls/min Starter tier)
+
+### Earnings Performance Tab (2026-04-03)
+
+**Added**
+- New "Earnings" tab on Value Insights dashboard between Valuation and Cash Flow
+- Latest Earnings card: beat/miss badge, EPS + revenue surprise %
+- Post-Earnings Price Reaction: 1-day, 5-day, 30-day % change after announcement
+- Earnings History table: 12-16 quarters of beats/misses with price performance columns
+- EPS Surprise Trend sparkline chart over time
+- Track Record sidebar: beat rate, avg surprise %, avg 1-day post-earnings move
+- Next Earnings countdown with consensus EPS estimate
+- Backend: `_fetch_daily_prices_from_fmp()` fetches 5yr daily prices, `_compute_post_earnings()` calculates price reactions around each earnings date
+- 63 tests (42 unit + 21 integration) all passing
 
 ### Staging Environment + Stripe Subscription Fix (2026-03-24)
 

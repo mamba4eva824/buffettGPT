@@ -1857,10 +1857,14 @@ def _align_earnings_to_quarters(
         if not best_match:
             continue
 
-        # Don't overwrite if we already have earnings for this quarter
-        # (keep the most recent earnings event per quarter)
+        # Prefer reported earnings (has epsActual) over upcoming estimates.
+        # If this quarter already has reported data, don't overwrite with an estimate.
+        # If this quarter only has an estimate, allow a reported record to replace it.
         if best_match in aligned:
-            continue
+            existing_has_actual = 'eps_actual' in aligned[best_match]
+            this_has_actual = earning.get('epsActual') is not None
+            if existing_has_actual or not this_has_actual:
+                continue
 
         eps_actual = earning.get('epsActual')
         eps_estimated = earning.get('epsEstimated')
