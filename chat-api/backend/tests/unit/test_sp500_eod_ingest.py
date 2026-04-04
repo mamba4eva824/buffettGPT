@@ -28,38 +28,25 @@ os.environ['FMP_SECRET_NAME'] = 'buffett-test-fmp'
 
 
 # ============================================================================
-# Sample FMP response data (matches actual API shape)
+# Sample FMP response data (matches actual daily EOD API shape)
 # ============================================================================
-SAMPLE_FMP_CANDLES = [
-    {
-        "date": "2026-04-02 13:30:00",
-        "open": 255.35,
-        "low": 254.31,
-        "high": 256.13,
-        "close": 255.92,
-        "volume": 7012489,
-    },
-    {
-        "date": "2026-04-02 09:30:00",
-        "open": 254.19,
-        "low": 250.65,
-        "high": 255.73,
-        "close": 255.31,
-        "volume": 11322815,
-    },
-]
+SAMPLE_EOD = {
+    "date": "2026-04-02",
+    "open": 255.35,
+    "high": 256.13,
+    "low": 254.31,
+    "close": 255.92,
+    "volume": 7012489,
+    "change": 1.73,
+    "changePercent": 0.68,
+    "vwap": 255.12,
+}
 
-# Candles from a different date (should be filtered out)
-SAMPLE_FMP_CANDLES_MIXED = SAMPLE_FMP_CANDLES + [
-    {
-        "date": "2026-04-01 13:30:00",
-        "open": 250.00,
-        "low": 249.00,
-        "high": 251.00,
-        "close": 250.50,
-        "volume": 5000000,
-    },
-]
+# FMP API returns a list; fetch_daily_eod picks data[0]
+SAMPLE_FMP_EOD_RESPONSE = [SAMPLE_EOD]
+
+# Empty response (no data for the requested date)
+SAMPLE_FMP_EOD_EMPTY = []
 
 
 # ============================================================================
@@ -102,28 +89,24 @@ class TestToDecimal:
 
 
 # ============================================================================
-# Test build_dynamo_items
+# Test build_daily_item
 # ============================================================================
-class TestBuildDynamoItems:
+class TestBuildDailyItem:
     """AC-1: Correct PK/SK/GSI keys and Decimal-converted values."""
 
     def test_correct_key_schema(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        items = build_dynamo_items("AAPL", SAMPLE_FMP_CANDLES, "2026-04-02")
+        from handlers.sp500_eod_ingest import build_daily_item
+        item = build_daily_item("AAPL", SAMPLE_EOD, "2026-04-02")
 
-        assert len(items) == 2
-
-        item = items[0]
         assert item["PK"] == "TICKER#AAPL"
-        assert item["SK"] == "DATETIME#2026-04-02 13:30:00"
+        assert item["SK"] == "DAILY#2026-04-02"
         assert item["GSI_PK"] == "DATE#2026-04-02"
         assert item["GSI_SK"] == "TICKER#AAPL"
 
     def test_decimal_conversion(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        items = build_dynamo_items("AAPL", SAMPLE_FMP_CANDLES, "2026-04-02")
+        from handlers.sp500_eod_ingest import build_daily_item
+        item = build_daily_item("AAPL", SAMPLE_EOD, "2026-04-02")
 
-        item = items[0]
         assert item["open"] == Decimal("255.35")
         assert item["high"] == Decimal("256.13")
         assert item["low"] == Decimal("254.31")
@@ -132,31 +115,40 @@ class TestBuildDynamoItems:
         assert item["volume"] == 7012489
 
     def test_metadata_fields(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        items = build_dynamo_items("MSFT", SAMPLE_FMP_CANDLES, "2026-04-02")
+        from handlers.sp500_eod_ingest import build_daily_item
+        item = build_daily_item("MSFT", SAMPLE_EOD, "2026-04-02")
 
-        item = items[0]
         assert item["symbol"] == "MSFT"
         assert item["date"] == "2026-04-02"
-        assert item["datetime"] == "2026-04-02 13:30:00"
         assert "ingested_at" in item
 
-    def test_empty_candles(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        items = build_dynamo_items("AAPL", [], "2026-04-02")
-        assert items == []
+    def test_change_fields(self):
+        from handlers.sp500_eod_ingest import build_daily_item
+        item = build_daily_item("AAPL", SAMPLE_EOD, "2026-04-02")
 
-    def test_candle_missing_date_skipped(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        candles = [{"open": 100, "close": 101, "high": 102, "low": 99, "volume": 1000}]
-        items = build_dynamo_items("AAPL", candles, "2026-04-02")
-        assert items == []
+        assert item["change"] == Decimal("1.73")
+        assert item["change_percent"] == Decimal("0.68")
+        assert item["vwap"] == Decimal("255.12")
 
-    def test_second_item_sort_key(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        items = build_dynamo_items("AAPL", SAMPLE_FMP_CANDLES, "2026-04-02")
+    def test_missing_optional_fields_default_to_zero(self):
+        """EOD dict missing change/vwap fields should default to Decimal('0')."""
+        from handlers.sp500_eod_ingest import build_daily_item
+        minimal_eod = {"date": "2026-04-02", "open": 100, "high": 101, "low": 99, "close": 100.5, "volume": 5000}
+        item = build_daily_item("AAPL", minimal_eod, "2026-04-02")
 
-        assert items[1]["SK"] == "DATETIME#2026-04-02 09:30:00"
+        assert item["change"] == Decimal("0")
+        assert item["change_percent"] == Decimal("0")
+        assert item["vwap"] == Decimal("0")
+
+    def test_none_eod_values_handled(self):
+        """Fields with None values should convert to Decimal('0') or int 0."""
+        from handlers.sp500_eod_ingest import build_daily_item
+        eod_with_nones = {"date": "2026-04-02", "open": None, "high": None, "low": None, "close": None, "volume": None, "change": None, "changePercent": None, "vwap": None}
+        item = build_daily_item("AAPL", eod_with_nones, "2026-04-02")
+
+        assert item["open"] == Decimal("0")
+        assert item["close"] == Decimal("0")
+        assert item["volume"] == 0
 
 
 # ============================================================================
@@ -276,11 +268,6 @@ class TestHandlerIdempotency:
         mock_dynamodb = MagicMock()
         mock_dynamodb.meta.client.batch_write_item.return_value = {"UnprocessedItems": {}}
 
-        # Mock FMP response
-        mock_http_response = MagicMock()
-        mock_http_response.status = 200
-        mock_http_response.data = json.dumps(SAMPLE_FMP_CANDLES).encode("utf-8")
-
         mock_eod = {"date": "2026-04-02", "open": 255, "high": 256, "low": 254, "close": 255.92, "volume": 31000000, "change": 1.7, "changePercent": 0.67, "vwap": 254.5}
 
         with patch("handlers.sp500_eod_ingest.table", mock_table), \
@@ -299,18 +286,18 @@ class TestHandlerIdempotency:
 # Test empty data (market holiday)
 # ============================================================================
 class TestHandlerEmptyData:
-    """AC-6: Graceful handling when FMP returns no candles."""
+    """AC-6: Graceful handling when FMP returns no data."""
 
-    def test_no_candles_returns_zero(self):
+    def test_no_eod_data_returns_zero(self):
         mock_table = MagicMock()
         mock_table.query.return_value = {"Items": []}  # not ingested
 
         with patch("handlers.sp500_eod_ingest.table", mock_table), \
              patch("handlers.sp500_eod_ingest.get_sp500_tickers", return_value=["AAPL", "MSFT"]), \
-             patch("handlers.sp500_eod_ingest.fetch_4h_candles", return_value=[]), \
+             patch("handlers.sp500_eod_ingest.fetch_daily_eod", return_value=None), \
              patch("handlers.sp500_eod_ingest.time"):
             from handlers.sp500_eod_ingest import lambda_handler
-            result = lambda_handler({"date": "2026-12-25"}, None)
+            result = lambda_handler({"date": "2026-04-02"}, None)
 
         assert result["recordsWritten"] == 0
         assert "holiday" in result["body"].lower() or result["recordsWritten"] == 0
@@ -392,16 +379,16 @@ class TestHandlerEndToEnd:
 
 
 # ============================================================================
-# Test fetch_4h_candles date filtering
+# Test fetch_daily_eod
 # ============================================================================
-class TestFetch4hCandles:
-    """Test that candles are filtered to the target trade date."""
+class TestFetchDailyEod:
+    """Test daily EOD fetch from FMP API."""
 
-    def test_filters_by_date(self):
-        """Only candles matching target date are returned."""
+    def test_returns_single_eod_dict(self):
+        """Successful response returns the first item from the list."""
         mock_http_response = MagicMock()
         mock_http_response.status = 200
-        mock_http_response.data = json.dumps(SAMPLE_FMP_CANDLES_MIXED).encode("utf-8")
+        mock_http_response.data = json.dumps(SAMPLE_FMP_EOD_RESPONSE).encode("utf-8")
 
         mock_pool = MagicMock()
         mock_pool.request.return_value = mock_http_response
@@ -409,12 +396,12 @@ class TestFetch4hCandles:
         import urllib3
         with patch.object(urllib3, "PoolManager", return_value=mock_pool), \
              patch("handlers.sp500_eod_ingest.get_fmp_api_key", return_value="test-key"):
-            from handlers.sp500_eod_ingest import fetch_4h_candles
-            result = fetch_4h_candles("AAPL", "2026-04-02")
+            from handlers.sp500_eod_ingest import fetch_daily_eod
+            result = fetch_daily_eod("AAPL", "2026-04-02")
 
-        assert len(result) == 2
-        for candle in result:
-            assert candle["date"].startswith("2026-04-02")
+        assert result is not None
+        assert result["date"] == "2026-04-02"
+        assert result["close"] == 255.92
 
     def test_handles_non_200_response(self):
         mock_http_response = MagicMock()
@@ -426,9 +413,9 @@ class TestFetch4hCandles:
         import urllib3
         with patch.object(urllib3, "PoolManager", return_value=mock_pool), \
              patch("handlers.sp500_eod_ingest.get_fmp_api_key", return_value="test-key"):
-            from handlers.sp500_eod_ingest import fetch_4h_candles
-            result = fetch_4h_candles("AAPL", "2026-04-02")
-            assert result == []
+            from handlers.sp500_eod_ingest import fetch_daily_eod
+            result = fetch_daily_eod("AAPL", "2026-04-02")
+            assert result is None
 
     def test_handles_rate_limit_429(self):
         """429 triggers a retry after delay."""
@@ -437,7 +424,7 @@ class TestFetch4hCandles:
 
         mock_response_ok = MagicMock()
         mock_response_ok.status = 200
-        mock_response_ok.data = json.dumps(SAMPLE_FMP_CANDLES).encode("utf-8")
+        mock_response_ok.data = json.dumps(SAMPLE_FMP_EOD_RESPONSE).encode("utf-8")
 
         mock_pool = MagicMock()
         mock_pool.request.side_effect = [mock_response_429, mock_response_ok]
@@ -446,9 +433,26 @@ class TestFetch4hCandles:
         with patch.object(urllib3, "PoolManager", return_value=mock_pool), \
              patch("handlers.sp500_eod_ingest.get_fmp_api_key", return_value="test-key"), \
              patch("handlers.sp500_eod_ingest.time"):
-            from handlers.sp500_eod_ingest import fetch_4h_candles
-            result = fetch_4h_candles("AAPL", "2026-04-02")
-            assert len(result) == 2
+            from handlers.sp500_eod_ingest import fetch_daily_eod
+            result = fetch_daily_eod("AAPL", "2026-04-02")
+            assert result is not None
+            assert result["close"] == 255.92
+
+    def test_empty_response_returns_none(self):
+        """Empty list from FMP returns None."""
+        mock_http_response = MagicMock()
+        mock_http_response.status = 200
+        mock_http_response.data = json.dumps(SAMPLE_FMP_EOD_EMPTY).encode("utf-8")
+
+        mock_pool = MagicMock()
+        mock_pool.request.return_value = mock_http_response
+
+        import urllib3
+        with patch.object(urllib3, "PoolManager", return_value=mock_pool), \
+             patch("handlers.sp500_eod_ingest.get_fmp_api_key", return_value="test-key"):
+            from handlers.sp500_eod_ingest import fetch_daily_eod
+            result = fetch_daily_eod("AAPL", "2026-04-02")
+            assert result is None
 
 
 # ============================================================================
@@ -458,8 +462,8 @@ class TestBatchWriteItems:
     """Test DynamoDB batch write with retry logic."""
 
     def test_successful_write(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        items = build_dynamo_items("AAPL", SAMPLE_FMP_CANDLES, "2026-04-02")
+        from handlers.sp500_eod_ingest import build_daily_item
+        item = build_daily_item("AAPL", SAMPLE_EOD, "2026-04-02")
 
         mock_dynamodb = MagicMock()
         mock_dynamodb.meta.client.batch_write_item.return_value = {"UnprocessedItems": {}}
@@ -467,9 +471,9 @@ class TestBatchWriteItems:
         with patch("handlers.sp500_eod_ingest.dynamodb", mock_dynamodb), \
              patch("handlers.sp500_eod_ingest.TABLE_NAME", "stock-data-4h-test"):
             from handlers.sp500_eod_ingest import batch_write_items
-            written, failed = batch_write_items(items)
+            written, failed = batch_write_items([item])
 
-        assert written == 2
+        assert written == 1
         assert failed == 0
 
     def test_empty_items(self):
@@ -489,7 +493,7 @@ class TestTickerFormatConversion:
         """BRK.B should call FMP with BRK-B."""
         mock_http_response = MagicMock()
         mock_http_response.status = 200
-        mock_http_response.data = json.dumps(SAMPLE_FMP_CANDLES).encode("utf-8")
+        mock_http_response.data = json.dumps(SAMPLE_FMP_EOD_RESPONSE).encode("utf-8")
 
         mock_pool = MagicMock()
         mock_pool.request.return_value = mock_http_response
@@ -497,8 +501,8 @@ class TestTickerFormatConversion:
         import urllib3
         with patch.object(urllib3, "PoolManager", return_value=mock_pool), \
              patch("handlers.sp500_eod_ingest.get_fmp_api_key", return_value="test-key"):
-            from handlers.sp500_eod_ingest import fetch_4h_candles
-            fetch_4h_candles("BRK.B", "2026-04-02")
+            from handlers.sp500_eod_ingest import fetch_daily_eod
+            fetch_daily_eod("BRK.B", "2026-04-02")
 
         # Verify the URL used dash notation
         call_args = mock_pool.request.call_args
@@ -510,7 +514,7 @@ class TestTickerFormatConversion:
         """AAPL should remain AAPL in the URL."""
         mock_http_response = MagicMock()
         mock_http_response.status = 200
-        mock_http_response.data = json.dumps(SAMPLE_FMP_CANDLES).encode("utf-8")
+        mock_http_response.data = json.dumps(SAMPLE_FMP_EOD_RESPONSE).encode("utf-8")
 
         mock_pool = MagicMock()
         mock_pool.request.return_value = mock_http_response
@@ -518,8 +522,8 @@ class TestTickerFormatConversion:
         import urllib3
         with patch.object(urllib3, "PoolManager", return_value=mock_pool), \
              patch("handlers.sp500_eod_ingest.get_fmp_api_key", return_value="test-key"):
-            from handlers.sp500_eod_ingest import fetch_4h_candles
-            fetch_4h_candles("AAPL", "2026-04-02")
+            from handlers.sp500_eod_ingest import fetch_daily_eod
+            fetch_daily_eod("AAPL", "2026-04-02")
 
         url_called = mock_pool.request.call_args[0][1]
         assert "symbol=AAPL" in url_called
@@ -586,14 +590,13 @@ class TestTTL:
     """Items include expires_at for DynamoDB TTL."""
 
     def test_items_have_expires_at(self):
-        from handlers.sp500_eod_ingest import build_dynamo_items
-        items = build_dynamo_items("AAPL", SAMPLE_FMP_CANDLES, "2026-04-02")
+        from handlers.sp500_eod_ingest import build_daily_item
+        item = build_daily_item("AAPL", SAMPLE_EOD, "2026-04-02")
 
-        for item in items:
-            assert "expires_at" in item
-            assert isinstance(item["expires_at"], int)
-            # Should be roughly 365 days from now (within 2 days tolerance)
-            import time as _time
-            expected_min = int(_time.time()) + 363 * 86400
-            expected_max = int(_time.time()) + 367 * 86400
-            assert expected_min <= item["expires_at"] <= expected_max
+        assert "expires_at" in item
+        assert isinstance(item["expires_at"], int)
+        # Should be roughly 365 days from now (within 2 days tolerance)
+        import time as _time
+        expected_min = int(_time.time()) + 363 * 86400
+        expected_max = int(_time.time()) + 367 * 86400
+        assert expected_min <= item["expires_at"] <= expected_max

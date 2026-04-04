@@ -204,7 +204,8 @@ module "lambda" {
   metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
 
   # EventBridge schedule for daily 4h candle ingestion
-  enable_eod_ingest_schedule = true
+  enable_eod_ingest_schedule      = true
+  enable_earnings_update_schedule = true
 }
 
 # ================================================

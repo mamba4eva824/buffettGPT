@@ -1,152 +1,250 @@
-# EventBridge EOD Stock Price Pipeline
+# S&P 500 Daily Stock Price Pipeline
 
 ## Executive Summary
 
-The EOD (End-of-Day) Stock Price Pipeline is a serverless data ingestion system that automatically fetches 4-hour interval OHLCV (Open, High, Low, Close, Volume) candle data for all S&P 500 companies after US market close. The pipeline runs daily on a cron schedule via Amazon EventBridge and stores results in DynamoDB, providing near-real-time closing prices to the Value Insights dashboard.
+The S&P 500 Daily Stock Price Pipeline is a fully automated, serverless data ingestion system that captures end-of-day closing prices for all S&P 500 companies after US market close. Running every weekday evening via Amazon EventBridge, it fetches official closing prices from Financial Modeling Prep (FMP), stores them in DynamoDB, and serves them to the Value Insights dashboard -- giving retail investors current stock price context alongside quarterly fundamental analysis.
+
+### Why It Exists
+
+The Value Insights dashboard analyzes companies using quarterly financial data (revenue, earnings, margins, etc.), but investors also need to know *what the stock costs today*. Without current prices, valuation metrics like P/E ratio and earnings yield can't be computed against the live market. This pipeline bridges the gap between quarterly fundamentals and daily market prices.
+
+### Key Facts
+
+| Metric | Value |
+|--------|-------|
+| Frequency | Daily, Monday--Friday |
+| Trigger time | 10:00 PM UTC (6:00 PM Eastern) |
+| Data source | FMP `/stable/historical-price-eod/full` |
+| Tickers covered | ~503 S&P 500 companies |
+| Records per run | ~481 (17 tickers typically empty) |
+| Execution time | ~4 minutes |
+| Monthly cost | < $0.05 (excluding FMP API plan) |
 
 ---
 
 ## Architecture
 
 ```
-EventBridge Rule (cron: 10 PM UTC Mon-Fri)
-    |
-    v
-Lambda: sp500_eod_ingest (900s timeout, 512 MB)
-    |   1. Idempotency check (query AAPL for target date)
-    |   2. Load S&P 500 ticker list (498 tickers)
-    |   3. For each ticker:
-    |      GET /stable/historical-chart/4hour?symbol={ticker}
-    |      Filter candles to target trade date
-    |   4. BatchWriteItem to DynamoDB
-    v
-DynamoDB: stock-data-4h-{env}
-    PK: TICKER#AAPL       SK: DATETIME#2026-04-02 13:30:00
-    GSI (DateIndex):
-    GSI_PK: DATE#2026-04-02    GSI_SK: TICKER#AAPL
+                     Amazon EventBridge
+                     cron(0 22 ? * MON-FRI *)
+                     10 PM UTC / 6 PM Eastern
+                            |
+                            v
+              +----------------------------+
+              |   sp500_eod_ingest Lambda   |
+              |   (900s timeout, 512 MB)    |
+              +----------------------------+
+                  |                    |
+                  v                    v
+           AWS Secrets Manager    FMP REST API
+           (FMP API key)         /stable/historical-price-eod/full
+                                    |
+                                    v
+                            For each of ~503 tickers:
+                            - Fetch daily OHLCV data
+                            - 0.5s delay between calls
+                            - Rate limit: <300 calls/min
+                                    |
+                                    v
+              +----------------------------+
+              |  DynamoDB: stock-data-4h    |
+              |  PK: TICKER#AAPL           |
+              |  SK: DAILY#2026-04-02      |
+              |  TTL: 365 days             |
+              +----------------------------+
+                            |
+                            v
+              +----------------------------+
+              |  value_insights_handler    |
+              |  GET /insights/{ticker}    |
+              |  → latest_price: $255.92   |
+              +----------------------------+
+                            |
+                            v
+              +----------------------------+
+              |  Value Insights Dashboard   |
+              |  Executive Summary: $255.92 |
+              |  Valuation tab: Live P/E    |
+              +----------------------------+
 ```
 
-### Data Flow
+---
 
-1. **Trigger**: EventBridge fires at 10 PM UTC (6 PM ET), approximately 2 hours after US market close at 4 PM ET. This delay ensures FMP has processed and published the day's candle data.
+## How It Works (Step by Step)
 
-2. **Idempotency**: The Lambda checks if AAPL data already exists for the target date. If so, it skips execution (unless `force=true` is passed). This prevents duplicate writes on retries.
+### 1. EventBridge Fires the Trigger
 
-3. **Data Fetch**: The Lambda iterates through all 498 S&P 500 tickers, calling the FMP `/stable/historical-chart/4hour` endpoint for each. A 0.35-second delay between calls respects FMP's rate limits (Starter tier: 300 calls/min).
+Every weekday at 10:00 PM UTC (6:00 PM Eastern), Amazon EventBridge invokes the `sp500_eod_ingest` Lambda function. The 2-hour delay after market close (4:00 PM ET) ensures FMP has processed and published the official closing prices.
 
-4. **Date Filtering**: The FMP endpoint returns recent candles across multiple days. The Lambda filters to only candles matching the target trade date.
+**Terraform**: `chat-api/terraform/modules/lambda/eventbridge.tf`
 
-5. **DynamoDB Write**: Candles are written in batches of 25 via `BatchWriteItem` with exponential backoff retry on throttling.
+| Property | Value |
+|----------|-------|
+| Schedule | `cron(0 22 ? * MON-FRI *)` |
+| Retry policy | 2 retries, max event age 1 hour |
+| Feature flag | `enable_eod_ingest_schedule` |
 
-### Typical Daily Run
+### 2. Lambda Checks Guards
 
-| Metric | Value |
-|--------|-------|
-| Tickers processed | ~498 |
-| Tickers with data | ~479 |
-| Candles per ticker | 2 (9:30 AM and 1:30 PM sessions) |
-| Total records written | ~957 |
-| Execution time | ~3 minutes |
-| FMP API calls | ~498 |
+Before doing any work, the Lambda checks two conditions:
+
+- **Market holiday guard**: Skips weekends and known US market holidays (New Year's, MLK Day, Presidents' Day, Good Friday, Memorial Day, Independence Day, Labor Day, Thanksgiving, Christmas). These are hardcoded as MM-DD values and need annual review for floating holidays.
+
+- **Idempotency guard**: Queries DynamoDB for `TICKER#AAPL` with `SK = DAILY#{target_date}`. If AAPL already has data for this date, the entire run is skipped. This prevents duplicate writes on EventBridge retries.
+
+Both guards can be overridden with `"force": true` in the event payload.
+
+### 3. Lambda Fetches Prices from FMP
+
+The Lambda loads the S&P 500 ticker list (from a local Python module, falling back to FMP's constituent API) and iterates through each ticker:
+
+```
+GET /stable/historical-price-eod/full?symbol={ticker}&from={date}&to={date}
+```
+
+This returns the official end-of-day data: open, high, low, close, volume, change, change percentage, and VWAP.
+
+**Rate limiting**: A 0.5-second delay between calls keeps usage under FMP's 300 calls/minute limit. If FMP returns HTTP 429 (rate limited), the Lambda waits 2 seconds and retries once.
+
+### 4. Lambda Writes to DynamoDB
+
+Each ticker's closing price is stored as a single record:
+
+```json
+{
+  "PK": "TICKER#AAPL",
+  "SK": "DAILY#2026-04-02",
+  "GSI_PK": "DATE#2026-04-02",
+  "GSI_SK": "TICKER#AAPL",
+  "symbol": "AAPL",
+  "date": "2026-04-02",
+  "close": 255.92,
+  "open": 254.20,
+  "high": 256.13,
+  "low": 250.65,
+  "volume": 31289369,
+  "change": 0.29,
+  "change_percent": 0.11,
+  "vwap": 253.84,
+  "expires_at": 1775258640,
+  "ingested_at": "2026-04-02T22:01:15+00:00"
+}
+```
+
+Records are written in batches of 25 via `BatchWriteItem` with exponential backoff (up to 5 retries) on DynamoDB throttling.
+
+### 5. Dashboard Reads the Price
+
+When a user visits the Value Insights dashboard, the `value_insights_handler` Lambda queries:
+
+```
+PK = "TICKER#AAPL"
+ScanIndexForward = False  (descending -- most recent first)
+Limit = 1
+```
+
+This returns the most recent closing price, which is displayed in the Executive Summary header and used to compute the live P/E ratio on the Valuation tab.
+
+If the price table is unavailable, the frontend falls back to the stock price from the latest quarterly financial data.
+
+### 6. CloudWatch Metrics
+
+After each run, the Lambda emits custom CloudWatch metrics:
+- `RecordsWritten` -- total DynamoDB records written
+- `TickersProcessed` -- total tickers attempted
+- `TickersWithData` -- tickers with successful price data
+- `TickersEmpty` -- tickers with no data (delisted, etc.)
+- `RecordsFailed` -- DynamoDB write failures
 
 ---
 
 ## Infrastructure Components
 
-### EventBridge Rule
-
-| Property | Value |
-|----------|-------|
-| Name | `{project}-{env}-sp500-eod-4h-ingest` |
-| Schedule | `cron(0 22 ? * MON-FRI *)` |
-| Retry policy | 2 retries, max event age 1 hour |
-| Feature flag | `enable_eod_ingest_schedule` (per environment) |
-
-**Terraform**: `chat-api/terraform/modules/lambda/eventbridge.tf`
-
 ### Lambda Function
 
 | Property | Value |
 |----------|-------|
-| Name | `{project}-{env}-sp500-eod-ingest` |
+| Name | `buffett-{env}-sp500-eod-ingest` |
 | Handler | `sp500_eod_ingest.lambda_handler` |
 | Runtime | Python 3.11 |
-| Timeout | 900 seconds (15 minutes) |
+| Timeout | 900 seconds (15 minutes max) |
 | Memory | 512 MB |
 
 **Source**: `chat-api/backend/src/handlers/sp500_eod_ingest.py`
 
 **Environment Variables**:
-- `FMP_SECRET_NAME` - Secrets Manager key for FMP API credentials
-- `STOCK_DATA_4H_TABLE` - DynamoDB table name
-- `ENVIRONMENT` - dev/staging/prod
-- `LOG_LEVEL` - Logging verbosity
+
+| Variable | Purpose |
+|----------|---------|
+| `STOCK_DATA_4H_TABLE` | DynamoDB table name (`stock-data-4h-{env}`) |
+| `FMP_SECRET_NAME` | Secrets Manager key for FMP API credentials |
+| `ENVIRONMENT` | dev / staging / prod |
+| `POWERTOOLS_SERVICE_NAME` | Lambda Powertools service name |
+| `POWERTOOLS_METRICS_NAMESPACE` | CloudWatch metrics namespace |
+
+**Terraform**: `chat-api/terraform/modules/lambda/main.tf`
 
 ### DynamoDB Table
 
 | Property | Value |
 |----------|-------|
 | Name | `stock-data-4h-{env}` |
-| Billing | PAY_PER_REQUEST (on-demand) |
-| Encryption | KMS (server-side) |
-| TTL | `expires_at` (not currently set by ingestion) |
+| Billing mode | PAY_PER_REQUEST (on-demand) |
+| Partition key (PK) | String -- `TICKER#{symbol}` |
+| Sort key (SK) | String -- `DAILY#{YYYY-MM-DD}` |
+| TTL attribute | `expires_at` (365 days from ingestion) |
+| Encryption | KMS server-side |
 
-**Key Schema**:
-- PK: `TICKER#{symbol}` (e.g., `TICKER#AAPL`)
-- SK: `DATETIME#{timestamp}` (e.g., `DATETIME#2026-04-02 13:30:00`)
+**Global Secondary Index (DateIndex)**:
 
-**GSI (DateIndex)**:
-- GSI_PK: `DATE#{YYYY-MM-DD}` (e.g., `DATE#2026-04-02`)
-- GSI_SK: `TICKER#{symbol}`
+| Property | Value |
+|----------|-------|
+| GSI partition key | `DATE#{YYYY-MM-DD}` |
+| GSI sort key | `TICKER#{symbol}` |
+| Projection | ALL |
 
 **Terraform**: `chat-api/terraform/modules/dynamodb/stock_data_4h.tf`
 
 ### Query Patterns
 
-**Single ticker, date range** (e.g., "AAPL prices last 30 days"):
-```
-PK = TICKER#AAPL AND SK BETWEEN DATETIME#2026-03-01 AND DATETIME#2026-04-02
-```
-
-**All tickers for one date** (e.g., "all closing prices on April 2"):
-```
-GSI: GSI_PK = DATE#2026-04-02
-```
-
-**Latest price for a ticker** (used by Value Insights handler):
-```
-PK = TICKER#AAPL, ScanIndexForward=False, Limit=1
-```
+| Use Case | Query |
+|----------|-------|
+| Latest price for a ticker | `PK = TICKER#AAPL, ScanIndexForward=False, Limit=1` |
+| Ticker price history | `PK = TICKER#AAPL, SK BETWEEN DAILY#start AND DAILY#end` |
+| All S&P 500 prices for a date | `GSI: GSI_PK = DATE#2026-04-02` |
 
 ---
 
 ## Operational Procedures
 
-### Manual Invocation
+### Manual Lambda Invocation
 
 ```bash
 # Single ticker test
 aws lambda invoke \
   --function-name buffett-dev-sp500-eod-ingest \
+  --cli-binary-format raw-in-base64-out \
   --payload '{"tickers": ["AAPL"], "date": "2026-04-02"}' \
   /dev/stdout
 
 # Full S&P 500, specific date
 aws lambda invoke \
   --function-name buffett-dev-sp500-eod-ingest \
+  --cli-binary-format raw-in-base64-out \
   --payload '{"date": "2026-04-02"}' \
   /dev/stdout
 
 # Force overwrite existing data
 aws lambda invoke \
   --function-name buffett-dev-sp500-eod-ingest \
+  --cli-binary-format raw-in-base64-out \
   --payload '{"date": "2026-04-02", "force": true}' \
   /dev/stdout
 ```
 
 ### Local Backfill Script
 
-For bulk historical loading without Lambda:
+For bulk historical loading without Lambda (runs locally with AWS credentials):
 
 ```bash
 cd chat-api/backend
@@ -160,26 +258,32 @@ python scripts/backfill_4h_prices.py --date 2026-04-02
 # Specific tickers only
 python scripts/backfill_4h_prices.py --tickers AAPL MSFT GOOGL
 
-# Overwrite
+# Overwrite existing
 python scripts/backfill_4h_prices.py --date 2026-04-02 --force
 ```
 
+**Note**: The backfill script uses FMP's lighter `/stable/historical-price-eod/light` endpoint (close + volume only, no OHLCV) to minimize API usage. Records written by the backfill will have fewer fields than Lambda-ingested records.
+
 ### Monitoring
 
-Check recent invocations:
 ```bash
+# Check recent Lambda logs
 aws logs tail /aws/lambda/buffett-dev-sp500-eod-ingest --since 1d
-```
 
-Check EventBridge rule status:
-```bash
+# Check EventBridge rule status
 aws events describe-rule --name buffett-dev-sp500-eod-4h-ingest
+
+# Count records in table
+aws dynamodb scan --table-name stock-data-4h-dev --select COUNT
 ```
 
 ### Disabling the Schedule
 
-Set `enable_eod_ingest_schedule = false` in the environment's `main.tf` and apply, or disable directly:
 ```bash
+# Via Terraform (recommended)
+# Set enable_eod_ingest_schedule = false in environments/dev/main.tf, then terraform apply
+
+# Via AWS CLI (immediate)
 aws events disable-rule --name buffett-dev-sp500-eod-4h-ingest
 ```
 
@@ -189,92 +293,16 @@ aws events disable-rule --name buffett-dev-sp500-eod-4h-ingest
 
 ### Value Insights Dashboard
 
-The `value_insights_handler` Lambda queries the 4h table for the most recent candle to provide:
-- **Last Close price** displayed as a banner on the Valuation tab
-- **Live P/E ratio** computed from current price + last quarter's TTM earnings yield
-- **Price delta** showing how the live P/E compares to the last quarterly snapshot
+The `value_insights_handler` Lambda reads from the stock data table to provide:
 
-This gives the dashboard near-real-time price context alongside quarterly fundamental data.
+1. **Stock price in Executive Summary** -- displayed alongside the ticker name and rating counts
+2. **Stock price on the Valuation tab** -- "Last Close" banner with price and date
+3. **Live P/E ratio** -- computed from current stock price divided by trailing 12-month earnings per share
+4. **Price context for all panels** -- available to any panel that accepts the `latestPrice` prop
 
----
+### Frontend Fallback
 
-## Known Gaps and Limitations
-
-### 1. Ticker Format Mismatch
-
-**Issue**: The S&P 500 ticker list uses dot notation (`BRK.B`, `BF.B`) but FMP requires dash notation (`BRK-B`, `BF-B`). These 2 tickers consistently return empty.
-
-**Impact**: Berkshire Hathaway and Brown-Forman missing from daily prices.
-
-**Fix**: Apply `to_fmp_format()` conversion (already exists in `index_tickers.py`) inside `fetch_4h_candles()` before calling the FMP API.
-
-### 2. Stale Ticker List
-
-**Issue**: The `SP500_TICKERS` list in `index_tickers.py` contains 19 companies that have been acquired, delisted, or renamed since the list was compiled:
-
-| Category | Tickers | Examples |
-|----------|---------|----------|
-| Acquired/delisted | 9 | ATVI (Microsoft), PXD (Exxon), DFS (Capital One), WBA (Sycamore) |
-| FMP data gap | 6 | CMA, DAY, FI, IPG, K, MMC |
-| Ticker format | 2 | BRK.B, BF.B |
-
-**Impact**: 19 wasted API calls per run, misleading "empty" counts in logs.
-
-**Fix**: Periodic reconciliation of `SP500_TICKERS` against the live S&P 500 index. Could be automated by comparing against FMP's `/stable/sp500-constituent` endpoint quarterly.
-
-### 3. No Market Holiday Awareness
-
-**Issue**: The Lambda runs every weekday. On US market holidays (e.g., July 4th, Thanksgiving), FMP returns no candles. The Lambda handles this gracefully (returns `recordsWritten: 0`) but still consumes an invocation and ~498 API calls.
-
-**Impact**: Wasted FMP API quota on ~10 holidays/year.
-
-**Fix**: Maintain a holiday calendar (static list or FMP's `/stable/is-the-market-open` endpoint) and skip execution on known holidays.
-
-### 4. No Dead Letter Queue
-
-**Issue**: If the Lambda fails after exhausting EventBridge's 2 retries, the event is silently dropped. There is no DLQ or SNS alert.
-
-**Impact**: A failed ingestion day could go unnoticed until a user sees stale prices.
-
-**Fix**: Add an SQS DLQ to the Lambda configuration and a CloudWatch alarm on DLQ depth (pattern already exists in the SAM template design).
-
-### 5. No TTL on Records
-
-**Issue**: Records are written without an `expires_at` attribute. The table will grow indefinitely.
-
-**Impact**: At ~957 records/day, the table would reach ~250K records in one year. Storage cost is minimal (~$0.25/year at PAY_PER_REQUEST) but query performance on large partitions could degrade.
-
-**Fix**: Set `expires_at` to 90 or 365 days from ingestion. The TTL attribute is already enabled on the table in Terraform.
-
-### 6. Single-Region, Single-Source Dependency
-
-**Issue**: The pipeline depends entirely on FMP's `/stable/historical-chart/4hour` endpoint. If FMP is down or rate-limits aggressively, the entire day's ingestion fails.
-
-**Impact**: No price data for the day; Value Insights shows stale last-close.
-
-**Fix**: Consider a fallback data source (e.g., Yahoo Finance via `yfinance`, or Alpha Vantage) or cache the last known good price with a "stale" flag.
-
----
-
-## Improvement Roadmap
-
-### Short-Term (Low Effort)
-
-1. **Fix BRK.B/BF.B ticker format** - Apply `to_fmp_format()` in `fetch_4h_candles()`. One-line change.
-2. **Add TTL to ingested records** - Set `expires_at` to `ingested_at + 365 days`.
-3. **Clean stale tickers from SP500_TICKERS list** - Remove 9 acquired companies.
-
-### Medium-Term (Moderate Effort)
-
-4. **Add DLQ + CloudWatch alarm** - SQS queue + alarm on depth > 0, with SNS email notification.
-5. **Market holiday skip** - Check FMP market-open endpoint before processing. Saves ~5K API calls/year.
-6. **Backfill automation** - Step Function that detects gaps (missing dates) and triggers backfill Lambda invocations.
-
-### Long-Term (Strategic)
-
-7. **Daily close endpoint** - Add a lightweight API route (`GET /prices/{ticker}/latest`) to serve current price directly, reducing frontend coupling to the quarterly metrics API.
-8. **Multi-interval support** - Extend the table schema to support 1h, daily, and weekly candles alongside 4h, enabling future charting features.
-9. **Real-time price updates** - Replace daily batch with a WebSocket or polling mechanism for intraday price updates during market hours.
+If the stock data table is empty or the Lambda can't read from it, the frontend falls back to deriving stock price from the latest quarter's `market_valuation.market_cap / diluted_shares`. This ensures the dashboard always shows a price, though it may be from the last fiscal quarter-end rather than the latest trading day.
 
 ---
 
@@ -282,9 +310,48 @@ This gives the dashboard near-real-time price context alongside quarterly fundam
 
 | Resource | Estimate |
 |----------|----------|
-| Lambda | ~22 invocations x 3 min x 512 MB = **$0.02** |
-| DynamoDB writes | ~957 items/day x 22 days = **$0.01** |
-| DynamoDB reads | ~500 reads/day (Value Insights) = **$0.001** |
+| Lambda invocations | ~22 x 4 min x 512 MB = **$0.03** |
+| DynamoDB writes | ~481 items/day x 22 days = **$0.01** |
+| DynamoDB reads | ~500 reads/day (dashboard queries) = **$0.001** |
 | Secrets Manager | ~22 calls/month = **$0.01** |
 | EventBridge | Free tier |
-| **Total** | **< $0.05/month** (excluding FMP API plan) |
+| **Total** | **< $0.05/month** (excluding FMP API subscription) |
+
+---
+
+## Known Limitations
+
+### 1. Hardcoded Holiday Calendar
+
+The Lambda uses a static set of MM-DD values for US market holidays. Floating holidays (MLK Day, Presidents' Day, Good Friday, Memorial Day, Labor Day, Thanksgiving) shift each year and need manual updates. The Lambda handles missed holidays gracefully (writes 0 records) but wastes ~503 FMP API calls per holiday.
+
+**Mitigation**: Check FMP's `/stable/is-the-market-open` endpoint before processing, or maintain a year-specific holiday list.
+
+### 2. Ticker Format Mismatch
+
+Two S&P 500 tickers use dot notation (`BRK.B`, `BF.B`) but FMP requires dash notation (`BRK-B`, `BF-B`). The Lambda applies `ticker.replace('.', '-')` but the local ticker list may not match FMP's expected format for all edge cases.
+
+### 3. No Dead Letter Queue
+
+If the Lambda fails after EventBridge's 2 retries, the event is silently dropped. A missed day goes unnoticed until a user sees stale prices.
+
+**Mitigation**: Add an SQS DLQ and a CloudWatch alarm on DLQ depth.
+
+### 4. Table Naming
+
+The table is named `stock-data-4h` (reflecting an earlier design for 4-hour candle data) but now stores daily EOD records with `DAILY#` sort keys. The naming was not updated to avoid a table migration.
+
+---
+
+## File Reference
+
+| File | Purpose |
+|------|---------|
+| `chat-api/backend/src/handlers/sp500_eod_ingest.py` | Lambda handler -- fetches and stores daily EOD prices |
+| `chat-api/backend/scripts/backfill_4h_prices.py` | Local CLI tool for ad-hoc backfill |
+| `chat-api/backend/src/handlers/value_insights_handler.py` | Downstream consumer -- `_get_latest_price()` reads from stock data table |
+| `chat-api/terraform/modules/lambda/eventbridge.tf` | EventBridge cron rule and Lambda permission |
+| `chat-api/terraform/modules/lambda/main.tf` | Lambda function definition (timeout, memory, env vars) |
+| `chat-api/terraform/modules/dynamodb/stock_data_4h.tf` | DynamoDB table schema (keys, GSI, TTL) |
+| `frontend/src/hooks/useInsightsData.js` | Frontend hook consuming `latest_price` from API |
+| `frontend/src/api/insightsApi.js` | API client calling `GET /insights/{ticker}` |

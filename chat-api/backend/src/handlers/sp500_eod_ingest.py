@@ -101,51 +101,6 @@ def _fetch_sp500_from_fmp() -> List[str]:
     return sorted({item["symbol"] for item in data})
 
 
-def fetch_4h_candles(ticker: str, trade_date: str) -> List[Dict]:
-    """
-    Fetch 4-hour candles for a single ticker from FMP stable API.
-
-    The /stable/historical-chart/4hour endpoint returns recent 4h OHLCV candles.
-    We filter to only keep candles matching the target trade_date.
-
-    Returns list of candle dicts with keys: date, open, high, low, close, volume.
-    """
-    import urllib3
-    http = urllib3.PoolManager()
-    api_key = get_fmp_api_key()
-
-    # FMP uses dash notation for share classes (BRK.B -> BRK-B)
-    fmp_ticker = ticker.replace('.', '-')
-
-    url = f"{FMP_BASE_URL}/historical-chart/4hour"
-    params = f"symbol={fmp_ticker}&apikey={api_key}"
-    full_url = f"{url}?{params}"
-
-    try:
-        resp = http.request("GET", full_url, timeout=15.0)
-        if resp.status == 429:
-            logger.warning(f"Rate limited on {ticker}, waiting 2s")
-            time.sleep(2)
-            resp = http.request("GET", full_url, timeout=15.0)
-
-        if resp.status != 200:
-            logger.error(f"FMP error for {ticker}: HTTP {resp.status}")
-            return []
-
-        data = json.loads(resp.data.decode("utf-8"))
-        if not isinstance(data, list):
-            logger.warning(f"Unexpected response for {ticker}: {type(data)}")
-            return []
-
-        # Filter candles to the target trade date
-        candles = [c for c in data if c.get("date", "").startswith(trade_date)]
-        return candles
-
-    except Exception as e:
-        logger.error(f"Failed to fetch 4h candles for {ticker}: {e}")
-        return []
-
-
 def fetch_daily_eod(ticker: str, trade_date: str) -> Dict | None:
     """
     Fetch single-day EOD price from FMP stable API.
@@ -220,47 +175,6 @@ def _to_decimal(value: Any) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return Decimal("0")
-
-
-def build_dynamo_items(ticker: str, candles: List[Dict], trade_date: str) -> List[Dict]:
-    """
-    Convert FMP 4h candle records to DynamoDB items.
-
-    Key schema:
-      PK     = TICKER#{symbol}
-      SK     = DATETIME#{YYYY-MM-DD HH:MM:SS}  (candle timestamp)
-      GSI_PK = DATE#{YYYY-MM-DD}
-      GSI_SK = TICKER#{symbol}
-    """
-    items = []
-    now = datetime.now(timezone.utc)
-    now_iso = now.isoformat()
-    # TTL: expire records after 365 days
-    expires_at = int((now + timedelta(days=365)).timestamp())
-
-    for candle in candles:
-        candle_datetime = candle.get("date", "")
-        if not candle_datetime:
-            continue
-
-        items.append({
-            "PK": f"TICKER#{ticker}",
-            "SK": f"DATETIME#{candle_datetime}",
-            "GSI_PK": f"DATE#{trade_date}",
-            "GSI_SK": f"TICKER#{ticker}",
-            "symbol": ticker,
-            "date": trade_date,
-            "datetime": candle_datetime,
-            "open": _to_decimal(candle.get("open")),
-            "high": _to_decimal(candle.get("high")),
-            "low": _to_decimal(candle.get("low")),
-            "close": _to_decimal(candle.get("close")),
-            "volume": int(candle.get("volume") or 0),
-            "ingested_at": now_iso,
-            "expires_at": expires_at,
-        })
-
-    return items
 
 
 def batch_write_items(items: List[Dict]) -> Tuple[int, int]:
@@ -350,7 +264,7 @@ def already_ingested(trade_date: str) -> bool:
             KeyConditionExpression="PK = :pk AND begins_with(SK, :sk_prefix)",
             ExpressionAttributeValues={
                 ":pk": "TICKER#AAPL",
-                ":sk_prefix": f"DATETIME#{trade_date}",
+                ":sk_prefix": f"DAILY#{trade_date}",
             },
             Limit=1,
         )

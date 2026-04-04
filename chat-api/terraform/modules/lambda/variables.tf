@@ -155,3 +155,10 @@ variable "enable_eod_ingest_schedule" {
   type        = bool
   default     = false
 }
+
+# EventBridge Earnings Update Schedule
+variable "enable_earnings_update_schedule" {
+  description = "Enable EventBridge schedule for 2x daily earnings update (post-close + post-open)"
+  type        = bool
+  default     = false
+}
