@@ -34,6 +34,8 @@ All notable changes to the Market Intelligence feature are documented here.
 - `feature_extractor._align_earnings_to_quarters`: upcoming earnings (no epsActual) no longer claim quarter slots over already-reported earnings
 - 609 S&P 500 quarters updated with Q4 2025 reported earnings (beat/miss data)
 - FMP rate limit delay increased to 0.5s (safe for 300 calls/min Starter tier)
+- `sp500_pipeline._batch_write_items` replaced with `_update_items` using `update_item` instead of `put_item` — preserves existing attributes (especially `market_valuation`) on each pipeline run
+- New `fetch_ttm_valuations()` in `fmp_client.py` — fetches `/stable/key-metrics-ttm` and attaches fresh P/E, EV/EBITDA, market_cap to the latest quarter
 
 ### Earnings Performance Tab (2026-04-03)
 
