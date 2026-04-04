@@ -35,6 +35,19 @@ All notable changes to the Market Intelligence feature are documented here.
 - 609 S&P 500 quarters updated with Q4 2025 reported earnings (beat/miss data)
 - FMP rate limit delay increased to 0.5s (safe for 300 calls/min Starter tier)
 
+### Earnings Performance Tab (2026-04-03)
+
+**Added**
+- New "Earnings" tab on Value Insights dashboard between Valuation and Cash Flow
+- Latest Earnings card: beat/miss badge, EPS + revenue surprise %
+- Post-Earnings Price Reaction: 1-day, 5-day, 30-day % change after announcement
+- Earnings History table: 12-16 quarters of beats/misses with price performance columns
+- EPS Surprise Trend sparkline chart over time
+- Track Record sidebar: beat rate, avg surprise %, avg 1-day post-earnings move
+- Next Earnings countdown with consensus EPS estimate
+- Backend: `_fetch_daily_prices_from_fmp()` fetches 5yr daily prices, `_compute_post_earnings()` calculates price reactions around each earnings date
+- 63 tests (42 unit + 21 integration) all passing
+
 ### Staging Environment + Stripe Subscription Fix (2026-03-24)
 
 **Added**
