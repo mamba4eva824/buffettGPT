@@ -6,10 +6,12 @@ import {
   computeValuationMultiples,
 } from '../components/value-insights/mockData';
 
-export default function useInsightsData(ticker) {
+export default function useInsightsData(ticker, sector = '') {
   const [data, setData] = useState(null);
   const [ratings, setRatings] = useState(null);
   const [latestPrice, setLatestPrice] = useState(null);
+  const [sectorAggregate, setSectorAggregate] = useState(null);
+  const [postEarnings, setPostEarnings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const abortRef = useRef(null);
@@ -25,7 +27,7 @@ export default function useInsightsData(ticker) {
     setLoading(true);
     setError(null);
 
-    fetchInsights(ticker)
+    fetchInsights(ticker, sector)
       .then((result) => {
         if (controller.signal.aborted) return;
 
@@ -33,6 +35,8 @@ export default function useInsightsData(ticker) {
           setData(null);
           setRatings(null);
           setLatestPrice(null);
+          setSectorAggregate(null);
+          setPostEarnings(null);
           setError('no_data');
           setLoading(false);
           return;
@@ -48,7 +52,17 @@ export default function useInsightsData(ticker) {
 
         setData(withValuation);
         setRatings(result.ratings || null);
-        setLatestPrice(result.latest_price || null);
+
+        // Use live price if available, otherwise fall back to latest quarter's stock price
+        if (result.latest_price) {
+          setLatestPrice(result.latest_price);
+        } else {
+          const lastQ = withValuation[withValuation.length - 1];
+          const fallbackPrice = lastQ?.valuation?.stock_price;
+          setLatestPrice(fallbackPrice ? { price: fallbackPrice, date: lastQ.fiscal_date, source: 'quarterly' } : null);
+        }
+        setSectorAggregate(result.sector_aggregate || null);
+        setPostEarnings(result.post_earnings || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -58,7 +72,7 @@ export default function useInsightsData(ticker) {
       });
 
     return () => controller.abort();
-  }, [ticker]);
+  }, [ticker, sector]);
 
-  return { data, ratings, latestPrice, loading, error };
+  return { data, ratings, latestPrice, sectorAggregate, postEarnings, loading, error };
 }

@@ -172,6 +172,23 @@ SAMPLE_4H_CANDLE = {
     'ingested_at': '2026-04-02T22:00:00+00:00',
 }
 
+SAMPLE_DAILY_CANDLE = {
+    'PK': 'TICKER#AAPL',
+    'SK': 'DAILY#2026-04-02',
+    'GSI_PK': 'DATE#2026-04-02',
+    'GSI_SK': 'TICKER#AAPL',
+    'symbol': 'AAPL',
+    'date': '2026-04-02',
+    'open': Decimal('254.20'),
+    'high': Decimal('256.13'),
+    'low': Decimal('250.65'),
+    'close': Decimal('255.92'),
+    'volume': 31289369,
+    'change': Decimal('1.72'),
+    'change_percent': Decimal('0.67663'),
+    'ingested_at': '2026-04-02T22:00:00+00:00',
+}
+
 
 def _make_event(ticker, method='GET'):
     return {
@@ -359,9 +376,9 @@ def test_cors_headers_present(aws_resources):
 # Latest Price Tests (_get_latest_price + integration)
 # ============================================================================
 
-def test_latest_price_returned_when_4h_data_exists(aws_resources):
-    """latest_price is populated when stock-data-4h has candle data."""
-    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_4H_CANDLE)
+def test_latest_price_returned_when_daily_data_exists(aws_resources):
+    """latest_price is populated when stock-data-4h has daily candle data."""
+    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_DAILY_CANDLE)
     aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER)
 
     response = aws_resources['handler'](_make_event('AAPL'), None)
@@ -371,7 +388,7 @@ def test_latest_price_returned_when_4h_data_exists(aws_resources):
     assert body['latest_price'] is not None
     assert body['latest_price']['price'] == 255.92
     assert body['latest_price']['date'] == '2026-04-02'
-    assert body['latest_price']['volume'] == 7012489
+    assert body['latest_price']['volume'] == 31289369
 
 
 def test_latest_price_null_when_no_4h_data(aws_resources):
@@ -385,23 +402,21 @@ def test_latest_price_null_when_no_4h_data(aws_resources):
     assert body['latest_price'] is None
 
 
-def test_latest_price_returns_most_recent_candle(aws_resources):
-    """When multiple candles exist, the most recent is returned."""
-    # Earlier candle
+def test_latest_price_returns_most_recent_daily(aws_resources):
+    """When multiple daily records exist, the most recent is returned."""
     aws_resources['stock_data_4h_table'].put_item(Item={
-        **SAMPLE_4H_CANDLE,
-        'SK': 'DATETIME#2026-04-02 09:30:00',
-        'datetime': '2026-04-02 09:30:00',
+        **SAMPLE_DAILY_CANDLE,
+        'SK': 'DAILY#2026-04-01',
+        'date': '2026-04-01',
         'close': Decimal('254.00'),
     })
-    # Later candle (should be returned)
-    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_4H_CANDLE)
+    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_DAILY_CANDLE)
 
     response = aws_resources['handler'](_make_event('AAPL'), None)
     body = json.loads(response['body'])
 
     assert body['latest_price']['price'] == 255.92
-    assert body['latest_price']['datetime'] == '2026-04-02 13:30:00'
+    assert body['latest_price']['date'] == '2026-04-02'
 
 
 def test_latest_price_null_when_table_not_configured(aws_resources):
@@ -418,14 +433,151 @@ def test_latest_price_null_when_table_not_configured(aws_resources):
 
 
 def test_latest_price_includes_ohlv_fields(aws_resources):
-    """latest_price includes open, high, low, volume for the banner."""
-    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_4H_CANDLE)
+    """latest_price includes open, high, low, volume, change for the banner."""
+    aws_resources['stock_data_4h_table'].put_item(Item=SAMPLE_DAILY_CANDLE)
 
     response = aws_resources['handler'](_make_event('AAPL'), None)
     body = json.loads(response['body'])
 
     lp = body['latest_price']
-    assert lp['open'] == 255.35
+    assert lp['open'] == 254.2
     assert lp['high'] == 256.13
-    assert lp['low'] == 254.31
-    assert lp['volume'] == 7012489
+    assert lp['low'] == 250.65
+    assert lp['volume'] == 31289369
+    assert lp['change_percent'] == 0.67663
+
+
+# ============================================================================
+# Post-Earnings Performance Tests
+# ============================================================================
+
+SAMPLE_QUARTER_WITH_EARNINGS = {
+    **SAMPLE_QUARTER,
+    'fiscal_date': '2025-12-27',
+    'fiscal_quarter': 'Q4',
+    'fiscal_year': Decimal('2025'),
+    'earnings_events': {
+        'earnings_date': '2026-01-29',
+        'eps_actual': Decimal('2.84'),
+        'eps_estimated': Decimal('2.67'),
+        'eps_surprise_pct': Decimal('6.37'),
+        'eps_beat': True,
+        'revenue_actual': Decimal('143756000000'),
+        'revenue_estimated': Decimal('138391000000'),
+        'revenue_surprise_pct': Decimal('3.88'),
+    },
+}
+
+# Mock FMP daily prices (around earnings date Jan 29) — oldest first
+MOCK_DAILY_PRICES = [
+    {"symbol": "AAPL", "date": "2026-01-27", "close": 258.27},
+    {"symbol": "AAPL", "date": "2026-01-28", "close": 256.44},
+    {"symbol": "AAPL", "date": "2026-01-29", "close": 258.28},
+    {"symbol": "AAPL", "date": "2026-01-30", "close": 259.48},
+    {"symbol": "AAPL", "date": "2026-01-31", "close": 261.50},
+    {"symbol": "AAPL", "date": "2026-02-02", "close": 270.01},
+    {"symbol": "AAPL", "date": "2026-02-03", "close": 269.48},
+    {"symbol": "AAPL", "date": "2026-02-04", "close": 276.49},
+    {"symbol": "AAPL", "date": "2026-02-05", "close": 275.91},
+    {"symbol": "AAPL", "date": "2026-02-06", "close": 278.12},
+    {"symbol": "AAPL", "date": "2026-02-09", "close": 274.62},
+    {"symbol": "AAPL", "date": "2026-02-10", "close": 273.68},
+    {"symbol": "AAPL", "date": "2026-02-11", "close": 275.50},
+    {"symbol": "AAPL", "date": "2026-02-12", "close": 261.73},
+    {"symbol": "AAPL", "date": "2026-02-13", "close": 255.78},
+    {"symbol": "AAPL", "date": "2026-02-17", "close": 263.88},
+    {"symbol": "AAPL", "date": "2026-02-18", "close": 264.35},
+    {"symbol": "AAPL", "date": "2026-02-19", "close": 260.58},
+    {"symbol": "AAPL", "date": "2026-02-20", "close": 264.58},
+    {"symbol": "AAPL", "date": "2026-02-23", "close": 266.18},
+    {"symbol": "AAPL", "date": "2026-02-24", "close": 272.14},
+    {"symbol": "AAPL", "date": "2026-02-25", "close": 274.23},
+    {"symbol": "AAPL", "date": "2026-02-26", "close": 272.95},
+    {"symbol": "AAPL", "date": "2026-02-27", "close": 264.18},
+    {"symbol": "AAPL", "date": "2026-03-02", "close": 264.72},
+]
+
+
+def _patch_fmp(aws_resources, daily_prices):
+    """Helper: patch _fetch_daily_prices_from_fmp on the handler module."""
+    from unittest.mock import patch
+    return patch.object(aws_resources['mod'], '_fetch_daily_prices_from_fmp', return_value=daily_prices)
+
+
+def test_post_earnings_returned_in_response(aws_resources):
+    """post_earnings field is present in the API response."""
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER_WITH_EARNINGS)
+
+    with _patch_fmp(aws_resources, MOCK_DAILY_PRICES):
+        response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    assert 'post_earnings' in body
+    assert isinstance(body['post_earnings'], list)
+    assert len(body['post_earnings']) >= 1
+
+
+def test_post_earnings_computes_price_changes(aws_resources):
+    """post_earnings includes 1-day price change after earnings."""
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER_WITH_EARNINGS)
+
+    with _patch_fmp(aws_resources, MOCK_DAILY_PRICES):
+        response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    latest = body['post_earnings'][0]
+    assert latest['earnings_date'] == '2026-01-29'
+    assert latest['eps_actual'] == 2.84
+    assert latest['eps_beat'] is True
+    assert latest['price_on_earnings_date'] == 258.28
+    # 1-day after: Jan 30 close ($259.48) vs Jan 29 close ($258.28) = +0.46%
+    assert latest['price_change_1d'] is not None
+    assert latest['price_change_1d'] > 0  # Stock went up
+    # 5-day after: Feb 3 close ($269.48) vs $258.28 = ~+4.3%
+    assert latest['price_change_5d'] is not None
+    assert latest['price_change_5d'] > 4.0
+
+
+def test_post_earnings_includes_earnings_details(aws_resources):
+    """post_earnings includes EPS surprise and revenue data."""
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER_WITH_EARNINGS)
+
+    with _patch_fmp(aws_resources, MOCK_DAILY_PRICES):
+        response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    latest = body['post_earnings'][0]
+    assert latest['eps_estimated'] == 2.67
+    assert latest['eps_surprise_pct'] == 6.37
+    assert latest['revenue_actual'] == 143756000000
+    assert latest['revenue_surprise_pct'] == 3.88
+
+
+def test_post_earnings_empty_when_no_earnings_events(aws_resources):
+    """post_earnings is empty list when no earnings_events exist."""
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER)
+
+    with _patch_fmp(aws_resources, MOCK_DAILY_PRICES):
+        response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert body['post_earnings'] == []
+
+
+def test_post_earnings_graceful_when_fmp_fails(aws_resources):
+    """post_earnings has entries but no price data when FMP returns empty."""
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER_WITH_EARNINGS)
+
+    with _patch_fmp(aws_resources, []):  # No daily prices
+        response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    pe = body['post_earnings']
+    assert len(pe) >= 1
+    assert pe[0]['price_on_earnings_date'] is None
+    assert pe[0]['price_change_1d'] is None
+    # But earnings data is still present
+    assert pe[0]['eps_actual'] == 2.84
+    assert pe[0]['eps_beat'] is True
