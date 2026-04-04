@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 import boto3
 
-from utils.fmp_client import get_financial_data, fetch_earnings, fetch_dividends
+from utils.fmp_client import get_financial_data, fetch_earnings, fetch_dividends, fetch_ttm_valuations
 from utils.feature_extractor import extract_quarterly_trends, prepare_metrics_for_cache
 
 # Configure logging
@@ -187,8 +187,17 @@ def _process_ticker(
     if not items:
         raise ValueError(f"No metrics items generated for {ticker}")
 
-    # Batch write to metrics-history table
-    _batch_write_items(items)
+    # Fetch TTM valuations and attach to the latest quarter
+    try:
+        ttm = fetch_ttm_valuations(fmp_ticker)
+        if ttm:
+            latest_item = max(items, key=lambda x: x.get('fiscal_date', ''))
+            latest_item['market_valuation'] = ttm
+    except Exception as e:
+        logger.warning(f"Failed to fetch TTM valuations for {ticker}: {e}")
+
+    # Update items in metrics-history (preserves existing attributes)
+    _update_items(items)
 
     logger.debug(f"Processed {ticker}: {len(items)} items, "
                  f"{'cache_hit' if was_cache_hit else 'api_call'}, {fetch_time:.1f}s")
@@ -224,12 +233,67 @@ def _has_fresh_data(ticker: str, max_age_days: int = 7) -> bool:
         return False  # On error, process the ticker
 
 
-def _batch_write_items(items: List[Dict[str, Any]]) -> None:
-    """Batch write items to metrics-history table with Decimal conversion."""
-    with metrics_table.batch_writer() as batch:
-        for item in items:
-            item_decimal = json.loads(
-                json.dumps(item, default=str),
-                parse_float=Decimal
+def _update_items(items: List[Dict[str, Any]]) -> None:
+    """
+    Update items in metrics-history using update_item (not put_item).
+
+    This preserves existing attributes (e.g., market_valuation) that are not
+    included in the current write. Each category is SET individually.
+    New items are created if they don't exist.
+    """
+    # All categories that prepare_metrics_for_cache can produce
+    all_categories = [
+        'revenue_profit', 'cashflow', 'balance_sheet', 'debt_leverage',
+        'earnings_quality', 'dilution', 'valuation',
+        'earnings_events', 'dividend', 'market_valuation',
+    ]
+    # Metadata fields to always update
+    meta_fields = ['fiscal_year', 'fiscal_quarter', 'currency', 'source_cache_key', 'cached_at', 'expires_at']
+
+    for item in items:
+        ticker = item.get('ticker')
+        fiscal_date = item.get('fiscal_date')
+        if not ticker or not fiscal_date:
+            continue
+
+        # Convert to Decimal for DynamoDB
+        item_decimal = json.loads(
+            json.dumps(item, default=str),
+            parse_float=Decimal
+        )
+
+        # Build SET expressions for categories that exist in this item
+        set_parts = []
+        attr_values = {}
+        attr_names = {}
+
+        for field in meta_fields:
+            if field in item_decimal:
+                safe_name = f'#{field}'
+                safe_val = f':{field}'
+                set_parts.append(f'{safe_name} = {safe_val}')
+                attr_names[safe_name] = field
+                attr_values[safe_val] = item_decimal[field]
+
+        for category in all_categories:
+            if category in item_decimal:
+                safe_name = f'#{category}'
+                safe_val = f':{category}'
+                set_parts.append(f'{safe_name} = {safe_val}')
+                attr_names[safe_name] = category
+                attr_values[safe_val] = item_decimal[category]
+
+        if not set_parts:
+            continue
+
+        update_expr = 'SET ' + ', '.join(set_parts)
+
+        try:
+            metrics_table.update_item(
+                Key={'ticker': ticker, 'fiscal_date': fiscal_date},
+                UpdateExpression=update_expr,
+                ExpressionAttributeNames=attr_names,
+                ExpressionAttributeValues=attr_values,
             )
-            batch.put_item(Item=item_decimal)
+        except Exception as e:
+            logger.error(f"Failed to update {ticker}/{fiscal_date}: {e}")
