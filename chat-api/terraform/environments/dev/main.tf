@@ -110,6 +110,10 @@ locals {
       STOCK_DATA_4H_TABLE              = module.dynamodb.stock_data_4h_table_name
       POWERTOOLS_SERVICE_NAME          = "sp500-eod-ingest"
       POWERTOOLS_METRICS_NAMESPACE     = "SP500EODIngest"
+      SNS_TOPIC_ARN                    = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
+    }
+    earnings_update = {
+      SNS_TOPIC_ARN = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
     }
     value_insights_handler = {
       STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
@@ -206,6 +210,9 @@ module "lambda" {
   # EventBridge schedule for daily 4h candle ingestion
   enable_eod_ingest_schedule      = true
   enable_earnings_update_schedule = true
+
+  # SNS topic for pipeline notifications (success + failure emails)
+  alerts_sns_topic_arn = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
 }
 
 # ================================================

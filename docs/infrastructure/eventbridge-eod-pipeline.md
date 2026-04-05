@@ -13,7 +13,7 @@ The Value Insights dashboard analyzes companies using quarterly financial data (
 | Metric | Value |
 |--------|-------|
 | Frequency | Daily, Monday--Friday |
-| Trigger time | 10:00 PM UTC (6:00 PM Eastern) |
+| Trigger time | 6:00 PM Eastern (America/New_York timezone) |
 | Data source | FMP `/stable/historical-price-eod/full` |
 | Tickers covered | ~503 S&P 500 companies |
 | Records per run | ~481 (17 tickers typically empty) |
@@ -25,9 +25,9 @@ The Value Insights dashboard analyzes companies using quarterly financial data (
 ## Architecture
 
 ```
-                     Amazon EventBridge
-                     cron(0 22 ? * MON-FRI *)
-                     10 PM UTC / 6 PM Eastern
+                     Amazon EventBridge Scheduler
+                     cron(0 18 ? * MON-FRI *)
+                     6:00 PM Eastern (America/New_York)
                             |
                             v
               +----------------------------+
@@ -74,15 +74,19 @@ The Value Insights dashboard analyzes companies using quarterly financial data (
 
 ### 1. EventBridge Fires the Trigger
 
-Every weekday at 10:00 PM UTC (6:00 PM Eastern), Amazon EventBridge invokes the `sp500_eod_ingest` Lambda function. The 2-hour delay after market close (4:00 PM ET) ensures FMP has processed and published the official closing prices.
+Every weekday at 6:00 PM Eastern, Amazon EventBridge Scheduler invokes the `sp500_eod_ingest` Lambda function. The 2-hour delay after market close (4:00 PM ET) ensures FMP has processed and published the official closing prices. The schedule uses `America/New_York` timezone so cron times automatically adjust for EDT/EST with no DST drift.
 
 **Terraform**: `chat-api/terraform/modules/lambda/eventbridge.tf`
 
 | Property | Value |
 |----------|-------|
-| Schedule | `cron(0 22 ? * MON-FRI *)` |
+| Schedule | `cron(0 18 ? * MON-FRI *)` |
+| Timezone | `America/New_York` |
+| Schedule group | `{project}-{env}-market-data` |
 | Retry policy | 2 retries, max event age 1 hour |
+| Dead letter queue | `{project}-{env}-eod-ingest-dlq` (SQS) |
 | Feature flag | `enable_eod_ingest_schedule` |
+| IAM | Dedicated scheduler execution role |
 
 ### 2. Lambda Checks Guards
 
@@ -270,8 +274,8 @@ python scripts/backfill_4h_prices.py --date 2026-04-02 --force
 # Check recent Lambda logs
 aws logs tail /aws/lambda/buffett-dev-sp500-eod-ingest --since 1d
 
-# Check EventBridge rule status
-aws events describe-rule --name buffett-dev-sp500-eod-4h-ingest
+# Check EventBridge Scheduler status
+aws scheduler get-schedule --name buffett-dev-sp500-eod-4h-ingest --group-name buffett-dev-market-data
 
 # Count records in table
 aws dynamodb scan --table-name stock-data-4h-dev --select COUNT
@@ -283,8 +287,13 @@ aws dynamodb scan --table-name stock-data-4h-dev --select COUNT
 # Via Terraform (recommended)
 # Set enable_eod_ingest_schedule = false in environments/dev/main.tf, then terraform apply
 
-# Via AWS CLI (immediate)
-aws events disable-rule --name buffett-dev-sp500-eod-4h-ingest
+# Via AWS CLI (immediate) — requires full schedule parameters
+aws scheduler update-schedule --name buffett-dev-sp500-eod-4h-ingest \
+  --group-name buffett-dev-market-data --state DISABLED \
+  --flexible-time-window '{"Mode":"OFF"}' \
+  --schedule-expression 'cron(0 18 ? * MON-FRI *)' \
+  --schedule-expression-timezone America/New_York \
+  --target "$(aws scheduler get-schedule --name buffett-dev-sp500-eod-4h-ingest --group-name buffett-dev-market-data --query 'Target' --output json)"
 ```
 
 ---
@@ -331,11 +340,9 @@ The Lambda uses a static set of MM-DD values for US market holidays. Floating ho
 
 Two S&P 500 tickers use dot notation (`BRK.B`, `BF.B`) but FMP requires dash notation (`BRK-B`, `BF-B`). The Lambda applies `ticker.replace('.', '-')` but the local ticker list may not match FMP's expected format for all edge cases.
 
-### 3. No Dead Letter Queue
+### 3. ~~No Dead Letter Queue~~ (Resolved 2026-04)
 
-If the Lambda fails after EventBridge's 2 retries, the event is silently dropped. A missed day goes unnoticed until a user sees stale prices.
-
-**Mitigation**: Add an SQS DLQ and a CloudWatch alarm on DLQ depth.
+Both scheduler-level and Lambda-level dead letter queues are now in place. The scheduler DLQ (`{project}-{env}-eod-ingest-dlq`) catches invocation failures (throttling, IAM issues), while the Lambda event invoke config DLQ catches execution failures. A CloudWatch alarm fires when any message lands in the DLQ.
 
 ### 4. Table Naming
 
@@ -350,7 +357,7 @@ The table is named `stock-data-4h` (reflecting an earlier design for 4-hour cand
 | `chat-api/backend/src/handlers/sp500_eod_ingest.py` | Lambda handler -- fetches and stores daily EOD prices |
 | `chat-api/backend/scripts/backfill_4h_prices.py` | Local CLI tool for ad-hoc backfill |
 | `chat-api/backend/src/handlers/value_insights_handler.py` | Downstream consumer -- `_get_latest_price()` reads from stock data table |
-| `chat-api/terraform/modules/lambda/eventbridge.tf` | EventBridge cron rule and Lambda permission |
+| `chat-api/terraform/modules/lambda/eventbridge.tf` | EventBridge Scheduler schedules, IAM role, and schedule group |
 | `chat-api/terraform/modules/lambda/main.tf` | Lambda function definition (timeout, memory, env vars) |
 | `chat-api/terraform/modules/dynamodb/stock_data_4h.tf` | DynamoDB table schema (keys, GSI, TTL) |
 | `frontend/src/hooks/useInsightsData.js` | Frontend hook consuming `latest_price` from API |

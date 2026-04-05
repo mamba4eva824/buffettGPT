@@ -292,6 +292,66 @@ def _update_items(items: List[Dict[str, Any]]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# SNS Notifications
+# ---------------------------------------------------------------------------
+SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN', '')
+_sns_client = None
+
+
+def _get_sns_client():
+    global _sns_client
+    if _sns_client is None:
+        _sns_client = boto3.client('sns')
+    return _sns_client
+
+
+def _publish_sns_summary(response: Dict[str, Any]) -> None:
+    """Publish a run summary to SNS. Failures are logged but never raise."""
+    if not SNS_TOPIC_ARN:
+        return
+    try:
+        updated = response.get('total_updated', 0)
+        failures = response.get('total_failures', 0)
+        mode = response.get('mode', 'unknown')
+        checked = response.get('tickers_checked', 0)
+
+        if checked == 0 and not response.get('tickers_updated'):
+            subject = f"[buffett-{ENVIRONMENT}] Earnings Update: No tickers to process"
+            message = (
+                f"Earnings Update — {mode.title()} Mode\n"
+                f"Status: NO WORK\n"
+                f"No companies recently reported earnings."
+            )
+        elif failures > 0:
+            failed_tickers = ', '.join(f.get('ticker', '?') for f in response.get('failures', []))
+            subject = f"[buffett-{ENVIRONMENT}] Earnings Update: {updated} updated, {failures} failed"
+            message = (
+                f"Earnings Update — {mode.title()} Mode\n"
+                f"Status: COMPLETED WITH ERRORS\n"
+                f"Tickers checked: {checked}\n"
+                f"Tickers updated: {', '.join(response.get('tickers_updated', []))}\n"
+                f"Failures ({failures}): {failed_tickers}"
+            )
+        else:
+            tickers_list = ', '.join(response.get('tickers_updated', []))
+            subject = f"[buffett-{ENVIRONMENT}] Earnings Update: {updated} updated"
+            message = (
+                f"Earnings Update — {mode.title()} Mode\n"
+                f"Status: SUCCESS\n"
+                f"Tickers checked: {checked}\n"
+                f"Tickers updated ({updated}): {tickers_list}"
+            )
+
+        _get_sns_client().publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject[:100],
+            Message=message,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to publish SNS notification: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Handler
 # ---------------------------------------------------------------------------
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -329,6 +389,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not tickers_to_process:
         response['message'] = 'No tickers to process'
         logger.info("No tickers to process — no recent earnings reports")
+        _publish_sns_summary(response)
         return response
 
     # Process each ticker
@@ -365,4 +426,5 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     logger.info(f"Earnings update complete: {response['total_updated']} updated, "
                 f"{response['total_failures']} failures")
 
+    _publish_sns_summary(response)
     return response

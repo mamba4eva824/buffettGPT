@@ -274,6 +274,64 @@ def already_ingested(trade_date: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# SNS Notifications
+# ---------------------------------------------------------------------------
+SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN', '')
+_sns_client = None
+
+
+def _get_sns_client():
+    global _sns_client
+    if _sns_client is None:
+        _sns_client = boto3.client('sns')
+    return _sns_client
+
+
+def _publish_sns_summary(result: Dict[str, Any]) -> None:
+    """Publish a run summary to SNS. Failures are logged but never raise."""
+    if not SNS_TOPIC_ARN:
+        return
+    try:
+        skipped = result.get('skipped', False)
+        date = result.get('date', 'unknown')
+        written = result.get('recordsWritten', 0)
+        failed = result.get('recordsFailed', 0)
+
+        if skipped:
+            subject = f"[buffett-{ENVIRONMENT}] EOD Ingest: Skipped ({date})"
+            message = f"S&P 500 Daily EOD Ingestion — {date}\nStatus: SKIPPED\n{result.get('body', '')}"
+        elif failed > 0:
+            subject = f"[buffett-{ENVIRONMENT}] EOD Ingest: {written} written, {failed} failed ({date})"
+            message = (
+                f"S&P 500 Daily EOD Ingestion — {date}\n"
+                f"Status: COMPLETED WITH ERRORS\n"
+                f"Tickers processed: {result.get('tickersProcessed', 0)}\n"
+                f"Tickers with data: {result.get('tickersWithData', 0)}\n"
+                f"Tickers empty: {result.get('tickersEmpty', 0)}\n"
+                f"Records written: {written}\n"
+                f"Records failed: {failed}"
+            )
+        else:
+            subject = f"[buffett-{ENVIRONMENT}] EOD Ingest: {written} records written ({date})"
+            message = (
+                f"S&P 500 Daily EOD Ingestion — {date}\n"
+                f"Status: SUCCESS\n"
+                f"Tickers processed: {result.get('tickersProcessed', 0)}\n"
+                f"Tickers with data: {result.get('tickersWithData', 0)}\n"
+                f"Tickers empty: {result.get('tickersEmpty', 0)}\n"
+                f"Records written: {written}"
+            )
+
+        _get_sns_client().publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject[:100],  # SNS subject max 100 chars
+            Message=message,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to publish SNS notification: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Handler
 # ---------------------------------------------------------------------------
 def _emit_metric(name: str, value: float, unit: str = "Count"):
@@ -312,13 +370,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not force and is_market_closed(target_date):
         msg = f"Market closed on {target_date} (weekend or holiday) — skipping"
         logger.info(msg)
-        return {"statusCode": 200, "body": msg, "recordsWritten": 0, "skipped": True}
+        result = {"statusCode": 200, "body": msg, "date": target_date, "recordsWritten": 0, "skipped": True}
+        _publish_sns_summary(result)
+        return result
 
     # --- Idempotency guard ---
     if not force and already_ingested(target_date):
         msg = f"4h data for {target_date} already exists — skipping (pass force=true to overwrite)"
         logger.info(msg)
-        return {"statusCode": 200, "body": msg, "recordsWritten": 0, "skipped": True}
+        result = {"statusCode": 200, "body": msg, "date": target_date, "recordsWritten": 0, "skipped": True}
+        _publish_sns_summary(result)
+        return result
 
     # --- 1. Get tickers ---
     custom_tickers = event.get("tickers")
@@ -358,7 +420,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not all_items:
         msg = f"No EOD data returned for {target_date} — possible market holiday"
         logger.warning(msg)
-        return {"statusCode": 200, "body": msg, "recordsWritten": 0}
+        result = {"statusCode": 200, "body": msg, "date": target_date, "recordsWritten": 0}
+        _publish_sns_summary(result)
+        return result
 
     # --- 3. Write to DynamoDB ---
     written, failed = batch_write_items(all_items)
@@ -383,4 +447,5 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "recordsFailed": failed,
     }
     logger.info("Ingestion complete", extra=result)
+    _publish_sns_summary(result)
     return result

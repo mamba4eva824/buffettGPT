@@ -149,6 +149,13 @@ variable "metrics_history_cache_table_name" {
   default     = ""
 }
 
+# SNS Topic for pipeline notifications
+variable "alerts_sns_topic_arn" {
+  description = "ARN of the SNS topic for pipeline success/failure notifications. Empty string disables notifications."
+  type        = string
+  default     = ""
+}
+
 # EventBridge EOD Ingest Schedule
 variable "enable_eod_ingest_schedule" {
   description = "Enable EventBridge schedule for daily S&P 500 4h candle ingestion"

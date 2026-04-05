@@ -215,6 +215,7 @@ jobs:
           set +e
           terraform plan -out=tfplan \
             -var="enable_authentication=true" \
+            -var="enable_monitoring=true" \
             -var="google_client_id=${{ secrets.GOOGLE_CLIENT_ID }}" \
             -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
