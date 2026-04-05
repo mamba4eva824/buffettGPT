@@ -75,7 +75,8 @@ export default function ValueInsights() {
     <div className="flex flex-col h-full bg-sand-50 dark:bg-warm-950 text-sand-800 dark:text-warm-50 overflow-hidden">
       {/* Horizontal category nav bar */}
       <div className="shrink-0 border-b border-sand-200 dark:border-warm-800 bg-sand-50 dark:bg-warm-950">
-        <div className="flex items-center gap-3 px-4 md:px-6 py-2">
+        {/* Top row: ticker search + time range */}
+        <div className="flex items-center gap-3 px-4 md:px-6 pt-2 pb-1 md:pb-2">
           {/* Ticker search — outside overflow container so dropdown isn't clipped */}
           <div className="shrink-0 flex items-center gap-2.5">
             <div className="relative">
@@ -134,28 +135,7 @@ export default function ValueInsights() {
             )}
           </div>
 
-          {/* Category tabs — wrap on small screens so all tabs are always visible */}
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-1">
-              {CATEGORIES.map(cat => {
-                const isActive = cat.id === activeCategory;
-                return (
-                  <button
-                    key={cat.id}
-                    onClick={() => setActiveCategory(cat.id)}
-                    className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
-                      isActive
-                        ? 'bg-sand-200 dark:bg-warm-800 text-vi-gold border-b-2 border-vi-gold'
-                        : 'text-sand-500 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-900 hover:text-vi-gold'
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-sm">{cat.icon}</span>
-                    <span className="hidden md:inline">{cat.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <div className="flex-1" />
 
           {/* Time range + currency */}
           <div className="shrink-0 flex items-center gap-2">
@@ -175,6 +155,29 @@ export default function ValueInsights() {
               ))}
             </div>
             <span className="text-[11px] font-bold text-vi-gold px-2">{currency}</span>
+          </div>
+        </div>
+
+        {/* Category tabs — own row, horizontally scrollable */}
+        <div className="overflow-x-auto scrollbar-none px-4 md:px-6 pb-2">
+          <div className="flex items-center gap-1 w-max">
+            {CATEGORIES.map(cat => {
+              const isActive = cat.id === activeCategory;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id)}
+                  className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all ${
+                    isActive
+                      ? 'bg-sand-200 dark:bg-warm-800 text-vi-gold border-b-2 border-vi-gold'
+                      : 'text-sand-500 dark:text-warm-300 hover:bg-sand-100 dark:hover:bg-warm-900 hover:text-vi-gold'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">{cat.icon}</span>
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
