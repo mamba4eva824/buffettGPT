@@ -108,6 +108,38 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 }
 
 # ================================================
+# CloudFront Function for Basic Auth
+# ================================================
+
+resource "aws_cloudfront_function" "basic_auth" {
+  count   = var.enable_basic_auth ? 1 : 0
+  name    = "${var.project_name}-${var.environment}-basic-auth"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+
+  code = <<-EOF
+    function handler(event) {
+      var request = event.request;
+      var headers = request.headers;
+      var authString = "Basic ${var.basic_auth_credentials}";
+      if (
+        typeof headers.authorization === "undefined" ||
+        headers.authorization.value !== authString
+      ) {
+        return {
+          statusCode: 401,
+          statusDescription: "Unauthorized",
+          headers: {
+            "www-authenticate": { value: "Basic realm=\"Staging\"" }
+          }
+        };
+      }
+      return request;
+    }
+  EOF
+}
+
+# ================================================
 # CloudFront Distribution
 # ================================================
 
@@ -138,6 +170,14 @@ resource "aws_cloudfront_distribution" "frontend" {
 
     # Use AWS managed origin request policy for S3
     origin_request_policy_id = "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf"
+
+    dynamic "function_association" {
+      for_each = var.enable_basic_auth ? [1] : []
+      content {
+        event_type   = "viewer-request"
+        function_arn = aws_cloudfront_function.basic_auth[0].arn
+      }
+    }
   }
 
   # Custom error response for SPA routing

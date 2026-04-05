@@ -1,5 +1,5 @@
 """
-Copy Investment Reports & Metrics History from Dev to Staging DynamoDB.
+Copy Investment Reports, Metrics History & Stock Data from Dev to Staging DynamoDB.
 
 Scans dev tables, filters out test tickers, resets TTLs, and writes to staging.
 
@@ -18,6 +18,9 @@ Usage:
 
     # Custom source/target environments
     python scripts/copy_reports_to_staging.py --execute --source dev --target staging
+
+    # Copy only stock data
+    python scripts/copy_reports_to_staging.py --execute --stock-data-only
 """
 
 import argparse
@@ -39,6 +42,7 @@ logger = logging.getLogger(__name__)
 # TTL durations matching production settings
 REPORTS_TTL_DAYS = 120
 METRICS_TTL_DAYS = 90
+STOCK_DATA_TTL_DAYS = 365
 
 # Test ticker patterns to exclude:
 #   D + 4+ uppercase alpha (Docker E2E tests, e.g. DTEST, DGSJC)
@@ -84,6 +88,13 @@ def reset_metrics_ttl(item: dict) -> dict:
     return item
 
 
+def reset_stock_data_ttl(item: dict) -> dict:
+    """Reset the 'expires_at' field to 365 days from now."""
+    new_expires = int((datetime.now(timezone.utc) + timedelta(days=STOCK_DATA_TTL_DAYS)).timestamp())
+    item['expires_at'] = new_expires
+    return item
+
+
 def batch_write(table, items: list) -> int:
     """Write items using batch_writer. Returns count written."""
     written = 0
@@ -94,14 +105,26 @@ def batch_write(table, items: list) -> int:
     return written
 
 
+def _default_ticker_fn(item: dict) -> str:
+    return item.get('ticker', 'UNKNOWN')
+
+
+def _stock_data_ticker_fn(item: dict) -> str:
+    return item.get('PK', '').replace('TICKER#', '') or 'UNKNOWN'
+
+
 def copy_table(source_table, target_table, ttl_reset_fn, table_label: str,
-               execute: bool = False, ticker_filter: set = None) -> dict:
+               execute: bool = False, ticker_filter: set = None,
+               ticker_fn=None) -> dict:
     """
     Copy items from source to target, filtering test tickers and resetting TTLs.
 
     Returns dict with counts: {ticker: item_count} for copied items,
     plus 'skipped_tickers' and 'skipped_count'.
     """
+    if ticker_fn is None:
+        ticker_fn = _default_ticker_fn
+
     logger.info(f"Scanning {table_label}: {source_table.table_name}...")
     items = scan_full_table(source_table)
     logger.info(f"  Found {len(items)} total items")
@@ -109,7 +132,7 @@ def copy_table(source_table, target_table, ttl_reset_fn, table_label: str,
     # Group by ticker
     by_ticker = defaultdict(list)
     for item in items:
-        ticker = item.get('ticker', 'UNKNOWN')
+        ticker = ticker_fn(item)
         by_ticker[ticker].append(item)
 
     # Filter
@@ -157,8 +180,12 @@ def copy_table(source_table, target_table, ttl_reset_fn, table_label: str,
     }
 
 
-def verify_staging(source_table, target_table, table_label: str) -> bool:
+def verify_staging(source_table, target_table, table_label: str,
+                   ticker_fn=None) -> bool:
     """Compare item counts between source (dev, filtered) and target (staging)."""
+    if ticker_fn is None:
+        ticker_fn = _default_ticker_fn
+
     logger.info(f"Verifying {table_label}...")
 
     source_items = scan_full_table(source_table)
@@ -167,13 +194,13 @@ def verify_staging(source_table, target_table, table_label: str) -> bool:
     # Filter source test tickers
     source_by_ticker = defaultdict(int)
     for item in source_items:
-        ticker = item.get('ticker', 'UNKNOWN')
+        ticker = ticker_fn(item)
         if not is_test_ticker(ticker):
             source_by_ticker[ticker] += 1
 
     target_by_ticker = defaultdict(int)
     for item in target_items:
-        ticker = item.get('ticker', 'UNKNOWN')
+        ticker = ticker_fn(item)
         target_by_ticker[ticker] += 1
 
     source_total = sum(source_by_ticker.values())
@@ -217,6 +244,8 @@ def main():
                         help='Only copy reports table')
     parser.add_argument('--metrics-only', action='store_true',
                         help='Only copy metrics table')
+    parser.add_argument('--stock-data-only', action='store_true',
+                        help='Only copy stock-data-4h table')
     args = parser.parse_args()
 
     dynamodb = boto3.resource('dynamodb', region_name=REGION)
@@ -225,11 +254,19 @@ def main():
     reports_target = dynamodb.Table(f'investment-reports-v2-{args.target}')
     metrics_source = dynamodb.Table(f'metrics-history-{args.source}')
     metrics_target = dynamodb.Table(f'metrics-history-{args.target}')
+    stock_data_source = dynamodb.Table(f'stock-data-4h-{args.source}')
+    stock_data_target = dynamodb.Table(f'stock-data-4h-{args.target}')
 
     ticker_filter = None
     if args.tickers:
         ticker_filter = set(t.strip().upper() for t in args.tickers.split(','))
         logger.info(f"Ticker filter: {sorted(ticker_filter)}")
+
+    # Determine which tables to copy
+    any_only = args.reports_only or args.metrics_only or args.stock_data_only
+    do_reports = args.reports_only or not any_only
+    do_metrics = args.metrics_only or not any_only
+    do_stock_data = args.stock_data_only or not any_only
 
     mode = "EXECUTE" if args.execute else "DRY RUN"
     logger.info(f"Mode: {mode}")
@@ -239,20 +276,25 @@ def main():
     if args.verify:
         ok_reports = True
         ok_metrics = True
-        if not args.metrics_only:
+        ok_stock_data = True
+        if do_reports:
             ok_reports = verify_staging(reports_source, reports_target, "Investment Reports")
             print()
-        if not args.reports_only:
+        if do_metrics:
             ok_metrics = verify_staging(metrics_source, metrics_target, "Metrics History")
+            print()
+        if do_stock_data:
+            ok_stock_data = verify_staging(stock_data_source, stock_data_target,
+                                           "Stock Data 4H", ticker_fn=_stock_data_ticker_fn)
 
-        if ok_reports and ok_metrics:
+        if ok_reports and ok_metrics and ok_stock_data:
             print("\nVERIFICATION PASSED")
         else:
             print("\nVERIFICATION FAILED - see mismatches above")
         return
 
     # Copy reports
-    if not args.metrics_only:
+    if do_reports:
         reports_result = copy_table(
             reports_source, reports_target,
             reset_report_ttl, "Investment Reports",
@@ -261,7 +303,7 @@ def main():
         print()
 
     # Copy metrics
-    if not args.reports_only:
+    if do_metrics:
         metrics_result = copy_table(
             metrics_source, metrics_target,
             reset_metrics_ttl, "Metrics History",
@@ -269,20 +311,35 @@ def main():
         )
         print()
 
+    # Copy stock data
+    if do_stock_data:
+        stock_data_result = copy_table(
+            stock_data_source, stock_data_target,
+            reset_stock_data_ttl, "Stock Data 4H",
+            execute=args.execute, ticker_filter=ticker_filter,
+            ticker_fn=_stock_data_ticker_fn
+        )
+        print()
+
     # Summary
     print("=" * 60)
     print(f"SUMMARY ({'EXECUTED' if args.execute else 'DRY RUN'})")
     print("=" * 60)
-    if not args.metrics_only:
-        print(f"Reports:  {reports_result['total_copied']} items "
+    if do_reports:
+        print(f"Reports:    {reports_result['total_copied']} items "
               f"({len(reports_result['copied_counts'])} tickers)")
         print(f"  Skipped: {reports_result['skipped_count']} items "
               f"({len(reports_result['skipped_tickers'])} test tickers)")
-    if not args.reports_only:
-        print(f"Metrics:  {metrics_result['total_copied']} items "
+    if do_metrics:
+        print(f"Metrics:    {metrics_result['total_copied']} items "
               f"({len(metrics_result['copied_counts'])} tickers)")
         print(f"  Skipped: {metrics_result['skipped_count']} items "
               f"({len(metrics_result['skipped_tickers'])} test tickers)")
+    if do_stock_data:
+        print(f"Stock Data: {stock_data_result['total_copied']} items "
+              f"({len(stock_data_result['copied_counts'])} tickers)")
+        print(f"  Skipped: {stock_data_result['skipped_count']} items "
+              f"({len(stock_data_result['skipped_tickers'])} test tickers)")
 
     if not args.execute:
         print("\nThis was a DRY RUN. Use --execute to write data.")

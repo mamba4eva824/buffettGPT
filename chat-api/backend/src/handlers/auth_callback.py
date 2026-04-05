@@ -282,10 +282,13 @@ def create_response(status_code: int, body: Any, event: Dict[str, Any] = None) -
             'https://app.buffettgpt.com'
         ]
     elif ENVIRONMENT == 'staging':
+        frontend_url = os.environ.get('FRONTEND_URL', '')
         allowed_origins = [
             'https://staging.buffettgpt.com',
             'https://staging-app.buffettgpt.com'
         ]
+        if frontend_url:
+            allowed_origins.append(frontend_url)
     else:  # dev environment
         allowed_origins = [
             'http://localhost:3000',

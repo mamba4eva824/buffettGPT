@@ -68,6 +68,10 @@ locals {
     # Token Usage Tracking (monthly limits for follow-up agent)
     TOKEN_USAGE_TABLE   = try(module.dynamodb.token_usage_table_name, "")
     DEFAULT_TOKEN_LIMIT = "500000"  # 500K tokens for staging/testing
+    TOKEN_LIMIT_FREE    = "500000"  # Free tier gets 500K in staging
+
+    # Staging: bypass subscription check so free-tier users can access Market Intelligence
+    BYPASS_SUBSCRIPTION_CHECK = "true"
 
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
@@ -99,6 +103,14 @@ locals {
       RESEND_API_KEY_ARN = module.email.resend_api_key_arn
       RESEND_FROM_EMAIL  = module.email.resend_from_email
       API_BASE_URL       = module.api_gateway.http_api_endpoint
+    }
+    sp500_eod_ingest = {
+      STOCK_DATA_4H_TABLE          = module.dynamodb.stock_data_4h_table_name
+      POWERTOOLS_SERVICE_NAME      = "sp500-eod-ingest"
+      POWERTOOLS_METRICS_NAMESPACE = "SP500EODIngest"
+    }
+    value_insights_handler = {
+      STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
     }
   }
 }
@@ -219,6 +231,9 @@ module "api_gateway" {
   enable_subscription_routes = true
   enable_stripe_webhook      = true
 
+  # Value Insights API (S&P 500 market data)
+  enable_value_insights_routes = true
+
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
 
@@ -327,6 +342,10 @@ module "cloudfront" {
   project_name = local.project_name
   environment  = local.environment
   price_class  = "PriceClass_100" # US, Canada, Europe
+
+  # Password protection for staging beta
+  enable_basic_auth      = true
+  basic_auth_credentials = var.basic_auth_credentials
 
   common_tags = local.common_tags
 }
