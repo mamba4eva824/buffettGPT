@@ -106,6 +106,14 @@ locals {
       RESEND_FROM_EMAIL  = module.email.resend_from_email
       API_BASE_URL       = module.api_gateway.http_api_endpoint
     }
+    sp500_eod_ingest = {
+      STOCK_DATA_4H_TABLE              = module.dynamodb.stock_data_4h_table_name
+      POWERTOOLS_SERVICE_NAME          = "sp500-eod-ingest"
+      POWERTOOLS_METRICS_NAMESPACE     = "SP500EODIngest"
+    }
+    value_insights_handler = {
+      STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
+    }
   }
 }
 
@@ -163,6 +171,11 @@ module "lambda" {
   function_env_vars   = local.lambda_function_env_vars
   log_retention_days  = 7  # Short retention for dev
 
+  reserved_concurrency = {
+    analysis_followup  = 10  # Increased for production traffic
+    sp500_eod_ingest   = 1   # Prevent duplicate parallel runs
+  }
+
   common_tags = local.common_tags
 
   # KMS key for DynamoDB encryption
@@ -189,6 +202,10 @@ module "lambda" {
   # Metrics History Cache table for followup-action Lambda
   metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
   metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
+
+  # EventBridge schedule for daily 4h candle ingestion
+  enable_eod_ingest_schedule      = true
+  enable_earnings_update_schedule = true
 }
 
 # ================================================
@@ -237,6 +254,9 @@ module "api_gateway" {
 
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
+
+  # Value Insights API (financial metrics and ratings)
+  enable_value_insights_routes = true
 
   common_tags = local.common_tags
 }

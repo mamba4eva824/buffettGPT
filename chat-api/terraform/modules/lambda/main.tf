@@ -42,23 +42,13 @@ locals {
       memory_size = 256
       description = "Waitlist signup and referral tracking API"
     }
-    sp500_pipeline = {
-      handler     = "sp500_pipeline.lambda_handler"
-      timeout     = 900
+    # sp500_pipeline and sp500_backfill removed from Lambda (2026-04) — run locally only.
+    # See: scripts/run_sp500_pipeline.py, scripts/backfill_*.py
+    earnings_update = {
+      handler     = "earnings_update.lambda_handler"
+      timeout     = 300
       memory_size = 512
-      description = "S&P 500 data ingestion pipeline - processes all tickers sequentially"
-    }
-    sp500_backfill = {
-      handler     = "sp500_backfill.lambda_handler"
-      timeout     = 900
-      memory_size = 512
-      description = "S&P 500 one-time backfill from local JSON data"
-    }
-    earnings_calendar_checker = {
-      handler     = "earnings_calendar_checker.lambda_handler"
-      timeout     = 60
-      memory_size = 256
-      description = "FMP earnings calendar checker for data refresh scheduling"
+      description = "Daily earnings update - fetches financials + TTM for recently reported S&P 500 companies"
     }
     sp500_aggregator = {
       handler     = "sp500_aggregator.lambda_handler"
@@ -71,6 +61,18 @@ locals {
       timeout     = 120
       memory_size = 512
       description = "Market Intelligence chat - converse_stream with 9 tools"
+    }
+    value_insights_handler = {
+      handler     = "value_insights_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Value Insights API - serves financial metrics and ratings"
+    }
+    sp500_eod_ingest = {
+      handler     = "sp500_eod_ingest.lambda_handler"
+      timeout     = 900
+      memory_size = 512
+      description = "S&P 500 daily 4-hour candle ingestion after market close"
     }
   }
 }

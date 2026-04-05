@@ -6,6 +6,69 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### S&P 500 Daily EOD Price Pipeline (2026-04-03)
+
+**Added**
+- `sp500_eod_ingest` Lambda: fetches 4-hour OHLCV candles for all S&P 500 tickers from FMP
+- EventBridge schedule: `cron(0 22 ? * MON-FRI *)` — runs daily at 10 PM UTC (6 PM ET)
+- DynamoDB table `stock-data-4h-{env}` with DateIndex GSI for cross-ticker queries
+- `backfill_4h_prices.py` script for local/ad-hoc historical data loading
+- `value_insights_handler` extended with `latest_price` from 4h table
+- ValuationPanel: "Last Close" banner with live P/E computed from current price + TTM earnings
+- Weekend + US market holiday detection to skip unnecessary API calls
+- 365-day TTL (`expires_at`) on ingested records
+- Ticker format conversion (`BRK.B` → `BRK-B`) for FMP API compatibility
+- Executive documentation: `docs/infrastructure/eventbridge-eod-pipeline.md`
+- `reserved_concurrent_executions = 1` to prevent duplicate parallel Lambda runs
+- SQS dead letter queue + CloudWatch alarm on DLQ depth for failure alerting
+- Lambda Powertools: structured JSON logs (`Logger`) + custom CloudWatch metrics (`Metrics`)
+- `aws-lambda-powertools` added to shared dependencies layer
+- 58 tests (42 unit + 16 integration) covering full pipeline
+- `sp500_eod_ingest` upgraded to fetch daily EOD from `/stable/historical-price-eod/full` (close, change, changePercent, vwap)
+- Daily records stored with `DAILY#` SK prefix for clean separation from 4h candle data
+- `backfill_eod_prices.py` script for bulk daily EOD historical loading
+- `backfill_q4_earnings.py` script for targeted earnings updates via FMP `/stable/earnings` API
+- `_get_latest_price()` now queries `DAILY#` prefix for accurate daily close + change %
+
+**Fixed**
+- `feature_extractor._align_earnings_to_quarters`: upcoming earnings (no epsActual) no longer claim quarter slots over already-reported earnings
+- 609 S&P 500 quarters updated with Q4 2025 reported earnings (beat/miss data)
+- FMP rate limit delay increased to 0.5s (safe for 300 calls/min Starter tier)
+- `sp500_pipeline._batch_write_items` replaced with `_update_items` using `update_item` instead of `put_item` — preserves existing attributes (especially `market_valuation`) on each pipeline run
+- New `fetch_ttm_valuations()` in `fmp_client.py` — fetches `/stable/key-metrics-ttm` and attaches fresh P/E, EV/EBITDA, market_cap to the latest quarter
+
+### Earnings Performance Tab (2026-04-03)
+
+**Added**
+- New "Earnings" tab on Value Insights dashboard between Valuation and Cash Flow
+- Latest Earnings card: beat/miss badge, EPS + revenue surprise %
+- Post-Earnings Price Reaction: 1-day, 5-day, 30-day % change after announcement
+- Earnings History table: 12-16 quarters of beats/misses with price performance columns
+- EPS Surprise Trend sparkline chart over time
+- Track Record sidebar: beat rate, avg surprise %, avg 1-day post-earnings move
+- Next Earnings countdown with consensus EPS estimate
+- Backend: `_fetch_daily_prices_from_fmp()` fetches 5yr daily prices, `_compute_post_earnings()` calculates price reactions around each earnings date
+- 63 tests (42 unit + 21 integration) all passing
+
+### Automated Earnings Update Pipeline (2026-04-04)
+
+**Added**
+- `earnings_update` Lambda: checks FMP earnings calendar for recently reported S&P 500 companies, fetches full financials + earnings + dividends + TTM valuations, writes via `update_item`
+- EventBridge 2x daily schedule: 9 PM UTC (6 PM ET) post-close + 4:30 PM UTC (11:30 AM ET) post-open
+- Auto mode (checks calendar) + manual mode (`{"tickers": ["AAPL"]}`) for on-demand processing
+- Structured response for future notifications: `tickers_updated`, `eps_beat`, `eps_surprise_pct`, `upcoming` earnings
+- `fetch_ttm_valuations()` in `fmp_client.py` — `/stable/key-metrics-ttm` for live P/E, EV/EBITDA, market_cap
+- 12 new unit tests for earnings_update handler
+
+**Removed**
+- `sp500_pipeline` Lambda (bulk 498 tickers) — moved to local-only script for ad-hoc full refreshes
+- `sp500_backfill` Lambda — already local
+- `earnings_calendar_checker` Lambda — functionality merged into `earnings_update`
+
+**Fixed**
+- `sp500_pipeline._batch_write_items` replaced with `_update_items` using `update_item` — preserves `market_valuation` on all pipeline runs
+- 95 tests passing (12 earnings_update + 43 eod_ingest + 21 pipeline + 21 value_insights)
+
 ### Staging Environment + Stripe Subscription Fix (2026-03-24)
 
 **Added**

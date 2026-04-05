@@ -78,7 +78,9 @@ class TestPipelineHandler:
         """Mock boto3 DynamoDB for pipeline tests."""
         mock_table = MagicMock()
         mock_table.query.return_value = {'Items': []}
+        mock_table.update_item.return_value = {}
 
+        # Keep batch_writer mock for backwards compat with any remaining references
         mock_batch_writer = MagicMock()
         mock_batch_writer.__enter__ = MagicMock(return_value=mock_batch_writer)
         mock_batch_writer.__exit__ = MagicMock(return_value=False)
@@ -93,10 +95,11 @@ class TestPipelineHandler:
                 'batch_writer': mock_batch_writer,
             }
 
+    @patch('src.handlers.sp500_pipeline.fetch_ttm_valuations')
     @patch('src.handlers.sp500_pipeline.get_financial_data')
     @patch('src.handlers.sp500_pipeline.extract_quarterly_trends')
     @patch('src.handlers.sp500_pipeline.prepare_metrics_for_cache')
-    def test_process_ticker_success(self, mock_prepare, mock_extract, mock_get_data, mock_aws):
+    def test_process_ticker_success(self, mock_prepare, mock_extract, mock_get_data, mock_ttm, mock_aws):
         """Test successful processing of a single ticker."""
         mock_get_data.return_value = {
             'raw_financials': {'income_statement': [{}], 'cash_flow': [{}], 'balance_sheet': [{}]},
@@ -107,6 +110,7 @@ class TestPipelineHandler:
         mock_prepare.return_value = [
             {'ticker': 'AAPL', 'fiscal_date': '2025-09-27', 'revenue_profit': {}},
         ]
+        mock_ttm.return_value = {'pe_ratio': 31.05, 'market_cap': 3700000000000}
 
         from src.handlers.sp500_pipeline import _process_ticker
         result = _process_ticker('AAPL', skip_fresh=False, include_events=False)
@@ -115,6 +119,63 @@ class TestPipelineHandler:
         mock_get_data.assert_called_once()
         mock_extract.assert_called_once()
         mock_prepare.assert_called_once()
+        mock_ttm.assert_called_once()
+
+    @patch('src.handlers.sp500_pipeline.fetch_ttm_valuations')
+    @patch('src.handlers.sp500_pipeline.get_financial_data')
+    @patch('src.handlers.sp500_pipeline.extract_quarterly_trends')
+    @patch('src.handlers.sp500_pipeline.prepare_metrics_for_cache')
+    def test_process_ticker_attaches_ttm_to_latest(self, mock_prepare, mock_extract, mock_get_data, mock_ttm, mock_aws):
+        """TTM valuations are attached as market_valuation on the latest quarter."""
+        mock_get_data.return_value = {
+            'raw_financials': {'income_statement': [{}]},
+            'currency_info': {'code': 'USD'},
+            'cache_key': 'v3:AAPL:2026',
+        }
+        mock_extract.return_value = {'quarters': [1, 2]}
+        items = [
+            {'ticker': 'AAPL', 'fiscal_date': '2025-06-28', 'revenue_profit': {}},
+            {'ticker': 'AAPL', 'fiscal_date': '2025-09-27', 'revenue_profit': {}},
+        ]
+        mock_prepare.return_value = items
+        mock_ttm.return_value = {'pe_ratio': 31.05, 'ev_to_ebitda': 24.12}
+
+        from src.handlers.sp500_pipeline import _process_ticker
+        _process_ticker('AAPL', skip_fresh=False, include_events=False)
+
+        # TTM should be attached to the latest quarter (2025-09-27)
+        latest = max(items, key=lambda x: x['fiscal_date'])
+        assert 'market_valuation' in latest
+        assert latest['market_valuation']['pe_ratio'] == 31.05
+
+    @patch('src.handlers.sp500_pipeline.fetch_ttm_valuations')
+    @patch('src.handlers.sp500_pipeline.get_financial_data')
+    @patch('src.handlers.sp500_pipeline.extract_quarterly_trends')
+    @patch('src.handlers.sp500_pipeline.prepare_metrics_for_cache')
+    def test_process_ticker_uses_update_item(self, mock_prepare, mock_extract, mock_get_data, mock_ttm, mock_aws):
+        """Pipeline uses update_item (not put_item) to preserve existing attributes."""
+        mock_get_data.return_value = {
+            'raw_financials': {'income_statement': [{}]},
+            'currency_info': {'code': 'USD'},
+            'cache_key': 'v3:AAPL:2026',
+        }
+        mock_extract.return_value = {'quarters': [1]}
+        mock_prepare.return_value = [
+            {'ticker': 'AAPL', 'fiscal_date': '2025-09-27', 'revenue_profit': {'revenue': 94930000000}},
+        ]
+        mock_ttm.return_value = {}
+
+        import src.handlers.sp500_pipeline as pipeline_mod
+        mock_table = MagicMock()
+        mock_table.update_item.return_value = {}
+        original_table = pipeline_mod.metrics_table
+        pipeline_mod.metrics_table = mock_table
+        try:
+            pipeline_mod._process_ticker('AAPL', skip_fresh=False, include_events=False)
+            # Should use update_item, NOT put_item/batch_writer
+            mock_table.update_item.assert_called()
+        finally:
+            pipeline_mod.metrics_table = original_table
 
     @patch('src.handlers.sp500_pipeline._process_ticker')
     def test_lambda_handler_processes_custom_tickers(self, mock_process, mock_aws):
