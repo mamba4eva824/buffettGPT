@@ -6,6 +6,27 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### EventBridge Scheduler Migration + Pipeline Notifications (2026-04-05)
+
+**Changed**
+- Migrated all 3 EventBridge schedules from `aws_cloudwatch_event_rule` (fixed UTC) to `aws_scheduler_schedule` with `America/New_York` timezone — eliminates DST drift
+- EOD ingest: `cron(0 18 ? * MON-FRI *)` at 6 PM ET (was 10 PM UTC)
+- Earnings post-close: `cron(0 17 ? * MON-FRI *)` at 5 PM ET (was 9 PM UTC)
+- Earnings post-open: `cron(30 11 ? * MON-FRI *)` at 11:30 AM ET (was 4:30 PM UTC)
+
+**Added**
+- `aws_scheduler_schedule_group` for market data pipelines (`{project}-{env}-market-data`)
+- Dedicated IAM execution role for EventBridge Scheduler (`scheduler.amazonaws.com`)
+- Earnings update DLQ: SQS queue + CloudWatch alarm (mirrors EOD ingest pattern)
+- SNS email notifications on pipeline success, skip, and failure for both Lambdas
+- DLQ CloudWatch alarms wired to SNS alerts topic for crash notifications
+- `sns:Publish` IAM permission for Lambda execution role
+- Enabled monitoring module in CI/CD pipeline (`enable_monitoring=true`)
+- `ALERT_EMAIL` GitHub secret for SNS subscription
+
+**Removed**
+- Legacy `aws_cloudwatch_event_rule`, `aws_cloudwatch_event_target`, `aws_lambda_permission` resources
+
 ### S&P 500 Daily EOD Price Pipeline (2026-04-03)
 
 **Added**
