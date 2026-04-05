@@ -273,7 +273,7 @@ jobs:
           VITE_ENVIRONMENT=staging
           VITE_ENABLE_DEBUG_LOGS=false
           VITE_GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-          VITE_ENABLE_WAITLIST=true
+          VITE_ENABLE_WAITLIST=false
           EOF
 
           echo "✅ Created .env.staging with API endpoints"
