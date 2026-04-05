@@ -6,6 +6,20 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Staging Beta Deployment (2026-04-04)
+
+**Added**
+- CloudFront Function basic auth for staging password protection (`enable_basic_auth` variable)
+- `BYPASS_SUBSCRIPTION_CHECK` env var to allow free-tier Market Intelligence access in staging
+- Environment-configurable token limits (`TOKEN_LIMIT_FREE`, `TOKEN_LIMIT_PLUS`, `TOKEN_LIMIT_ANONYMOUS`)
+- `stock-data-4h` support in `copy_reports_to_staging.py` with PK-based ticker extraction
+- Value Insights routes enabled in staging API Gateway
+- `sp500_eod_ingest` and `value_insights_handler` Lambda env vars for staging
+
+**Changed**
+- Bedrock follow-up agent upgraded from Claude 3.5 Haiku to Haiku 4.5 (dev + staging)
+- `FRONTEND_URL` now passed to auth_callback Lambda for dynamic CORS in staging
+
 ### S&P 500 Daily EOD Price Pipeline (2026-04-03)
 
 **Added**
