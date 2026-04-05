@@ -149,7 +149,13 @@ variable "metrics_history_cache_table_name" {
   default     = ""
 }
 
-# SNS Topic for pipeline notifications
+# Pipeline Notifications
+variable "enable_pipeline_notifications" {
+  description = "Enable SNS notifications for pipeline success/failure. Must be true when alerts_sns_topic_arn is provided."
+  type        = bool
+  default     = false
+}
+
 variable "alerts_sns_topic_arn" {
   description = "ARN of the SNS topic for pipeline success/failure notifications. Empty string disables notifications."
   type        = string

@@ -212,7 +212,8 @@ module "lambda" {
   enable_earnings_update_schedule = true
 
   # SNS topic for pipeline notifications (success + failure emails)
-  alerts_sns_topic_arn = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
+  enable_pipeline_notifications = var.enable_monitoring
+  alerts_sns_topic_arn          = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
 }
 
 # ================================================

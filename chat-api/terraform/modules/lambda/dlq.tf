@@ -4,7 +4,7 @@
 # Allows Lambda functions to publish run summaries to the alerts SNS topic.
 
 resource "aws_iam_role_policy" "pipeline_sns_publish" {
-  count = var.alerts_sns_topic_arn != "" ? 1 : 0
+  count = var.enable_pipeline_notifications ? 1 : 0
 
   name = "${var.project_name}-${var.environment}-pipeline-sns-publish"
   role = element(split("/", var.lambda_role_arn), length(split("/", var.lambda_role_arn)) - 1)
@@ -92,7 +92,7 @@ resource "aws_cloudwatch_metric_alarm" "eod_ingest_dlq_depth" {
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
-  alarm_actions       = var.alerts_sns_topic_arn != "" ? [var.alerts_sns_topic_arn] : []
+  alarm_actions       = var.enable_pipeline_notifications ? [var.alerts_sns_topic_arn] : []
 
   dimensions = {
     QueueName = aws_sqs_queue.eod_ingest_dlq[0].name
@@ -178,7 +178,7 @@ resource "aws_cloudwatch_metric_alarm" "earnings_update_dlq_depth" {
   threshold           = 1
   comparison_operator = "GreaterThanOrEqualToThreshold"
   treat_missing_data  = "notBreaching"
-  alarm_actions       = var.alerts_sns_topic_arn != "" ? [var.alerts_sns_topic_arn] : []
+  alarm_actions       = var.enable_pipeline_notifications ? [var.alerts_sns_topic_arn] : []
 
   dimensions = {
     QueueName = aws_sqs_queue.earnings_update_dlq[0].name
