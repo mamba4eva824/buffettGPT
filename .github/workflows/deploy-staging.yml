@@ -145,6 +145,7 @@ jobs:
             -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
             -var="alert_email=${{ secrets.ALERT_EMAIL }}" \
+            -var="basic_auth_credentials=${{ secrets.BASIC_AUTH_CREDENTIALS }}" \
             -detailed-exitcode
           EXIT_CODE=$?
           set -e
