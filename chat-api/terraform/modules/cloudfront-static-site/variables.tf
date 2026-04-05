@@ -37,3 +37,16 @@ variable "common_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enable_basic_auth" {
+  description = "Enable basic auth password protection"
+  type        = bool
+  default     = false
+}
+
+variable "basic_auth_credentials" {
+  description = "Base64-encoded username:password for basic auth"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

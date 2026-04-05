@@ -881,10 +881,12 @@ def lambda_handler(event: Dict[str, Any], context: Any):
 
     # Plus subscription check — query DynamoDB for authoritative tier
     # (JWT subscription_tier may be stale if user upgraded after login)
-    subscription_tier = _get_subscription_tier(user_id)
-    if subscription_tier not in ('plus', 'premium'):
-        logger.warning(f"[MARKET_INTEL] User {user_id} denied — tier={subscription_tier}")
-        return error_response(403, "Plus subscription required for Market Intelligence")
+    bypass_subscription = os.environ.get('BYPASS_SUBSCRIPTION_CHECK', 'false').lower() == 'true'
+    if not bypass_subscription:
+        subscription_tier = _get_subscription_tier(user_id)
+        if subscription_tier not in ('plus', 'premium'):
+            logger.warning(f"[MARKET_INTEL] User {user_id} denied — tier={subscription_tier}")
+            return error_response(403, "Plus subscription required for Market Intelligence")
 
     # Route to non-streaming response
     # NOTE: Python 3.11 Lambda runtime doesn't support generator-based RESPONSE_STREAM.

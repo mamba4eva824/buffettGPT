@@ -105,7 +105,7 @@ variable "bedrock_foundation_model" {
   # Note: Claude 4.5 Sonnet (anthropic.claude-sonnet-4-5-20250929-v1:0) is not compatible
   # with KB response generation prompt override. Using Claude 3.5 Haiku for now.
   # IMPORTANT: Must use inference profile (us. prefix) for on-demand throughput
-  default     = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
 variable "bedrock_agent_instruction" {
