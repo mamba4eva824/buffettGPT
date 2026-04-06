@@ -160,6 +160,20 @@ After each run, the Lambda emits custom CloudWatch metrics:
 - `TickersEmpty` -- tickers with no data (delisted, etc.)
 - `RecordsFailed` -- DynamoDB write failures
 
+### 7. Email Notification
+
+After every run (success, skip, or no-data), the Lambda publishes a summary to the `{project}-{env}-alerts` SNS topic, which delivers an email to the configured alert address. One email per invocation.
+
+| Scenario | Email Subject |
+|----------|--------------|
+| Success | `[buffett-dev] EOD Ingest: 481 records written (2026-04-04)` |
+| Skipped (holiday/weekend) | `[buffett-dev] EOD Ingest: Skipped (2026-04-05)` |
+| No data returned | `[buffett-dev] EOD Ingest: 0 records written (2026-04-04)` |
+| Partial failures | `[buffett-dev] EOD Ingest: 470 written, 11 failed (2026-04-04)` |
+| Lambda crash (DLQ) | CloudWatch alarm notification via same SNS topic |
+
+If the SNS publish itself fails, it is logged as a warning but does not crash the Lambda.
+
 ---
 
 ## Infrastructure Components
@@ -185,6 +199,7 @@ After each run, the Lambda emits custom CloudWatch metrics:
 | `ENVIRONMENT` | dev / staging / prod |
 | `POWERTOOLS_SERVICE_NAME` | Lambda Powertools service name |
 | `POWERTOOLS_METRICS_NAMESPACE` | CloudWatch metrics namespace |
+| `SNS_TOPIC_ARN` | SNS topic for email notifications (success/skip/failure summaries) |
 
 **Terraform**: `chat-api/terraform/modules/lambda/main.tf`
 
@@ -324,17 +339,16 @@ If the stock data table is empty or the Lambda can't read from it, the frontend 
 | DynamoDB reads | ~500 reads/day (dashboard queries) = **$0.001** |
 | Secrets Manager | ~22 calls/month = **$0.01** |
 | EventBridge | Free tier |
+| SNS notifications | ~22 emails/month = **free tier** |
 | **Total** | **< $0.05/month** (excluding FMP API subscription) |
 
 ---
 
 ## Known Limitations
 
-### 1. Hardcoded Holiday Calendar
+### 1. ~~Hardcoded Holiday Calendar~~ (Resolved 2026-04)
 
-The Lambda uses a static set of MM-DD values for US market holidays. Floating holidays (MLK Day, Presidents' Day, Good Friday, Memorial Day, Labor Day, Thanksgiving) shift each year and need manual updates. The Lambda handles missed holidays gracefully (writes 0 records) but wastes ~503 FMP API calls per holiday.
-
-**Mitigation**: Check FMP's `/stable/is-the-market-open` endpoint before processing, or maintain a year-specific holiday list.
+Holiday dates are now computed dynamically for any year. Floating holidays (MLK Day, Presidents' Day, Good Friday, Memorial Day, Labor Day, Thanksgiving) are calculated algorithmically — Good Friday uses the Anonymous Gregorian Easter algorithm. Fixed holidays (New Year's, Juneteenth, Independence Day, Christmas) include Saturday→Friday and Sunday→Monday observed-date shifts. Results are cached per year.
 
 ### 2. Ticker Format Mismatch
 
@@ -358,6 +372,7 @@ The table is named `stock-data-4h` (reflecting an earlier design for 4-hour cand
 | `chat-api/backend/scripts/backfill_4h_prices.py` | Local CLI tool for ad-hoc backfill |
 | `chat-api/backend/src/handlers/value_insights_handler.py` | Downstream consumer -- `_get_latest_price()` reads from stock data table |
 | `chat-api/terraform/modules/lambda/eventbridge.tf` | EventBridge Scheduler schedules, IAM role, and schedule group |
+| `chat-api/terraform/modules/lambda/dlq.tf` | DLQ (SQS), CloudWatch alarm, SNS publish IAM policy |
 | `chat-api/terraform/modules/lambda/main.tf` | Lambda function definition (timeout, memory, env vars) |
 | `chat-api/terraform/modules/dynamodb/stock_data_4h.tf` | DynamoDB table schema (keys, GSI, TTL) |
 | `frontend/src/hooks/useInsightsData.js` | Frontend hook consuming `latest_price` from API |
