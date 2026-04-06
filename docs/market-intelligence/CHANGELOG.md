@@ -6,6 +6,15 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Dynamic Market Holiday Calendar (2026-04-06)
+
+**Fixed**
+- Replaced hardcoded `US_MARKET_HOLIDAYS_MMDD` set with dynamic `_us_market_holidays(year)` computation
+- Good Friday 2026 (Apr 3) was missed because calendar was stuck on 2025 dates (`04-18`)
+- All 10 NYSE holidays now computed algorithmically: floating holidays via nth-weekday, Good Friday via Anonymous Gregorian Easter algorithm
+- Fixed-date holidays (New Year's, Juneteenth, July 4th, Christmas) include Saturday→Friday / Sunday→Monday observed-date shifts
+- Results cached per year for warm Lambda performance
+
 ### EventBridge Scheduler Migration + Pipeline Notifications (2026-04-05)
 
 **Changed**
