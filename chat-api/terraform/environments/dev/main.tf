@@ -266,6 +266,9 @@ module "api_gateway" {
   # Value Insights API (financial metrics and ratings)
   enable_value_insights_routes = true
 
+  # Earnings Feed API (earnings tracker dashboard)
+  enable_earnings_feed_routes = true
+
   common_tags = local.common_tags
 }
 

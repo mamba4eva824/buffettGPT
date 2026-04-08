@@ -40,6 +40,7 @@ FUNCTIONS=(
     "market_intel_chat"
     "value_insights_handler"
     "sp500_eod_ingest"
+    "earnings_feed_handler"
 )
 
 # Build each function

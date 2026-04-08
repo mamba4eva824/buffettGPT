@@ -56,6 +56,12 @@ locals {
       memory_size = 512
       description = "S&P 500 sector and index-level aggregate computation"
     }
+    earnings_feed_handler = {
+      handler     = "earnings_feed_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Earnings tracker dashboard API - recent results, upcoming calendar, season overview"
+    }
     market_intel_chat = {
       handler     = "market_intel_chat.lambda_handler"
       timeout     = 120

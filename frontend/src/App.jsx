@@ -18,6 +18,7 @@ import ResearchLayout from "./components/research/ResearchLayout.jsx";
 import { useCompanySearch } from "./hooks/useCompanySearch.js";
 import ValueInsights from "./components/value-insights/ValueInsights.jsx";
 import MarketIntelligence from "./components/market-intelligence/MarketIntelligence.jsx";
+import EarningsTracker from "./components/earnings-tracker/EarningsTracker.jsx";
 
 // Lazy-loaded waitlist page (code-split)
 const WaitlistPage = lazy(() => import("./components/waitlist/WaitlistPage.jsx"));
@@ -187,7 +188,7 @@ function ChatApp() {
   const [showInvestmentResearch, setShowInvestmentResearch] = useState(false);
   const [appMode, setAppMode] = useState(() => {
     const mode = new URLSearchParams(window.location.search).get('mode');
-    return mode === 'value-insights' || mode === 'market-intelligence' ? mode : 'chat';
+    return mode === 'value-insights' || mode === 'market-intelligence' || mode === 'earnings-tracker' ? mode : 'chat';
   }); // 'chat' | 'value-insights' | 'market-intelligence'
   const [marketIntelConversationId, setMarketIntelConversationId] = useState(null);
   const [marketIntelMessages, setMarketIntelMessages] = useState(null);
@@ -1583,6 +1584,16 @@ function ChatApp() {
                 >
                   Market Intel
                 </button>
+                <button
+                  onClick={() => setAppMode('earnings-tracker')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
+                    appMode === 'earnings-tracker'
+                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
+                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
+                  }`}
+                >
+                  Earnings
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -1627,6 +1638,20 @@ function ChatApp() {
               /* VALUE INSIGHTS MODE */
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 <ValueInsights />
+              </div>
+            ) : appMode === 'earnings-tracker' ? (
+              /* EARNINGS TRACKER MODE */
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <EarningsTracker
+                  onNavigateToInsights={(ticker) => {
+                    const params = new URLSearchParams(searchParams);
+                    params.set('mode', 'value-insights');
+                    params.set('ticker', ticker);
+                    params.set('tab', 'earnings_performance');
+                    setSearchParams(params, { replace: true });
+                    setAppMode('value-insights');
+                  }}
+                />
               </div>
             ) : messages.length === 0 && !showInvestmentResearch ? (
               /* CENTERED LAYOUT - No messages (landing, auth, new chat) */

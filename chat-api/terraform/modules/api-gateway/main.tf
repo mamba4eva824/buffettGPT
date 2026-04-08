@@ -714,3 +714,73 @@ resource "aws_lambda_permission" "value_insights_api_permission" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
+
+# ================================================
+# Earnings Feed API Routes and Integration
+# ================================================
+
+# Earnings Feed Handler Integration
+resource "aws_apigatewayv2_integration" "earnings_feed_handler_integration" {
+  count            = var.enable_earnings_feed_routes ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["earnings_feed_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# GET /earnings/recent - Recent earnings results feed
+resource "aws_apigatewayv2_route" "earnings_recent_get" {
+  count     = var.enable_earnings_feed_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /earnings/recent"
+  target    = "integrations/${aws_apigatewayv2_integration.earnings_feed_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# GET /earnings/upcoming - Upcoming earnings calendar
+resource "aws_apigatewayv2_route" "earnings_upcoming_get" {
+  count     = var.enable_earnings_feed_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /earnings/upcoming"
+  target    = "integrations/${aws_apigatewayv2_integration.earnings_feed_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# GET /earnings/season - Sector earnings season summary
+resource "aws_apigatewayv2_route" "earnings_season_get" {
+  count     = var.enable_earnings_feed_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /earnings/season"
+  target    = "integrations/${aws_apigatewayv2_integration.earnings_feed_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /earnings/{proxy+} - CORS preflight for all earnings routes
+resource "aws_apigatewayv2_route" "earnings_options" {
+  count     = var.enable_earnings_feed_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /earnings/{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.earnings_feed_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# Earnings Feed Handler Lambda Permission
+resource "aws_lambda_permission" "earnings_feed_api_permission" {
+  count         = var.enable_earnings_feed_routes ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPIEarningsFeed"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["earnings_feed_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}
