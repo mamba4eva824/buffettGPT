@@ -6,6 +6,16 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### EOD Ingest Date Fix + Schedule Change (2026-04-09)
+
+**Fixed**
+- EOD ingest Lambda was using yesterday's date (computed in UTC) instead of today's date in Eastern time
+- Since the schedule runs after market close, today's closing prices are already available
+- Now uses `zoneinfo.ZoneInfo("America/New_York")` to compute the correct trading day
+
+**Changed**
+- Moved EOD ingest schedule from 6 PM ET to 5 PM ET (`cron(0 17 ? * MON-FRI *)`)
+
 ### Dynamic Market Holiday Calendar (2026-04-06)
 
 **Fixed**
