@@ -6,8 +6,8 @@ then fetches full financials + earnings + dividends + TTM valuations and updates
 the metrics-history DynamoDB table via update_item (preserves existing attributes).
 
 Runs twice daily via EventBridge:
-  - 9 PM UTC (6 PM ET) — catches after-hours earnings reports
-  - 4:30 PM UTC (11:30 AM ET) — catches pre-market earnings reports
+  - 5:00 PM ET Mon-Fri — catches after-hours earnings reports
+  - 9:30 AM ET Mon-Fri — catches pre-market earnings reports
 
 Event payload options:
   {}                                — auto mode: check calendar, process recently reported

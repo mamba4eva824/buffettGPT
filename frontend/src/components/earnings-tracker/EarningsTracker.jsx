@@ -1,24 +1,43 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import useEarningsData from '../../hooks/useEarningsData';
+import useWatchlist from '../../hooks/useWatchlist';
 import RecentFeed from './RecentFeed';
 import UpcomingCalendar from './UpcomingCalendar';
 import SeasonHeatmap from './SeasonHeatmap';
+import WatchlistTab from './WatchlistTab';
 
-const TABS = [
+const BASE_TABS = [
   { id: 'recent', label: 'Recent', icon: 'breaking_news' },
   { id: 'upcoming', label: 'Upcoming', icon: 'calendar_month' },
   { id: 'season', label: 'Season Overview', icon: 'bar_chart' },
 ];
 
-const VALID_TABS = new Set(TABS.map(t => t.id));
+const WATCHLIST_TAB = { id: 'watchlist', label: 'Watchlist', icon: 'bookmark' };
 
-export default function EarningsTracker({ onNavigateToInsights }) {
+function formatRelativeTime(isoString) {
+  if (!isoString) return null;
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffMs = now - date;
+  const diffMin = Math.floor(diffMs / 60000);
+  if (diffMin < 1) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+export default function EarningsTracker({ onNavigateToInsights, isAuthenticated, token }) {
   const [searchParams, setSearchParams] = useSearchParams();
+
+  const tabs = isAuthenticated ? [...BASE_TABS, WATCHLIST_TAB] : BASE_TABS;
 
   const [activeTab, setActiveTab] = useState(() => {
     const tab = searchParams.get('etab');
-    return tab && VALID_TABS.has(tab) ? tab : 'recent';
+    const allValid = new Set(['recent', 'upcoming', 'season', ...(isAuthenticated ? ['watchlist'] : [])]);
+    return tab && allValid.has(tab) ? tab : 'recent';
   });
 
   // Sync tab to URL
@@ -29,13 +48,27 @@ export default function EarningsTracker({ onNavigateToInsights }) {
     setSearchParams(params, { replace: true });
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { recentData, upcomingData, seasonData, loading, error } = useEarningsData(activeTab);
+  const { recentData, upcomingData, seasonData, loading, error, updatedAt } = useEarningsData(activeTab);
+
+  const { watchlistData, loading: watchlistLoading, error: watchlistError, addTicker, removeTicker } = useWatchlist(token);
+  const [addLoading, setAddLoading] = useState(false);
 
   const handleSelectTicker = useCallback((ticker) => {
     if (onNavigateToInsights) {
       onNavigateToInsights(ticker);
     }
   }, [onNavigateToInsights]);
+
+  const handleAddTicker = useCallback(async (ticker) => {
+    setAddLoading(true);
+    try {
+      await addTicker(ticker);
+    } catch {
+      // error is set in the hook
+    } finally {
+      setAddLoading(false);
+    }
+  }, [addTicker]);
 
   return (
     <div className="flex flex-col h-full bg-sand-50 dark:bg-warm-950 text-sand-800 dark:text-warm-50 overflow-hidden">
@@ -45,7 +78,7 @@ export default function EarningsTracker({ onNavigateToInsights }) {
           <span className="material-symbols-outlined text-vi-gold text-xl">candlestick_chart</span>
           <h1 className="text-lg font-serif font-bold text-sand-800 dark:text-warm-50">Earnings Tracker</h1>
           <div className="ml-auto flex items-center bg-sand-100 dark:bg-warm-900 rounded-lg p-0.5">
-            {TABS.map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -60,6 +93,11 @@ export default function EarningsTracker({ onNavigateToInsights }) {
               </button>
             ))}
           </div>
+          {updatedAt && !loading && (
+            <span className="hidden md:inline text-xs text-sand-400 dark:text-warm-500 ml-2" title={updatedAt}>
+              Updated {formatRelativeTime(updatedAt)}
+            </span>
+          )}
         </div>
       </div>
 
@@ -94,6 +132,35 @@ export default function EarningsTracker({ onNavigateToInsights }) {
             )}
             {activeTab === 'season' && (
               <SeasonHeatmap data={seasonData} />
+            )}
+          </>
+        )}
+
+        {/* Watchlist Tab (independent of earnings loading/error) */}
+        {activeTab === 'watchlist' && isAuthenticated && (
+          <>
+            {watchlistLoading && (
+              <div className="flex items-center justify-center py-12">
+                <div className="flex items-center gap-3 text-sand-500 dark:text-warm-400">
+                  <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                  <span className="text-sm">Loading watchlist...</span>
+                </div>
+              </div>
+            )}
+            {watchlistError && !watchlistLoading && (
+              <div className="bg-vi-rose/10 rounded-xl p-6 text-center">
+                <span className="material-symbols-outlined text-vi-rose text-2xl mb-2 block">error</span>
+                <p className="text-sm text-vi-rose">{watchlistError}</p>
+              </div>
+            )}
+            {!watchlistLoading && !watchlistError && (
+              <WatchlistTab
+                data={watchlistData}
+                onAddTicker={handleAddTicker}
+                onRemoveTicker={removeTicker}
+                onSelectTicker={handleSelectTicker}
+                addLoading={addLoading}
+              />
             )}
           </>
         )}

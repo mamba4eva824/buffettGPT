@@ -1651,6 +1651,8 @@ function ChatApp() {
                     setSearchParams(params, { replace: true });
                     setAppMode('value-insights');
                   }}
+                  isAuthenticated={isAuthenticated}
+                  token={token}
                 />
               </div>
             ) : messages.length === 0 && !showInvestmentResearch ? (

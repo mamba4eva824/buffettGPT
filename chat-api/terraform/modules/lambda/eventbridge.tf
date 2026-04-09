@@ -8,7 +8,7 @@
 # Schedules:
 #   1. S&P 500 EOD 4h candle ingest — 6:00 PM ET Mon-Fri
 #   2. Earnings update post-close   — 5:00 PM ET Mon-Fri
-#   3. Earnings update post-open    — 11:30 AM ET Mon-Fri
+#   3. Earnings update post-open    — 9:30 AM ET Mon-Fri
 
 # =============================================================================
 # IAM Role — EventBridge Scheduler Execution
@@ -163,16 +163,16 @@ resource "aws_scheduler_schedule" "earnings_update_post_close" {
 # =============================================================================
 # Schedule — Earnings Update Post-Open
 # =============================================================================
-# 11:30 AM ET Mon-Fri — catches pre-market earnings reported before/after open.
+# 9:30 AM ET Mon-Fri — catches pre-market earnings reported before/after open.
 
 resource "aws_scheduler_schedule" "earnings_update_post_open" {
   count = var.enable_earnings_update_schedule ? 1 : 0
 
   name        = "${var.project_name}-${var.environment}-earnings-update-post-open"
   group_name  = aws_scheduler_schedule_group.market_data[0].name
-  description = "Earnings update after market open (11:30 AM ET)"
+  description = "Earnings update after market open (9:30 AM ET)"
 
-  schedule_expression          = "cron(30 11 ? * MON-FRI *)"
+  schedule_expression          = "cron(30 9 ? * MON-FRI *)"
   schedule_expression_timezone = "America/New_York"
 
   flexible_time_window {

@@ -95,9 +95,12 @@ def _get_recent_earnings(params: Dict) -> Dict:
             'updated_at': item.get('updated_at'),
         })
 
+    latest_updated_at = max((item.get('updated_at', '') for item in items), default='') or None
+
     return _response(200, {
         'events': events,
         'count': len(events),
+        'updated_at': latest_updated_at,
     })
 
 
@@ -127,9 +130,12 @@ def _get_upcoming_earnings(params: Dict) -> Dict:
             'revenue_estimated': item.get('revenue_estimated'),
         })
 
+    latest_updated_at = max((item.get('updated_at', '') for item in items), default='') or None
+
     return _response(200, {
         'events': events,
         'count': len(events),
+        'updated_at': latest_updated_at,
     })
 
 
@@ -183,11 +189,14 @@ def _get_season_overview(params: Dict) -> Dict:
         'company_count': index_overall.get('company_count', 0),
     }
 
+    latest_updated_at = max((s.get('computed_at', '') for s in sector_summaries), default='') or None
+
     return _response(200, {
         'sectors': sector_summaries,
         'overall': overall,
         'top_beats': (beats_result.get('Item', {}).get('companies', []))[:10],
         'top_misses': (misses_result.get('Item', {}).get('companies', []))[:10],
+        'updated_at': latest_updated_at,
     })
 
 

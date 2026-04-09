@@ -7,6 +7,7 @@ export default function useEarningsData(activeTab) {
   const [seasonData, setSeasonData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [updatedAt, setUpdatedAt] = useState(null);
   const abortRef = useRef(null);
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export default function useEarningsData(activeTab) {
         else if (activeTab === 'upcoming') setUpcomingData(result);
         else if (activeTab === 'season') setSeasonData(result);
 
+        setUpdatedAt(result.updated_at || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -48,5 +50,5 @@ export default function useEarningsData(activeTab) {
     return () => controller.abort();
   }, [activeTab]);
 
-  return { recentData, upcomingData, seasonData, loading, error };
+  return { recentData, upcomingData, seasonData, loading, error, updatedAt };
 }

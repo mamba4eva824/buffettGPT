@@ -80,6 +80,12 @@ locals {
       memory_size = 512
       description = "S&P 500 daily 4-hour candle ingestion after market close"
     }
+    watchlist_handler = {
+      handler     = "watchlist_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "User watchlist API - add, list, and remove watched stocks"
+    }
   }
 }
 

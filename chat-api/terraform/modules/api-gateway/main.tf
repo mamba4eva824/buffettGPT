@@ -784,3 +784,86 @@ resource "aws_lambda_permission" "earnings_feed_api_permission" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
+
+# ================================================
+# Watchlist API Routes and Integration
+# ================================================
+
+# Watchlist Handler Integration
+resource "aws_apigatewayv2_integration" "watchlist_handler_integration" {
+  count            = var.enable_watchlist_api_routes ? 1 : 0
+  api_id           = aws_apigatewayv2_api.http_api.id
+  integration_type = "AWS_PROXY"
+
+  integration_method     = "POST"
+  integration_uri        = var.lambda_arns["watchlist_handler"]
+  payload_format_version = "2.0"
+  timeout_milliseconds   = 30000
+
+  request_parameters = {
+    "overwrite:header.x-request-id" = "$request.header.x-request-id"
+  }
+}
+
+# GET /watchlist - List user's watched stocks
+resource "aws_apigatewayv2_route" "watchlist_get" {
+  count     = var.enable_watchlist_api_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "GET /watchlist"
+  target    = "integrations/${aws_apigatewayv2_integration.watchlist_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# PUT /watchlist/{ticker} - Add ticker to watchlist
+resource "aws_apigatewayv2_route" "watchlist_put" {
+  count     = var.enable_watchlist_api_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "PUT /watchlist/{ticker}"
+  target    = "integrations/${aws_apigatewayv2_integration.watchlist_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# DELETE /watchlist/{ticker} - Remove ticker from watchlist
+resource "aws_apigatewayv2_route" "watchlist_delete" {
+  count     = var.enable_watchlist_api_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "DELETE /watchlist/{ticker}"
+  target    = "integrations/${aws_apigatewayv2_integration.watchlist_handler_integration[0].id}"
+
+  authorization_type = var.enable_authorization ? "CUSTOM" : "NONE"
+  authorizer_id      = var.enable_authorization ? aws_apigatewayv2_authorizer.http_jwt_authorizer[0].id : null
+}
+
+# OPTIONS /watchlist - CORS preflight
+resource "aws_apigatewayv2_route" "watchlist_options" {
+  count     = var.enable_watchlist_api_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /watchlist"
+  target    = "integrations/${aws_apigatewayv2_integration.watchlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# OPTIONS /watchlist/{ticker} - CORS preflight for ticker operations
+resource "aws_apigatewayv2_route" "watchlist_ticker_options" {
+  count     = var.enable_watchlist_api_routes ? 1 : 0
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "OPTIONS /watchlist/{ticker}"
+  target    = "integrations/${aws_apigatewayv2_integration.watchlist_handler_integration[0].id}"
+
+  authorization_type = "NONE"
+}
+
+# Watchlist Handler Lambda Permission
+resource "aws_lambda_permission" "watchlist_api_permission" {
+  count         = var.enable_watchlist_api_routes ? 1 : 0
+  statement_id  = "AllowExecutionFromHTTPAPIWatchlist"
+  action        = "lambda:InvokeFunction"
+  function_name = var.lambda_arns["watchlist_handler"]
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
+}

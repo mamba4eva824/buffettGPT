@@ -118,6 +118,13 @@ locals {
     value_insights_handler = {
       STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
     }
+    watchlist_handler = {
+      WATCHLIST_TABLE             = module.dynamodb.watchlist_table_name
+      USERS_TABLE                 = var.enable_authentication ? module.auth[0].users_table_name : ""
+      STOCK_DATA_4H_TABLE         = module.dynamodb.stock_data_4h_table_name
+      METRICS_HISTORY_CACHE_TABLE = module.dynamodb.metrics_history_cache_table_name
+      SP500_AGGREGATES_TABLE      = module.dynamodb.sp500_aggregates_table_name
+    }
   }
 }
 
@@ -268,6 +275,9 @@ module "api_gateway" {
 
   # Earnings Feed API (earnings tracker dashboard)
   enable_earnings_feed_routes = true
+
+  # Watchlist API (add, list, remove watched stocks)
+  enable_watchlist_api_routes = true
 
   common_tags = local.common_tags
 }
