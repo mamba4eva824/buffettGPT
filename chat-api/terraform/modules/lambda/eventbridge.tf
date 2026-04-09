@@ -6,7 +6,7 @@
 # automatically adjust for EDT/EST — no DST drift.
 #
 # Schedules:
-#   1. S&P 500 EOD 4h candle ingest — 6:00 PM ET Mon-Fri
+#   1. S&P 500 EOD 4h candle ingest — 5:00 PM ET Mon-Fri
 #   2. Earnings update post-close   — 5:00 PM ET Mon-Fri
 #   3. Earnings update post-open    — 11:30 AM ET Mon-Fri
 
@@ -92,17 +92,16 @@ resource "aws_scheduler_schedule_group" "market_data" {
 # =============================================================================
 # Schedule — S&P 500 EOD 4-Hour Candle Ingestion
 # =============================================================================
-# 6:00 PM ET Mon-Fri (~2 hours after market close at 4 PM ET).
-# This delay ensures FMP has processed and published the day's 4h candles.
+# 5:00 PM ET Mon-Fri (~1 hour after market close at 4 PM ET).
 
 resource "aws_scheduler_schedule" "sp500_eod_ingest" {
   count = var.enable_eod_ingest_schedule ? 1 : 0
 
   name        = "${var.project_name}-${var.environment}-sp500-eod-4h-ingest"
   group_name  = aws_scheduler_schedule_group.market_data[0].name
-  description = "Daily S&P 500 4-hour candle ingestion (6:00 PM ET, ~2h after market close)"
+  description = "Daily S&P 500 EOD price ingestion (5:00 PM ET, ~1h after market close)"
 
-  schedule_expression          = "cron(0 18 ? * MON-FRI *)"
+  schedule_expression          = "cron(0 17 ? * MON-FRI *)"
   schedule_expression_timezone = "America/New_York"
 
   flexible_time_window {

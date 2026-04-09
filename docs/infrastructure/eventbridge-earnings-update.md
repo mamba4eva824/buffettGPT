@@ -74,9 +74,8 @@ US Market Day Timeline (Eastern Time)
 |           Catches pre-market announcements
 |  4:00 PM  Market closes
 |  4:10 PM  After-hours earnings announced (typical window: 4:10-4:30 PM)
-|  5:00 PM  ---- earnings_update (post-close) runs ----
-|           Catches after-hours announcements
-|  6:00 PM  ---- sp500_eod_ingest runs ----
+|  5:00 PM  ---- earnings_update (post-close) AND sp500_eod_ingest run ----
+|           Catches after-hours announcements + captures closing prices
 |           Captures closing prices for all tickers
 |
 ```
@@ -122,6 +121,7 @@ Both schedules:
 - `METRICS_HISTORY_CACHE_TABLE` - DynamoDB table name for quarterly metrics
 - `ENVIRONMENT` - dev/staging/prod
 - `LOG_LEVEL` - Logging verbosity
+- `SNS_TOPIC_ARN` - SNS topic for email notifications (success/skip/failure summaries)
 
 ### FMP API Calls Per Ticker
 
@@ -238,6 +238,27 @@ The `results` array contains everything needed for user-facing notifications:
 | `earnings_date` | "Reported January 29" |
 
 The `upcoming` array enables "Earnings coming up" alerts for tickers users are tracking.
+
+---
+
+## Email Notifications
+
+After every run, the Lambda publishes a summary to the `{project}-{env}-alerts` SNS topic, which delivers an email to the configured alert address. One email per invocation.
+
+| Scenario | Email Subject |
+|----------|--------------|
+| Success | `[buffett-dev] Earnings Update: 8 updated` |
+| Partial failures | `[buffett-dev] Earnings Update: 8 updated, 2 failed` |
+| No tickers reported | `[buffett-dev] Earnings Update: No tickers to process` |
+| Lambda crash (DLQ) | CloudWatch alarm notification via same SNS topic |
+
+The email body includes mode (auto/manual), tickers checked, tickers updated (by name), and any failures with ticker and error. If the SNS publish itself fails, it is logged as a warning but does not crash the Lambda.
+
+**Defense in depth**: Two layers of DLQ protection are in place:
+- **Scheduler-level DLQ** — catches invocation failures (throttling, IAM issues, function not found)
+- **Lambda-level DLQ** (`aws_lambda_function_event_invoke_config`) — catches execution failures within the function
+
+Both route to the same SQS queue (`{project}-{env}-earnings-update-dlq`) with a CloudWatch alarm that triggers an email when any message arrives.
 
 ---
 
@@ -393,7 +414,7 @@ All within Lambda timeout (300s) and FMP rate limits (300 calls/min with 0.5s de
 
 ### Medium-Term
 
-3. **SNS notifications** — Publish earnings results to an SNS topic that user-facing notification services can subscribe to. The response structure already contains all needed fields.
+3. ~~**SNS notifications**~~ — **Done.** Lambda publishes run summaries to SNS alerts topic after every invocation (2026-04). DLQ alarms also wired to SNS.
 4. ~~**DLQ + CloudWatch alarm**~~ — **Done.** SQS dead letter queue + CloudWatch alarm added (2026-04). Both scheduler-level and Lambda-level DLQs are in place.
 5. **Earnings quality scoring** — Auto-compute an earnings quality score based on beat rate, surprise consistency, and revenue vs EPS alignment.
 
@@ -414,4 +435,5 @@ All within Lambda timeout (300s) and FMP rate limits (300 calls/min with 0.5s de
 | FMP API calls | ~100-300/day x 22 days = included in FMP plan |
 | Secrets Manager | ~44 calls/month = **$0.02** |
 | EventBridge | Free tier |
+| SNS notifications | ~44 emails/month = **free tier** |
 | **Total** | **< $0.10/month** (excluding FMP API plan) |

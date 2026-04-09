@@ -6,8 +6,8 @@ and stores it in DynamoDB.
 
 Uses FMP stable API: /stable/historical-chart/4hour?symbol={ticker}
 
-Scheduled via EventBridge: cron(0 22 ? * MON-FRI *)  — 10 PM UTC (6 PM ET)
-Runs ~2 hours after US market close to ensure data availability.
+Scheduled via EventBridge Scheduler: cron(0 17 ? * MON-FRI *) America/New_York
+Runs ~1 hour after US market close to ensure data availability.
 
 Environment Variables:
   FMP_SECRET_NAME       — Secrets Manager name holding the FMP API key
@@ -418,14 +418,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     force = event.get("force", False)
 
     if not target_date:
-        now = datetime.now(timezone.utc)
-        yesterday = now - timedelta(days=1)
-        wd = yesterday.weekday()
-        if wd == 6:  # Sunday → Friday
-            yesterday -= timedelta(days=2)
-        elif wd == 5:  # Saturday → Friday
-            yesterday -= timedelta(days=1)
-        target_date = yesterday.strftime("%Y-%m-%d")
+        # Use today in Eastern time — the schedule runs at 6 PM ET,
+        # after market close (4 PM ET), so today's data is available.
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("America/New_York"))
+        wd = today.weekday()
+        if wd == 6:      # Sunday → Friday
+            today -= timedelta(days=2)
+        elif wd == 5:    # Saturday → Friday
+            today -= timedelta(days=1)
+        target_date = today.strftime("%Y-%m-%d")
 
     logger.info(f"Starting 4h EOD ingestion for {target_date} (force={force})")
 

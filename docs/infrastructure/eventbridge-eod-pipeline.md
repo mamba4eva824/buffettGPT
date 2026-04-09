@@ -13,7 +13,7 @@ The Value Insights dashboard analyzes companies using quarterly financial data (
 | Metric | Value |
 |--------|-------|
 | Frequency | Daily, Monday--Friday |
-| Trigger time | 6:00 PM Eastern (America/New_York timezone) |
+| Trigger time | 5:00 PM Eastern (America/New_York timezone) |
 | Data source | FMP `/stable/historical-price-eod/full` |
 | Tickers covered | ~503 S&P 500 companies |
 | Records per run | ~481 (17 tickers typically empty) |
@@ -27,7 +27,7 @@ The Value Insights dashboard analyzes companies using quarterly financial data (
 ```
                      Amazon EventBridge Scheduler
                      cron(0 18 ? * MON-FRI *)
-                     6:00 PM Eastern (America/New_York)
+                     5:00 PM Eastern (America/New_York)
                             |
                             v
               +----------------------------+
@@ -80,7 +80,7 @@ Every weekday at 6:00 PM Eastern, Amazon EventBridge Scheduler invokes the `sp50
 
 | Property | Value |
 |----------|-------|
-| Schedule | `cron(0 18 ? * MON-FRI *)` |
+| Schedule | `cron(0 17 ? * MON-FRI *)` |
 | Timezone | `America/New_York` |
 | Schedule group | `{project}-{env}-market-data` |
 | Retry policy | 2 retries, max event age 1 hour |
@@ -306,7 +306,7 @@ aws dynamodb scan --table-name stock-data-4h-dev --select COUNT
 aws scheduler update-schedule --name buffett-dev-sp500-eod-4h-ingest \
   --group-name buffett-dev-market-data --state DISABLED \
   --flexible-time-window '{"Mode":"OFF"}' \
-  --schedule-expression 'cron(0 18 ? * MON-FRI *)' \
+  --schedule-expression 'cron(0 17 ? * MON-FRI *)' \
   --schedule-expression-timezone America/New_York \
   --target "$(aws scheduler get-schedule --name buffett-dev-sp500-eod-4h-ingest --group-name buffett-dev-market-data --query 'Target' --output json)"
 ```
