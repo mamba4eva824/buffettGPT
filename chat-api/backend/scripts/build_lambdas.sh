@@ -41,6 +41,7 @@ FUNCTIONS=(
     "value_insights_handler"
     "sp500_eod_ingest"
     "earnings_feed_handler"
+    "watchlist_handler"
 )
 
 # Build each function
