@@ -2011,7 +2011,8 @@ export function MoatPanel({ data, ratings, timeRange, sectorAggregate, sector })
 
   const fcfConversionData = filtered.map(q => {
     if (!q.revenue_profit.net_income || q.revenue_profit.net_income <= 0) return null;
-    return q.cashflow.free_cash_flow / q.revenue_profit.net_income;
+    const ratio = q.cashflow.free_cash_flow / q.revenue_profit.net_income;
+    return Math.max(-10, Math.min(10, ratio)); // Cap at +/-10x (1000%)
   });
   const fcfConversionValid = fcfConversionData.filter(v => v != null);
   const fcfConversionQuarters = filtered.filter((_, i) => fcfConversionData[i] != null);
