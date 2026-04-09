@@ -143,6 +143,52 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
 
 
 # ---------------------------------------------------------------------------
+# Freshness Check — Skip Already-Processed Tickers
+# ---------------------------------------------------------------------------
+def _already_updated_since_earnings(ticker: str, earnings_date: str) -> bool:
+    """
+    Check if this ticker was already processed after its earnings_date.
+
+    Looks at cached_at on the latest quarter in metrics-history.
+    If cached_at > earnings_date (as epoch > date), the ticker was already
+    updated for this earnings cycle — skip it.
+    """
+    try:
+        response = metrics_table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('ticker').eq(ticker),
+            ScanIndexForward=False,
+            Limit=1,
+            ProjectionExpression='ticker, cached_at, earnings_events',
+        )
+        items = response.get('Items', [])
+        if not items:
+            return False
+
+        item = items[0]
+        cached_at = item.get('cached_at')
+        if not cached_at:
+            return False
+
+        # Convert earnings_date to epoch for comparison
+        from datetime import datetime
+        earnings_epoch = datetime.strptime(earnings_date, '%Y-%m-%d').timestamp()
+
+        # If the item was cached after the earnings date, it's already been processed
+        if float(cached_at) > earnings_epoch:
+            ee = item.get('earnings_events', {})
+            # Double-check: does it actually have eps_actual? (not just an estimate)
+            if ee.get('eps_actual') is not None:
+                logger.debug(f"{ticker}: already updated after {earnings_date} (cached_at={cached_at})")
+                return True
+
+        return False
+
+    except Exception as e:
+        logger.warning(f"Freshness check failed for {ticker}: {e}")
+        return False  # On error, process the ticker
+
+
+# ---------------------------------------------------------------------------
 # Per-Ticker Processing
 # ---------------------------------------------------------------------------
 def _process_ticker(ticker: str) -> Dict[str, Any]:
@@ -374,12 +420,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     }
 
     # Determine which tickers to process
+    earnings_dates_by_ticker = {}
     if manual_tickers:
         tickers_to_process = sorted(manual_tickers)
         logger.info(f"Manual mode: processing {len(tickers_to_process)} tickers")
     else:
         calendar = _check_earnings_calendar(lookback_days)
-        tickers_to_process = sorted(set(r['ticker'] for r in calendar['reported']))
+        reported = calendar['reported']
+        # Build earnings_date lookup for freshness check
+        for r in reported:
+            earnings_dates_by_ticker[r['ticker']] = r['earnings_date']
+        tickers_to_process = sorted(set(r['ticker'] for r in reported))
         if include_upcoming:
             response['upcoming'] = calendar['upcoming']
         logger.info(f"Auto mode: {len(tickers_to_process)} tickers recently reported")
@@ -391,6 +442,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         logger.info("No tickers to process — no recent earnings reports")
         _publish_sns_summary(response)
         return response
+
+    # Filter out tickers already processed for this earnings cycle
+    skipped_fresh = []
+    if not manual_tickers:  # Only skip in auto mode — manual mode always processes
+        filtered = []
+        for ticker in tickers_to_process:
+            earnings_date = earnings_dates_by_ticker.get(ticker, '')
+            if earnings_date and _already_updated_since_earnings(ticker, earnings_date):
+                skipped_fresh.append(ticker)
+            else:
+                filtered.append(ticker)
+        if skipped_fresh:
+            logger.info(f"Skipping {len(skipped_fresh)} already-processed tickers: {skipped_fresh}")
+        tickers_to_process = filtered
+
+    response['skipped_already_processed'] = skipped_fresh
 
     # Process each ticker
     for i, ticker in enumerate(tickers_to_process):
