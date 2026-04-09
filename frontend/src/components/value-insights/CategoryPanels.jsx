@@ -2120,40 +2120,48 @@ export function MoatPanel({ data, ratings, timeRange, sectorAggregate, sector })
             <h3 className="text-lg font-serif text-sand-800 dark:text-warm-50 mb-4">Moat Profile</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {moatWidth && (
-                <div className={`rounded-lg px-4 py-3 ${moatWidth.bg}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`material-symbols-outlined text-base ${moatWidth.color}`}>{moatWidth.icon}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Width</span>
+                <MetricTooltip tip="Width measures how far average ROIC sits above the 10% cost of capital. Wide (>20% avg ROIC) = strong advantage. Narrow (10-20%) = some advantage. None (<=10%) = no moat evidence.">
+                  <div className={`rounded-lg px-4 py-3 ${moatWidth.bg}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`material-symbols-outlined text-base ${moatWidth.color}`}>{moatWidth.icon}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Width</span>
+                    </div>
+                    <span className={`text-lg font-serif font-bold ${moatWidth.color}`}>{moatWidth.label}</span>
                   </div>
-                  <span className={`text-lg font-serif font-bold ${moatWidth.color}`}>{moatWidth.label}</span>
-                </div>
+                </MetricTooltip>
               )}
               {moatDurability && (
-                <div className={`rounded-lg px-4 py-3 ${moatDurability.bg}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`material-symbols-outlined text-base ${moatDurability.color}`}>{moatDurability.icon}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Durability</span>
+                <MetricTooltip tip="Durability combines ROIC volatility (coefficient of variation) with consistency (% of quarters above cost of capital). Durable = low volatility + >80% above CoC. Cyclical = high volatility but average still above CoC. Fragile = inconsistent returns.">
+                  <div className={`rounded-lg px-4 py-3 ${moatDurability.bg}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`material-symbols-outlined text-base ${moatDurability.color}`}>{moatDurability.icon}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Durability</span>
+                    </div>
+                    <span className={`text-lg font-serif font-bold ${moatDurability.color}`}>{moatDurability.label}</span>
                   </div>
-                  <span className={`text-lg font-serif font-bold ${moatDurability.color}`}>{moatDurability.label}</span>
-                </div>
+                </MetricTooltip>
               )}
               {moatTrend && (
-                <div className={`rounded-lg px-4 py-3 ${moatTrend.label === 'Strengthening' ? 'bg-vi-sage/15' : moatTrend.label === 'Eroding' ? 'bg-vi-rose/15' : 'bg-vi-gold/15'}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`material-symbols-outlined text-base ${moatTrend.color}`}>{moatTrend.icon}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Trend</span>
+                <MetricTooltip tip="Trend compares average ROIC in the first half of quarters vs the second half. The threshold scales with the stock's own volatility so cyclical businesses need a larger shift to trigger a signal — preventing seasonal noise from being misread as moat erosion.">
+                  <div className={`rounded-lg px-4 py-3 ${moatTrend.label === 'Strengthening' ? 'bg-vi-sage/15' : moatTrend.label === 'Eroding' ? 'bg-vi-rose/15' : 'bg-vi-gold/15'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`material-symbols-outlined text-base ${moatTrend.color}`}>{moatTrend.icon}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Trend</span>
+                    </div>
+                    <span className={`text-lg font-serif font-bold ${moatTrend.color}`}>{moatTrend.label}</span>
                   </div>
-                  <span className={`text-lg font-serif font-bold ${moatTrend.color}`}>{moatTrend.label}</span>
-                </div>
+                </MetricTooltip>
               )}
               {capitalAllocation && (
-                <div className={`rounded-lg px-4 py-3 ${capitalAllocation.bg}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`material-symbols-outlined text-base ${capitalAllocation.color}`}>{capitalAllocation.icon}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Capital</span>
+                <MetricTooltip tip="Capital Allocation evaluates how the company uses its returns over the last 4 quarters. Compounder = high reinvestment + low payout. Cash Cow = >50% of FCF returned to shareholders. Balanced = moderate mix. Value Destroyer = ROIC below cost of capital.">
+                  <div className={`rounded-lg px-4 py-3 ${capitalAllocation.bg}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`material-symbols-outlined text-base ${capitalAllocation.color}`}>{capitalAllocation.icon}</span>
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Capital</span>
+                    </div>
+                    <span className={`text-lg font-serif font-bold ${capitalAllocation.color}`}>{capitalAllocation.label}</span>
                   </div>
-                  <span className={`text-lg font-serif font-bold ${capitalAllocation.color}`}>{capitalAllocation.label}</span>
-                </div>
+                </MetricTooltip>
               )}
             </div>
             {/* Description for the most notable classification */}
