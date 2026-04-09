@@ -62,6 +62,7 @@ AGGREGATES_TABLE = os.environ.get('SP500_AGGREGATES_TABLE', f'buffett-{ENVIRONME
 FMP_SECRET_NAME = os.environ.get('FMP_SECRET_NAME', f'buffett-{ENVIRONMENT}-fmp')
 FMP_RATE_LIMIT_DELAY = 0.5  # Seconds between FMP calls (300 calls/min limit)
 FEED_TTL_DAYS = 90  # How long to keep earnings feed records
+UPCOMING_LOOKAHEAD_DAYS = 30  # How far forward to query upcoming earnings
 
 # ---------------------------------------------------------------------------
 # AWS Clients
@@ -99,7 +100,7 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
 
     today = datetime.now()
     from_date = (today - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
-    to_date = (today + timedelta(days=7)).strftime('%Y-%m-%d')
+    to_date = (today + timedelta(days=UPCOMING_LOOKAHEAD_DAYS)).strftime('%Y-%m-%d')
 
     url = "https://financialmodelingprep.com/stable/earnings-calendar"
     with httpx.Client(timeout=30.0) as client:
@@ -385,7 +386,7 @@ def _write_upcoming_records(upcoming: List[Dict[str, Any]]) -> None:
     from investment_research.index_tickers import SP500_SECTORS
 
     now = datetime.now()
-    ttl = int(now.timestamp()) + (7 * 24 * 60 * 60)  # 7-day TTL for upcoming
+    ttl = int(now.timestamp()) + (UPCOMING_LOOKAHEAD_DAYS * 24 * 60 * 60)
 
     with aggregates_table.batch_writer() as batch:
         for entry in upcoming:
@@ -414,6 +415,73 @@ def _write_upcoming_records(upcoming: List[Dict[str, Any]]) -> None:
             batch.put_item(Item=item)
 
     logger.info(f"Wrote {len(upcoming)} upcoming earnings records")
+
+
+def _ensure_feed_record(ticker: str, earnings_date: str) -> None:
+    """Write an EARNINGS_RECENT feed record for a skipped (already-processed) ticker.
+
+    Reads existing data from metrics-history so we don't need to re-fetch from FMP.
+    No-ops if a feed record already exists for this ticker+date.
+    """
+    from investment_research.index_tickers import SP500_SECTORS
+
+    # Check if feed record already exists
+    try:
+        existing = aggregates_table.get_item(
+            Key={'aggregate_type': 'EARNINGS_RECENT', 'aggregate_key': f'{earnings_date}#{ticker}'}
+        )
+        if existing.get('Item'):
+            return  # Already have a feed record
+    except Exception:
+        pass  # Proceed to write
+
+    # Read latest quarter from metrics-history
+    try:
+        resp = metrics_table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('ticker').eq(ticker),
+            ScanIndexForward=False,
+            Limit=1,
+        )
+        items = resp.get('Items', [])
+        if not items:
+            logger.warning(f"_ensure_feed_record: no metrics data for {ticker}")
+            return
+
+        item = items[0]
+        ee = item.get('earnings_events', {})
+        if isinstance(ee, str):
+            try:
+                ee = json.loads(ee)
+            except (json.JSONDecodeError, TypeError):
+                ee = {}
+
+        eps_actual = ee.get('eps_actual')
+        eps_estimated = ee.get('eps_estimated')
+
+        # Compute beat/miss
+        eps_beat = None
+        eps_surprise_pct = None
+        if eps_actual is not None and eps_estimated is not None:
+            eps_beat = float(eps_actual) >= float(eps_estimated)
+            if float(eps_estimated) != 0:
+                eps_surprise_pct = round(
+                    (float(eps_actual) - float(eps_estimated)) / abs(float(eps_estimated)) * 100, 2
+                )
+
+        result = {
+            'ticker': ticker,
+            'status': 'success',
+            'earnings_date': earnings_date,
+            'eps_actual': float(eps_actual) if eps_actual is not None else None,
+            'eps_estimated': float(eps_estimated) if eps_estimated is not None else None,
+            'eps_beat': eps_beat,
+            'eps_surprise_pct': eps_surprise_pct,
+        }
+        _write_feed_record(result)
+        logger.info(f"Wrote feed record for skipped ticker {ticker} (earnings {earnings_date})")
+
+    except Exception as e:
+        logger.warning(f"_ensure_feed_record failed for {ticker}: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +590,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         _publish_sns_summary(response)
         return response
 
-    # Filter out tickers already processed for this earnings cycle
+    # Filter out tickers already processed for this earnings cycle.
+    # Skipped tickers still get feed records written (for the dashboard).
     skipped_fresh = []
     if not manual_tickers:  # Only skip in auto mode — manual mode always processes
         filtered = []
@@ -530,10 +599,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             earnings_date = earnings_dates_by_ticker.get(ticker, '')
             if earnings_date and _already_updated_since_earnings(ticker, earnings_date):
                 skipped_fresh.append(ticker)
+                # Still write a feed record from existing metrics-history data
+                _ensure_feed_record(ticker, earnings_date)
             else:
                 filtered.append(ticker)
         if skipped_fresh:
-            logger.info(f"Skipping {len(skipped_fresh)} already-processed tickers: {skipped_fresh}")
+            logger.info(f"Skipping {len(skipped_fresh)} already-processed tickers "
+                        f"(feed records ensured): {skipped_fresh}")
         tickers_to_process = filtered
 
     response['skipped_already_processed'] = skipped_fresh
