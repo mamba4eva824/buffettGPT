@@ -2045,8 +2045,11 @@ export function MoatPanel({ data, ratings, timeRange, sectorAggregate, sector })
   const moatTrend = useMemo(() => {
     if (filtered.length < 8) return null;
     const mid = Math.floor(filtered.length / 2);
-    const avgFirst = filtered.slice(0, mid).reduce((s, q) => s + q.valuation.roic, 0) / mid;
-    const avgSecond = filtered.slice(mid).reduce((s, q) => s + q.valuation.roic, 0) / (filtered.length - mid);
+    const firstValid = filtered.slice(0, mid).map(q => q.valuation.roic).filter(v => v != null);
+    const secondValid = filtered.slice(mid).map(q => q.valuation.roic).filter(v => v != null);
+    if (firstValid.length < 2 || secondValid.length < 2) return null;
+    const avgFirst = firstValid.reduce((s, v) => s + v, 0) / firstValid.length;
+    const avgSecond = secondValid.reduce((s, v) => s + v, 0) / secondValid.length;
     const change = avgSecond - avgFirst;
     if (change > 0.02) return { label: 'Strengthening', icon: 'trending_up', color: 'text-vi-sage', border: 'border-vi-sage', desc: 'ROIC is trending higher — the competitive advantage appears to be widening over time.' };
     if (change < -0.02) return { label: 'Eroding', icon: 'trending_down', color: 'text-vi-rose', border: 'border-vi-rose', desc: 'ROIC is trending lower — competitors may be closing the gap. Watch margins and reinvestment rates.' };
