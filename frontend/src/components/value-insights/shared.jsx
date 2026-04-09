@@ -187,12 +187,14 @@ export function CagrChart({ data, quarters, cagr, label, color, formatFn, summar
   let min = Math.min(...allVals);
   let max = Math.max(...allVals);
 
-  // Use 2nd-smallest/2nd-largest as anchors with 2x inner-range padding
-  // to prevent a single extreme outlier from dominating the Y-axis
+  // Trim the extreme 15% on each end, then use the trimmed range with 2x
+  // padding as Y-axis bounds. Handles multiple outliers (e.g., 3 extreme
+  // ROIC quarters for airlines during COVID).
   if (validData.length >= 4) {
     const sorted = [...validData].sort((a, b) => a - b);
-    const lo = sorted[1];
-    const hi = sorted[sorted.length - 2];
+    const trim = Math.max(1, Math.floor(sorted.length * 0.15));
+    const lo = sorted[trim];
+    const hi = sorted[sorted.length - 1 - trim];
     const inner = hi - lo;
     if (inner > 0) {
       min = Math.max(min, lo - inner * 2);
