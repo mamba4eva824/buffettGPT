@@ -2069,22 +2069,99 @@ export function MoatPanel({ data, ratings, timeRange, sectorAggregate, sector })
   const currentSpread = latest?.valuation.roic != null ? latest.valuation.roic - COST_OF_CAPITAL : null;
   const spreadPct = currentSpread != null ? (currentSpread * 100).toFixed(1) : null;
 
+  // Moat Width: how far above cost of capital on average
+  const moatWidth = useMemo(() => {
+    const valid = filtered.map(q => q.valuation.roic).filter(v => v != null);
+    if (valid.length < 4) return null;
+    const avg = valid.reduce((s, v) => s + v, 0) / valid.length;
+    const spread = avg - COST_OF_CAPITAL;
+    if (spread > 0.10) return { label: 'Wide', color: 'text-vi-sage', bg: 'bg-vi-sage/15', icon: 'verified', desc: `Average ROIC of ${(avg * 100).toFixed(0)}% is well above the 10% cost of capital — strong competitive position.` };
+    if (spread > 0) return { label: 'Narrow', color: 'text-vi-gold', bg: 'bg-vi-gold/15', icon: 'shield', desc: `Average ROIC of ${(avg * 100).toFixed(0)}% is above the 10% cost of capital — some competitive advantage.` };
+    return { label: 'None', color: 'text-vi-rose', bg: 'bg-vi-rose/15', icon: 'remove_moderator', desc: `Average ROIC of ${(avg * 100).toFixed(0)}% is at or below the 10% cost of capital — no quantitative moat evidence.` };
+  }, [filtered]);
+
+  // Moat Durability: how consistent are returns above CoC
+  const moatDurability = useMemo(() => {
+    const valid = filtered.map(q => q.valuation.roic).filter(v => v != null);
+    if (valid.length < 4) return null;
+    const mean = valid.reduce((s, v) => s + v, 0) / valid.length;
+    const std = Math.sqrt(valid.reduce((s, v) => s + (v - mean) ** 2, 0) / valid.length);
+    const cv = mean > 0 ? std / mean : 1;
+    const aboveCoC = valid.filter(v => v > COST_OF_CAPITAL).length / valid.length;
+    if (cv < 0.25 && aboveCoC >= 0.8) return { label: 'Durable', color: 'text-vi-sage', bg: 'bg-vi-sage/15', icon: 'fortress', desc: `Low volatility (CV ${cv.toFixed(2)}) with ${(aboveCoC * 100).toFixed(0)}% of quarters above cost of capital — consistent returns.` };
+    if (cv >= 0.25 && mean > COST_OF_CAPITAL) return { label: 'Cyclical', color: 'text-vi-gold', bg: 'bg-vi-gold/15', icon: 'autorenew', desc: `High volatility (CV ${cv.toFixed(2)}) but average returns above cost of capital — seasonal or cyclical business.` };
+    return { label: 'Fragile', color: 'text-vi-rose', bg: 'bg-vi-rose/15', icon: 'broken_image', desc: `Returns are inconsistent — ${(aboveCoC * 100).toFixed(0)}% of quarters above cost of capital with ${cv >= 0.25 ? 'high' : 'moderate'} volatility.` };
+  }, [filtered]);
+
+  // Capital Allocation: what the company does with its returns
+  const capitalAllocation = useMemo(() => {
+    if (filtered.length < 4 || !latest) return null;
+    const valid = filtered.filter(q => q.valuation.roic != null);
+    const avgRoic = valid.reduce((s, q) => s + q.valuation.roic, 0) / valid.length;
+    const aboveCoC = avgRoic > COST_OF_CAPITAL;
+    // Average reinvestment vs shareholder returns
+    const recentQs = filtered.slice(-4);
+    const avgCapex = recentQs.reduce((s, q) => s + (q.cashflow.capex_intensity || 0), 0) / recentQs.length;
+    const totalPayout = recentQs.reduce((s, q) => s + Math.abs(q.cashflow.dividends_paid || 0) + Math.abs(q.cashflow.share_buybacks || 0), 0);
+    const totalFcf = recentQs.reduce((s, q) => s + (q.cashflow.free_cash_flow || 0), 0);
+    const payoutRatio = totalFcf > 0 ? totalPayout / totalFcf : 0;
+    if (!aboveCoC) return { label: 'Value Destroyer', color: 'text-vi-rose', bg: 'bg-vi-rose/15', icon: 'trending_down', desc: 'ROIC below cost of capital — returns don\'t justify the capital invested regardless of allocation.' };
+    if (payoutRatio < 0.3 && avgCapex > 0.05) return { label: 'Compounder', color: 'text-vi-sage', bg: 'bg-vi-sage/15', icon: 'rocket_launch', desc: `Reinvesting heavily (${(avgCapex * 100).toFixed(0)}% capex intensity) while earning above cost of capital — growing the moat.` };
+    if (payoutRatio > 0.5) return { label: 'Cash Cow', color: 'text-vi-gold', bg: 'bg-vi-gold/15', icon: 'payments', desc: `Returning ${(payoutRatio * 100).toFixed(0)}% of FCF to shareholders via dividends and buybacks — harvesting the moat.` };
+    return { label: 'Balanced', color: 'text-vi-sage', bg: 'bg-vi-sage/15', icon: 'balance', desc: 'Balancing reinvestment with shareholder returns while earning above cost of capital.' };
+  }, [filtered, latest]);
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
       <section className="xl:col-span-8 space-y-6">
-        {/* Moat Trend Indicator */}
-        {moatTrend && (
-          <div className={`${CARD} !py-5 border-l-4 ${moatTrend.border}`}>
-            <div className="flex items-center gap-3">
-              <span className={`material-symbols-outlined text-2xl ${moatTrend.color}`}>{moatTrend.icon}</span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-serif font-bold text-sand-800 dark:text-warm-50">Moat Trend:</span>
+        {/* Moat Profile */}
+        {(moatWidth || moatDurability || moatTrend) && (
+          <div className={CARD}>
+            <h3 className="text-lg font-serif text-sand-800 dark:text-warm-50 mb-4">Moat Profile</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {moatWidth && (
+                <div className={`rounded-lg px-4 py-3 ${moatWidth.bg}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`material-symbols-outlined text-base ${moatWidth.color}`}>{moatWidth.icon}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Width</span>
+                  </div>
+                  <span className={`text-lg font-serif font-bold ${moatWidth.color}`}>{moatWidth.label}</span>
+                </div>
+              )}
+              {moatDurability && (
+                <div className={`rounded-lg px-4 py-3 ${moatDurability.bg}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`material-symbols-outlined text-base ${moatDurability.color}`}>{moatDurability.icon}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Durability</span>
+                  </div>
+                  <span className={`text-lg font-serif font-bold ${moatDurability.color}`}>{moatDurability.label}</span>
+                </div>
+              )}
+              {moatTrend && (
+                <div className={`rounded-lg px-4 py-3 ${moatTrend.label === 'Strengthening' ? 'bg-vi-sage/15' : moatTrend.label === 'Eroding' ? 'bg-vi-rose/15' : 'bg-vi-gold/15'}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`material-symbols-outlined text-base ${moatTrend.color}`}>{moatTrend.icon}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Trend</span>
+                  </div>
                   <span className={`text-lg font-serif font-bold ${moatTrend.color}`}>{moatTrend.label}</span>
                 </div>
-                <p className="text-sm text-sand-500 dark:text-warm-400">{moatTrend.desc}</p>
-              </div>
+              )}
+              {capitalAllocation && (
+                <div className={`rounded-lg px-4 py-3 ${capitalAllocation.bg}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`material-symbols-outlined text-base ${capitalAllocation.color}`}>{capitalAllocation.icon}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-sand-500 dark:text-warm-400">Capital</span>
+                  </div>
+                  <span className={`text-lg font-serif font-bold ${capitalAllocation.color}`}>{capitalAllocation.label}</span>
+                </div>
+              )}
             </div>
+            {/* Description for the most notable classification */}
+            {(moatWidth || moatDurability) && (
+              <p className="text-sm text-sand-500 dark:text-warm-400 mt-3 italic">
+                {moatDurability?.label === 'Cyclical' ? moatDurability.desc : moatWidth?.desc || moatDurability?.desc}
+              </p>
+            )}
           </div>
         )}
 
@@ -2211,10 +2288,12 @@ export function MoatPanel({ data, ratings, timeRange, sectorAggregate, sector })
         <div className={CARD}>
           <h4 className="font-serif text-lg text-sand-800 dark:text-warm-50 mb-4">Moat Scorecard</h4>
           {[
-            { label: 'ROIC vs Cost of Capital', value: currentSpread != null ? (currentSpread > 0.05 ? 'Wide Spread' : currentSpread > 0 ? 'Narrow Spread' : 'Negative') : '—', pass: currentSpread != null && currentSpread > 0 },
+            { label: 'Moat Width', value: moatWidth?.label || '—', pass: moatWidth && moatWidth.label !== 'None' },
+            { label: 'Durability', value: moatDurability?.label || '—', pass: moatDurability && moatDurability.label !== 'Fragile' },
+            { label: 'Trend', value: moatTrend?.label || '—', pass: moatTrend && moatTrend.label !== 'Eroding' },
+            { label: 'Capital Allocation', value: capitalAllocation?.label || '—', pass: capitalAllocation && capitalAllocation.label !== 'Value Destroyer' },
             { label: 'Margin Stability', value: marginStability?.label || '—', pass: marginStability && (marginStability.label === 'Very Stable' || marginStability.label === 'Stable') },
             { label: 'FCF Conversion', value: avgFCFConversion != null ? `${(avgFCFConversion * 100).toFixed(0)}%` : '—', pass: avgFCFConversion != null && avgFCFConversion >= 0.8 },
-            { label: 'Moat Direction', value: moatTrend?.label || '—', pass: moatTrend && moatTrend.label !== 'Eroding' },
           ].map((item) => (
             <div key={item.label} className="flex items-center justify-between py-2.5 border-b border-sand-200/30 dark:border-warm-800/30 last:border-0">
               <span className="text-sm text-sand-600 dark:text-warm-200">{item.label}</span>
