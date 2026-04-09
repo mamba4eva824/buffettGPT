@@ -2048,11 +2048,18 @@ export function MoatPanel({ data, ratings, timeRange, sectorAggregate, sector })
     const firstValid = filtered.slice(0, mid).map(q => q.valuation.roic).filter(v => v != null);
     const secondValid = filtered.slice(mid).map(q => q.valuation.roic).filter(v => v != null);
     if (firstValid.length < 2 || secondValid.length < 2) return null;
+    const allValid = [...firstValid, ...secondValid];
     const avgFirst = firstValid.reduce((s, v) => s + v, 0) / firstValid.length;
     const avgSecond = secondValid.reduce((s, v) => s + v, 0) / secondValid.length;
     const change = avgSecond - avgFirst;
-    if (change > 0.02) return { label: 'Strengthening', icon: 'trending_up', color: 'text-vi-sage', border: 'border-vi-sage', desc: 'ROIC is trending higher — the competitive advantage appears to be widening over time.' };
-    if (change < -0.02) return { label: 'Eroding', icon: 'trending_down', color: 'text-vi-rose', border: 'border-vi-rose', desc: 'ROIC is trending lower — competitors may be closing the gap. Watch margins and reinvestment rates.' };
+    // Scale threshold by volatility so cyclical stocks (airlines, autos) need a
+    // larger shift to trigger a trend signal — prevents seasonal noise from
+    // being misread as moat erosion or strengthening
+    const mean = allValid.reduce((s, v) => s + v, 0) / allValid.length;
+    const std = Math.sqrt(allValid.reduce((s, v) => s + (v - mean) ** 2, 0) / allValid.length);
+    const threshold = Math.max(0.02, std);
+    if (change > threshold) return { label: 'Strengthening', icon: 'trending_up', color: 'text-vi-sage', border: 'border-vi-sage', desc: 'ROIC is trending higher — the competitive advantage appears to be widening over time.' };
+    if (change < -threshold) return { label: 'Eroding', icon: 'trending_down', color: 'text-vi-rose', border: 'border-vi-rose', desc: 'ROIC is trending lower — competitors may be closing the gap. Watch margins and reinvestment rates.' };
     return { label: 'Stable', icon: 'trending_flat', color: 'text-vi-gold', border: 'border-vi-gold', desc: 'ROIC is holding steady — the moat appears durable with consistent returns on capital.' };
   }, [filtered]);
 
