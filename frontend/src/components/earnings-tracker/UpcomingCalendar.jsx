@@ -44,7 +44,7 @@ export default function UpcomingCalendar({ data, onSelectTicker }) {
     return (
       <div className={`${CARD} p-8 text-center`}>
         <span className="material-symbols-outlined text-4xl text-sand-300 dark:text-warm-700 mb-3 block">calendar_month</span>
-        <p className="text-sand-500 dark:text-warm-400">No upcoming earnings in the next 7 days.</p>
+        <p className="text-sand-500 dark:text-warm-400">No upcoming earnings in the next 30 days.</p>
         <p className="text-sm text-sand-400 dark:text-warm-500 mt-1">Calendar updates daily via EventBridge.</p>
       </div>
     );

@@ -109,7 +109,9 @@ def _get_recent_earnings(params: Dict) -> Dict:
 # ---------------------------------------------------------------------------
 def _get_upcoming_earnings(params: Dict) -> Dict:
     """Return upcoming earnings sorted by date ascending."""
-    limit = min(int(params.get('limit', '50')), 100)
+    from datetime import datetime
+    limit = min(int(params.get('limit', '50')), 200)
+    today_str = datetime.now().strftime('%Y-%m-%d')
 
     result = aggregates_table.query(
         KeyConditionExpression=Key('aggregate_type').eq('EARNINGS_UPCOMING'),
@@ -121,11 +123,15 @@ def _get_upcoming_earnings(params: Dict) -> Dict:
 
     events = []
     for item in items:
+        # Filter out past-date records (stale from TTL lag)
+        earnings_date = item.get('earnings_date', '')
+        if earnings_date and earnings_date < today_str:
+            continue
         events.append({
             'ticker': item.get('ticker', ''),
             'company_name': item.get('company_name', ''),
             'sector': item.get('sector', ''),
-            'earnings_date': item.get('earnings_date', ''),
+            'earnings_date': earnings_date,
             'eps_estimated': item.get('eps_estimated'),
             'revenue_estimated': item.get('revenue_estimated'),
         })
