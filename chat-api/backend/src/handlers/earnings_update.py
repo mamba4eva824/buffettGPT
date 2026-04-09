@@ -584,6 +584,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     response['tickers_checked'] = len(tickers_to_process)
 
+    # Persist upcoming earnings regardless of whether any tickers reported
+    if response.get('upcoming'):
+        try:
+            _write_upcoming_records(response['upcoming'])
+        except Exception as e:
+            logger.warning(f"Failed to write upcoming earnings: {e}")
+
     if not tickers_to_process:
         response['message'] = 'No tickers to process'
         logger.info("No tickers to process — no recent earnings reports")
@@ -642,12 +649,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     response['total_updated'] = len(response['tickers_updated'])
     response['total_failures'] = len(response['failures'])
 
-    # Persist upcoming earnings to aggregates table for the dashboard
-    if response.get('upcoming'):
-        try:
-            _write_upcoming_records(response['upcoming'])
-        except Exception as e:
-            logger.warning(f"Failed to write upcoming earnings: {e}")
+    # NOTE: upcoming earnings already written above (before early-return check)
 
     logger.info(f"Earnings update complete: {response['total_updated']} updated, "
                 f"{response['total_failures']} failures")
