@@ -6,8 +6,8 @@ then fetches full financials + earnings + dividends + TTM valuations and updates
 the metrics-history DynamoDB table via update_item (preserves existing attributes).
 
 Runs twice daily via EventBridge:
-  - 9 PM UTC (6 PM ET) — catches after-hours earnings reports
-  - 4:30 PM UTC (11:30 AM ET) — catches pre-market earnings reports
+  - 5:00 PM ET Mon-Fri — catches after-hours earnings reports
+  - 9:30 AM ET Mon-Fri — catches pre-market earnings reports
 
 Event payload options:
   {}                                — auto mode: check calendar, process recently reported
@@ -58,14 +58,17 @@ logger.setLevel(getattr(logging, log_level))
 
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 METRICS_TABLE = os.environ.get('METRICS_HISTORY_CACHE_TABLE', f'metrics-history-{ENVIRONMENT}')
+AGGREGATES_TABLE = os.environ.get('SP500_AGGREGATES_TABLE', f'buffett-{ENVIRONMENT}-sp500-aggregates')
 FMP_SECRET_NAME = os.environ.get('FMP_SECRET_NAME', f'buffett-{ENVIRONMENT}-fmp')
 FMP_RATE_LIMIT_DELAY = 0.5  # Seconds between FMP calls (300 calls/min limit)
+FEED_TTL_DAYS = 90  # How long to keep earnings feed records
 
 # ---------------------------------------------------------------------------
 # AWS Clients
 # ---------------------------------------------------------------------------
 dynamodb = boto3.resource('dynamodb')
 metrics_table = dynamodb.Table(METRICS_TABLE)
+aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
 secrets_client = boto3.client('secretsmanager')
 
 _fmp_api_key = None
@@ -338,6 +341,82 @@ def _update_items(items: List[Dict[str, Any]]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Earnings Feed — persist event records for the dashboard
+# ---------------------------------------------------------------------------
+def _write_feed_record(result: Dict[str, Any]) -> None:
+    """Write a single earnings result to sp500-aggregates as an EARNINGS_RECENT record."""
+    from investment_research.index_tickers import SP500_SECTORS
+
+    ticker = result.get('ticker', '')
+    earnings_date = result.get('earnings_date', '')
+    if not ticker or not earnings_date or result.get('status') != 'success':
+        return
+
+    company_info = SP500_SECTORS.get(ticker, {})
+    now = datetime.now()
+    ttl = int(now.timestamp()) + (FEED_TTL_DAYS * 24 * 60 * 60)
+
+    item = {
+        'aggregate_type': 'EARNINGS_RECENT',
+        'aggregate_key': f'{earnings_date}#{ticker}',
+        'ticker': ticker,
+        'company_name': company_info.get('name', ticker),
+        'sector': company_info.get('sector', 'Unknown'),
+        'earnings_date': earnings_date,
+        'eps_actual': Decimal(str(result['eps_actual'])) if result.get('eps_actual') is not None else None,
+        'eps_estimated': Decimal(str(result['eps_estimated'])) if result.get('eps_estimated') is not None else None,
+        'eps_beat': result.get('eps_beat'),
+        'eps_surprise_pct': Decimal(str(result['eps_surprise_pct'])) if result.get('eps_surprise_pct') is not None else None,
+        'updated_at': now.isoformat(),
+        'expires_at': ttl,
+    }
+
+    # Remove None values (DynamoDB doesn't accept None)
+    item = {k: v for k, v in item.items() if v is not None}
+
+    try:
+        aggregates_table.put_item(Item=item)
+    except Exception as e:
+        logger.warning(f"Failed to write feed record for {ticker}: {e}")
+
+
+def _write_upcoming_records(upcoming: List[Dict[str, Any]]) -> None:
+    """Write upcoming earnings to sp500-aggregates as EARNINGS_UPCOMING records."""
+    from investment_research.index_tickers import SP500_SECTORS
+
+    now = datetime.now()
+    ttl = int(now.timestamp()) + (7 * 24 * 60 * 60)  # 7-day TTL for upcoming
+
+    with aggregates_table.batch_writer() as batch:
+        for entry in upcoming:
+            ticker = entry.get('ticker', '')
+            earnings_date = entry.get('earnings_date', '')
+            if not ticker or not earnings_date:
+                continue
+
+            company_info = SP500_SECTORS.get(ticker, {})
+            item = {
+                'aggregate_type': 'EARNINGS_UPCOMING',
+                'aggregate_key': f'{earnings_date}#{ticker}',
+                'ticker': ticker,
+                'company_name': company_info.get('name', ticker),
+                'sector': company_info.get('sector', 'Unknown'),
+                'earnings_date': earnings_date,
+                'updated_at': now.isoformat(),
+                'expires_at': ttl,
+            }
+
+            if entry.get('eps_estimated') is not None:
+                item['eps_estimated'] = Decimal(str(entry['eps_estimated']))
+            if entry.get('revenue_estimated') is not None:
+                item['revenue_estimated'] = Decimal(str(entry['revenue_estimated']))
+
+            batch.put_item(Item=item)
+
+    logger.info(f"Wrote {len(upcoming)} upcoming earnings records")
+
+
+# ---------------------------------------------------------------------------
 # SNS Notifications
 # ---------------------------------------------------------------------------
 SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN', '')
@@ -474,6 +553,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             response['results'].append(result)
             if result['status'] == 'success':
                 response['tickers_updated'].append(ticker)
+                _write_feed_record(result)
 
             if (i + 1) % 10 == 0:
                 logger.info(f"Progress: {i + 1}/{len(tickers_to_process)} processed")
@@ -489,6 +569,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     response['completed_at'] = datetime.now().isoformat()
     response['total_updated'] = len(response['tickers_updated'])
     response['total_failures'] = len(response['failures'])
+
+    # Persist upcoming earnings to aggregates table for the dashboard
+    if response.get('upcoming'):
+        try:
+            _write_upcoming_records(response['upcoming'])
+        except Exception as e:
+            logger.warning(f"Failed to write upcoming earnings: {e}")
 
     logger.info(f"Earnings update complete: {response['total_updated']} updated, "
                 f"{response['total_failures']} failures")
