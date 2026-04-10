@@ -69,26 +69,44 @@ def _get_metrics(ticker: str) -> list:
     return response.get('Items', [])
 
 
-def _get_ratings(ticker: str) -> dict | None:
+def _get_ratings_and_executive(ticker: str) -> tuple[dict | None, str | None]:
+    """
+    Fetch the 00_executive item and return (ratings, executive_summary_content).
+    Both come from a single DynamoDB GetItem — zero extra reads.
+    """
     response = reports_table.get_item(
         Key={'ticker': ticker, 'section_id': '00_executive'},
     )
     item = response.get('Item')
     if not item:
-        return None
+        return None, None
 
+    # Extract ratings
     ratings = item.get('ratings')
-    if ratings is None:
-        return None
-
-    # Handle both JSON string and dict formats
-    if isinstance(ratings, str):
+    if ratings is not None and isinstance(ratings, str):
         try:
             ratings = json.loads(ratings)
         except (json.JSONDecodeError, TypeError):
-            return None
+            ratings = None
 
-    return ratings
+    # Extract executive summary content
+    exec_summary = item.get('executive_summary')
+    exec_summary_content = None
+    if isinstance(exec_summary, dict):
+        exec_summary_content = exec_summary.get('content')
+
+    return ratings, exec_summary_content
+
+
+def _get_triggers(ticker: str) -> str | None:
+    """Fetch the 19_triggers section content from DynamoDB (single GetItem)."""
+    response = reports_table.get_item(
+        Key={'ticker': ticker, 'section_id': '19_triggers'},
+    )
+    item = response.get('Item')
+    if not item:
+        return None
+    return item.get('content')
 
 
 def _get_latest_price(ticker: str) -> dict | None:
@@ -291,7 +309,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     try:
         metrics = _get_metrics(ticker)
-        ratings = _get_ratings(ticker)
+        ratings, executive_summary = _get_ratings_and_executive(ticker)
+        triggers = _get_triggers(ticker)
         latest_price = _get_latest_price(ticker)
         sector_aggregate = _get_sector_aggregate(sector) if sector else None
 
@@ -307,6 +326,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             'latest_price': latest_price,
             'sector_aggregate': sector_aggregate,
             'post_earnings': post_earnings,
+            'executive_summary': executive_summary,
+            'triggers': triggers,
         })
     except Exception as e:
         logger.exception(f"Error fetching insights for {ticker}")
