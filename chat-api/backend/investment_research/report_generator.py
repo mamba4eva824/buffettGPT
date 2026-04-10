@@ -145,6 +145,7 @@ class ReportGenerator:
         5.0: 'investment_report_prompt_v5_0.txt',  # Audit grade v5.0 (visual momentum dashboards, progress bars, pattern alerts)
         5.1: 'investment_report_prompt_v5_1.txt',  # Audit grade v5.1 (revenue stickiness, margin waterfall, operating leverage, peer comparisons, decision triggers)
         5.2: 'investment_report_prompt_v5_2.txt',  # Audit grade v5.2 (cross-report uniqueness, anti-templating, variable DCA/momentum formats)
+        6.0: 'investment_report_prompt_v6_slim.txt',  # Slim mode v6.0 (executive summary + decision triggers only, ~68% less content)
     }
 
     def __init__(self, use_api: bool = False, prompt_version: float = 5.2):
