@@ -16,7 +16,6 @@ import logging
 from typing import Any, Dict, List
 
 from utils.tool_executor import execute_tool as followup_execute
-from utils.market_intel_tools import execute_tool as market_intel_execute
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +127,7 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
         return followup_execute(tool_name, tool_input)
 
     if tool_name in MARKET_INTEL_TOOL_NAMES:
+        from utils.market_intel_tools import execute_tool as market_intel_execute
         return market_intel_execute(tool_name, tool_input)
 
     logger.warning(f"Unknown tool requested: {tool_name}")
