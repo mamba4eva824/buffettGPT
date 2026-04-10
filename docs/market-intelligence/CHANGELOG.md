@@ -6,6 +6,45 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### getHistoricalValuation Market Intel Tool (2026-04-10)
+
+**Added**
+- New inline Bedrock tool `getHistoricalValuation` in market intelligence chatbot — answers "is this stock cheap vs its own history?" in a single call
+- 9 frontend-parity valuation metrics with per-metric statistics (min/max/mean/median/percentile/z-score):
+  - Lower-is-cheaper: `pe_ratio`, `pb_ratio`, `ev_to_ebitda`, `price_to_fcf`
+  - Higher-is-cheaper: `earnings_yield`, `fcf_yield`, `roic`, `roe`, `roa`
+- `VALUATION_METRIC_META` constant in [market_intel_tools.py](../../chat-api/backend/src/utils/market_intel_tools.py) with `label`, `plain_english`, `source`, `direction` per metric — retail-friendly translation lives inside tool responses, not the system prompt
+- `_compute_metric_stats` helper — pure function computing statistics, polarity-aware assessment (cheap/fair/expensive), and retail-friendly verdict strings using direction-specific phrasing ("Cheaper than X%" for multiples, "Higher than X% (good for the investor)" for yields/returns)
+- `_derive_pb_ratio` helper — computes P/B from `market_valuation.market_cap / balance_sheet.total_equity` (not stored directly in metrics-history)
+- Sector-relative context in responses: sector name, company count, sector medians from `buffett-dev-sp500-aggregates`
+- System prompt: one line added to market intel supervisor's tool bullet list (zero translation instructions — all plain-English carried in tool response to keep baseline inference cheap)
+- 7 unit tests in `TestGetHistoricalValuation` covering happy path, polarity inversion, sparse history, missing ticker, pb_ratio derivation with `total_equity=0` edge case, and price_to_fcf derivation
+- Executive + technical overview doc: [docs/market-intelligence/historical-valuation-tool.md](./historical-valuation-tool.md)
+
+**Design decisions**
+- **S&P 500 only.** No FMP fallback — entirely served from `metrics-history-{env}` and `sp500-aggregates` DynamoDB tables (zero FMP quota consumed per call)
+- **price_to_fcf derivation.** Derived as `100 / fcf_yield` rather than stored, since `fcf_yield` is already in the historical backfill while `price_to_fcf` only exists on the latest quarter
+- **`ev_to_sales` and `ev_to_fcf` intentionally dropped** — not shown on frontend Valuation tab, and not computed historically by `sp500_backfill.compute_quarterly_valuations`
+- **Quarters clamped to [1, 20]** — prevents `quarters=0` Python slice quirk and negative values
+- **Graceful sparse-history handling** — if `market_valuation` hasn't been backfilled for a ticker, `pe_ratio`/`ev_to_ebitda`/yields return `assessment: "insufficient_history"` with a clear verdict instead of erroring out. `roic`/`roe`/`roa` are always historically available since they're per-quarter features.
+
+**Token cost**
+- Tool spec adds ~337 tokens to baseline inference (paid on every chat turn)
+- Tool response avg ~1,260 tokens (paid only when tool is actually called)
+- Per-query cost at Claude Haiku 4.5 pricing: ~$0.0016
+
+**Files modified**
+- `chat-api/backend/src/utils/market_intel_tools.py` (+240 lines: constant, 2 helpers, handler, dispatcher entry)
+- `chat-api/backend/src/handlers/market_intel_chat.py` (toolSpec + 1-line system prompt bullet)
+- `chat-api/backend/src/utils/unified_tool_executor.py` (`MARKET_INTEL_TOOL_NAMES` set entry)
+- `chat-api/backend/tests/unit/test_market_intel_tools.py` (new `TestGetHistoricalValuation` class)
+
+**Verification**
+- 410 Python unit tests pass (includes 27 in `test_market_intel_tools.py`, 7 new)
+- Terraform validate: PASS
+- Lambda build: PASS (all 20+ zips rebuilt)
+- Sample queries against real dev DynamoDB confirmed for AAPL, MSFT, NVDA
+
 ### EOD Ingest Date Fix + Schedule Change (2026-04-09)
 
 **Fixed**

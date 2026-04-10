@@ -319,3 +319,295 @@ class TestCompareSectors:
         from utils.market_intel_tools import _compare_sectors
         result = _compare_sectors({'sectors': ['Technology']})
         assert result['success'] is False
+
+
+def _mock_historical_valuation_item(
+    ticker,
+    fiscal_date,
+    market_valuation=None,
+    balance_sheet=None,
+    valuation=None,
+    revenue_profit=None,
+):
+    """Create a mock metrics-history item tailored for historical valuation tests.
+
+    Only the sub-dicts needed by _get_historical_valuation are populated.
+    Numeric values are wrapped in Decimal to mimic DynamoDB responses.
+    """
+    def _to_decimal_dict(d):
+        if not d:
+            return {}
+        out = {}
+        for k, v in d.items():
+            if v is None:
+                continue
+            out[k] = Decimal(str(v))
+        return out
+
+    return {
+        'ticker': ticker,
+        'fiscal_date': fiscal_date,
+        'fiscal_quarter': 'Q1',
+        'fiscal_year': 2024,
+        'market_valuation': _to_decimal_dict(market_valuation),
+        'balance_sheet': _to_decimal_dict(balance_sheet),
+        'valuation': _to_decimal_dict(valuation),
+        'revenue_profit': _to_decimal_dict(revenue_profit),
+    }
+
+
+class TestGetHistoricalValuation:
+    def test_happy_path_returns_all_nine_metrics(self):
+        import utils.market_intel_tools as mod
+
+        pe_values = [20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42]
+        ev_values = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+        ey_values = [5.0] * 12
+        fcfy_values = [4.0] * 12  # price_to_fcf = 25.0 all quarters
+        roic_values = [12, 12.5, 13, 13.5, 14, 14.5, 15, 15.5, 16, 16.5, 17, 17.5]
+        roe_values = [25, 25, 26, 26, 27, 27, 28, 28, 29, 29, 30, 30]
+        roa_values = [8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
+        market_caps = [1000 + 50 * i for i in range(12)]
+        equities = [500] * 12
+
+        items = []
+        for i in range(12):
+            items.append(_mock_historical_valuation_item(
+                'AAPL',
+                fiscal_date=f'2023-{(i % 12) + 1:02d}-28',
+                market_valuation={
+                    'pe_ratio': pe_values[i],
+                    'ev_to_ebitda': ev_values[i],
+                    'earnings_yield': ey_values[i],
+                    'fcf_yield': fcfy_values[i],
+                    'market_cap': market_caps[i],
+                },
+                balance_sheet={'total_equity': equities[i]},
+                valuation={'roic': roic_values[i], 'roa': roa_values[i]},
+                revenue_profit={'roe': roe_values[i]},
+            ))
+
+        mock_metrics = MagicMock()
+        mock_metrics.query.return_value = {'Items': items}
+
+        mock_agg = MagicMock()
+        mock_agg.get_item.return_value = {
+            'Item': {
+                'aggregate_type': 'SECTOR',
+                'aggregate_key': 'Technology',
+                'company_count': Decimal('75'),
+                'metrics': {
+                    'pe_ratio': {'median': Decimal('25.0')},
+                    'pb_ratio': {'median': Decimal('4.5')},
+                    'ev_to_ebitda': {'median': Decimal('15.0')},
+                },
+            }
+        }
+
+        mod.metrics_table = mock_metrics
+        mod.aggregates_table = mock_agg
+
+        result = mod._get_historical_valuation({'ticker': 'AAPL'})
+
+        assert result['success'] is True
+        assert result['ticker'] == 'AAPL'
+        assert result['name'] == 'Apple Inc.'
+        assert result['sector'] == 'Technology'
+        assert result['quarters_analyzed'] == 12
+
+        expected_keys = {
+            'pe_ratio', 'pb_ratio', 'ev_to_ebitda', 'price_to_fcf',
+            'earnings_yield', 'fcf_yield', 'roic', 'roe', 'roa',
+        }
+        assert set(result['metrics'].keys()) == expected_keys
+
+        for key in expected_keys:
+            metric = result['metrics'][key]
+            assert 'label' in metric
+            assert 'plain_english' in metric
+            assert 'direction' in metric
+            assert 'current' in metric
+            assert 'assessment' in metric
+            assert 'verdict' in metric
+
+        pe = result['metrics']['pe_ratio']
+        assert pe['current'] == 42
+        assert pe['assessment'] == 'expensive'
+        assert pe['percentile'] >= 75
+        assert 'more expensive than' in pe['verdict'].lower()
+
+        assert result['sector_context']['company_count'] == 75
+
+    def test_polarity_inversion_for_earnings_yield(self):
+        import utils.market_intel_tools as mod
+
+        ey_values = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 10.0]
+        pe_values = [25.0] * 8  # constant → fair
+
+        items = []
+        for i in range(8):
+            items.append(_mock_historical_valuation_item(
+                'AAPL',
+                fiscal_date=f'2023-{i + 1:02d}-28',
+                market_valuation={
+                    'pe_ratio': pe_values[i],
+                    'earnings_yield': ey_values[i],
+                    'fcf_yield': 5.0,
+                    'ev_to_ebitda': 15.0,
+                    'market_cap': 1000,
+                },
+                balance_sheet={'total_equity': 500},
+                valuation={'roic': 15.0, 'roa': 10.0},
+                revenue_profit={'roe': 25.0},
+            ))
+
+        mock_metrics = MagicMock()
+        mock_metrics.query.return_value = {'Items': items}
+        mod.metrics_table = mock_metrics
+        mod.aggregates_table = MagicMock()
+        mod.aggregates_table.get_item.return_value = {}
+
+        result = mod._get_historical_valuation({'ticker': 'AAPL'})
+
+        assert result['success'] is True
+        ey = result['metrics']['earnings_yield']
+        assert ey['direction'] == 'higher_is_cheaper'
+        assert ey['assessment'] == 'cheap'
+        # higher_is_cheaper verdicts use "higher than X%" language, not "cheaper than",
+        # so retail investors aren't confused by "a high ROIC is cheap".
+        assert 'higher than' in ey['verdict'].lower()
+
+    def test_insufficient_history_for_sparse_market_valuation(self):
+        import utils.market_intel_tools as mod
+
+        items = []
+        for i in range(10):
+            has_mv = i >= 8  # only last 2 quarters have market_valuation
+            mv = {
+                'pe_ratio': 30.0,
+                'earnings_yield': 3.3,
+                'fcf_yield': 5.0,
+                'ev_to_ebitda': 15.0,
+                'market_cap': 1000,
+            } if has_mv else {}
+
+            items.append(_mock_historical_valuation_item(
+                'AAPL',
+                fiscal_date=f'2023-{i + 1:02d}-28',
+                market_valuation=mv,
+                balance_sheet={'total_equity': 500} if has_mv else {},
+                valuation={'roic': 15.0 + i * 0.1, 'roa': 10.0 + i * 0.1},
+                revenue_profit={'roe': 25.0 + i * 0.1},
+            ))
+
+        mock_metrics = MagicMock()
+        mock_metrics.query.return_value = {'Items': items}
+        mod.metrics_table = mock_metrics
+        mod.aggregates_table = MagicMock()
+        mod.aggregates_table.get_item.return_value = {}
+
+        result = mod._get_historical_valuation({'ticker': 'AAPL'})
+
+        assert result['success'] is True
+        pe = result['metrics']['pe_ratio']
+        assert pe['assessment'] == 'insufficient_history'
+        assert 'not enough history' in pe['verdict'].lower()
+        assert pe['current'] is not None
+
+        roic = result['metrics']['roic']
+        assert roic['assessment'] != 'insufficient_history'
+
+    def test_missing_ticker_returns_error(self):
+        from utils.market_intel_tools import _get_historical_valuation
+        result = _get_historical_valuation({})
+        assert result['success'] is False
+        assert 'ticker' in result['error']
+
+    def test_ticker_with_no_data_returns_error(self):
+        import utils.market_intel_tools as mod
+
+        mod.metrics_table = MagicMock()
+        mod.metrics_table.query.return_value = {'Items': []}
+
+        result = mod._get_historical_valuation({'ticker': 'ZZZZ'})
+        assert result['success'] is False
+        assert ('No data' in result['error']) or ('ZZZZ' in result['error'])
+
+    def test_pb_ratio_derived_from_market_cap_and_total_equity(self):
+        import utils.market_intel_tools as mod
+
+        market_caps = [100, 110, 120, 130, 140, 150]
+        equities = [50, 50, 50, 50, 0, 50]  # one zero to test graceful handling
+
+        items = []
+        for i in range(6):
+            items.append(_mock_historical_valuation_item(
+                'AAPL',
+                fiscal_date=f'2023-{i + 1:02d}-28',
+                market_valuation={
+                    'pe_ratio': 25.0,
+                    'earnings_yield': 4.0,
+                    'fcf_yield': 5.0,
+                    'ev_to_ebitda': 15.0,
+                    'market_cap': market_caps[i],
+                },
+                balance_sheet={'total_equity': equities[i]},
+                valuation={'roic': 15.0, 'roa': 10.0},
+                revenue_profit={'roe': 25.0},
+            ))
+
+        mock_metrics = MagicMock()
+        mock_metrics.query.return_value = {'Items': items}
+        mod.metrics_table = mock_metrics
+        mod.aggregates_table = MagicMock()
+        mod.aggregates_table.get_item.return_value = {}
+
+        result = mod._get_historical_valuation({'ticker': 'AAPL'})
+
+        assert result['success'] is True
+        pb = result['metrics']['pb_ratio']
+        # The last quarter: market_cap=150, total_equity=50 → pb=3.0
+        assert pb['current'] == 3.0
+        assert 'percentile' in pb
+        assert 'assessment' in pb
+        # One quarter had total_equity=0 → None → skipped.
+        # Remaining 5 valid pb values: [2.0, 2.2, 2.4, 2.6, 3.0]
+        assert pb['quarters_available'] == 5
+
+    def test_price_to_fcf_derived_from_fcf_yield(self):
+        import utils.market_intel_tools as mod
+
+        fcf_yields = [5.0, 4.0, 2.5, 2.0, 1.25, 1.0]
+
+        items = []
+        for i in range(6):
+            items.append(_mock_historical_valuation_item(
+                'AAPL',
+                fiscal_date=f'2023-{i + 1:02d}-28',
+                market_valuation={
+                    'pe_ratio': 25.0,
+                    'earnings_yield': 4.0,
+                    'fcf_yield': fcf_yields[i],
+                    'ev_to_ebitda': 15.0,
+                    'market_cap': 1000,
+                },
+                balance_sheet={'total_equity': 500},
+                valuation={'roic': 15.0, 'roa': 10.0},
+                revenue_profit={'roe': 25.0},
+            ))
+
+        mock_metrics = MagicMock()
+        mock_metrics.query.return_value = {'Items': items}
+        mod.metrics_table = mock_metrics
+        mod.aggregates_table = MagicMock()
+        mod.aggregates_table.get_item.return_value = {}
+
+        result = mod._get_historical_valuation({'ticker': 'AAPL'})
+
+        assert result['success'] is True
+        p_fcf = result['metrics']['price_to_fcf']
+        assert p_fcf['direction'] == 'lower_is_cheaper'
+        # Latest fcf_yield = 1.0 → price_to_fcf = 100.0
+        assert p_fcf['current'] == 100.0
+        # 100.0 is the max → expensive assessment
+        assert p_fcf['assessment'] == 'expensive'

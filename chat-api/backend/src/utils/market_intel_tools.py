@@ -19,6 +19,7 @@ Tools:
 import json
 import logging
 import os
+import statistics
 from collections import defaultdict
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -74,6 +75,7 @@ def execute_tool(tool_name: str, tool_input: Dict[str, Any]) -> Dict[str, Any]:
             "getMetricTrend": _get_metric_trend,
             "getEarningsSurprises": _get_earnings_surprises,
             "compareSectors": _compare_sectors,
+            "getHistoricalValuation": _get_historical_valuation,
         }
 
         handler = handlers.get(tool_name)
@@ -95,6 +97,88 @@ def _safe_float(value) -> Optional[float]:
         return float(value)
     except (ValueError, TypeError):
         return None
+
+
+def _compute_metric_stats(values: List[float], current: Optional[float], direction: str) -> Dict:
+    """Compute summary statistics + percentile/verdict for a metric time series."""
+    clean = [v for v in values if v is not None]
+
+    if current is None:
+        return {
+            "current": None,
+            "assessment": "unavailable",
+            "verdict": "No current value available for this metric.",
+        }
+
+    if len(clean) < 4:
+        return {
+            "current": round(current, 4),
+            "assessment": "insufficient_history",
+            "verdict": f"Not enough history to judge yet — only {len(clean)} quarter(s) available.",
+            "quarters_available": len(clean),
+        }
+
+    mean_v = statistics.mean(clean)
+    median_v = statistics.median(clean)
+    min_v = min(clean)
+    max_v = max(clean)
+    stdev_v = statistics.stdev(clean) if len(clean) > 1 else 0
+    z_score = round((current - mean_v) / stdev_v, 2) if stdev_v > 0 else None
+
+    count_below_or_equal = sum(1 for v in clean if v <= current)
+    percentile = round(100 * count_below_or_equal / len(clean))
+
+    effective_pct = percentile if direction == "lower_is_cheaper" else 100 - percentile
+
+    if effective_pct < 25:
+        assessment = "cheap"
+    elif effective_pct > 75:
+        assessment = "expensive"
+    else:
+        assessment = "fair"
+
+    # cheapness_pct: 0 = most expensive observed, 100 = cheapest observed
+    cheapness_pct = 100 - percentile if direction == "lower_is_cheaper" else percentile
+
+    # Use natural directional language per metric type. Valuation multiples read naturally as
+    # "cheaper/more expensive". Returns/yields read naturally as "higher/lower" — saying "ROIC is
+    # cheaper than 80% of history" is technically right but jarring to retail investors.
+    if direction == "lower_is_cheaper":
+        if assessment == "cheap":
+            verdict = f"Cheaper than {cheapness_pct}% of its last 5 years of history."
+        elif assessment == "expensive":
+            verdict = f"More expensive than {100 - cheapness_pct}% of its last 5 years of history."
+        else:
+            verdict = "Around the middle of its last 5 years of history."
+    else:  # higher_is_cheaper — returns and yields
+        if assessment == "cheap":
+            verdict = f"Higher than {cheapness_pct}% of its last 5 years of history (good for the investor)."
+        elif assessment == "expensive":
+            verdict = f"Lower than {100 - cheapness_pct}% of its last 5 years of history (worse than usual)."
+        else:
+            verdict = "Around the middle of its last 5 years of history."
+
+    return {
+        "current": round(current, 4),
+        "min": round(min_v, 4),
+        "max": round(max_v, 4),
+        "mean": round(mean_v, 4),
+        "median": round(median_v, 4),
+        "percentile": percentile,
+        "z_score": z_score,
+        "assessment": assessment,
+        "verdict": verdict,
+        "quarters_available": len(clean),
+    }
+
+
+def _derive_pb_ratio(item: Dict) -> Optional[float]:
+    """Compute Price-to-Book from market_cap and balance_sheet.total_equity."""
+    market_cap = _safe_float(item.get('market_valuation', {}).get('market_cap'))
+    total_equity = _safe_float(item.get('balance_sheet', {}).get('total_equity'))
+    if not market_cap or not total_equity or total_equity <= 0:
+        return None
+    return round(market_cap / total_equity, 4)
 
 
 def _extract_metric(item: Dict, category: str, metric: str) -> Optional[float]:
@@ -232,6 +316,64 @@ METRIC_MAP = {
     'enterprise_value': ('market_valuation', 'enterprise_value'),
     'earnings_yield': ('market_valuation', 'earnings_yield'),
     'fcf_yield': ('market_valuation', 'fcf_yield'),
+}
+
+
+VALUATION_METRIC_META = {
+    "pe_ratio": {
+        "label": "Price-to-Earnings (P/E)",
+        "plain_english": "How many years of profit it would take to earn back the stock price. Lower = cheaper.",
+        "source": ("market_valuation", "pe_ratio"),
+        "direction": "lower_is_cheaper",
+    },
+    "pb_ratio": {
+        "label": "Price-to-Book (P/B)",
+        "plain_english": "How the stock price compares to the company's net worth on paper. Below 1 means you're paying less than the company's accounting value.",
+        "source": "derived_pb",
+        "direction": "lower_is_cheaper",
+    },
+    "ev_to_ebitda": {
+        "label": "Enterprise Value / EBITDA",
+        "plain_english": "Total company value (stock + debt - cash) compared to its cash profit from operations. Popular with pros because it ignores debt differences.",
+        "source": ("market_valuation", "ev_to_ebitda"),
+        "direction": "lower_is_cheaper",
+    },
+    "price_to_fcf": {
+        "label": "Price / Free Cash Flow",
+        "plain_english": "Stock price compared to the cash profit per share after the business pays its bills.",
+        "source": "derived_price_to_fcf",
+        "direction": "lower_is_cheaper",
+    },
+    "earnings_yield": {
+        "label": "Earnings Yield",
+        "plain_english": "Profit you'd earn per dollar invested, expressed like an interest rate. Higher is better — it's the flip side of P/E.",
+        "source": ("market_valuation", "earnings_yield"),
+        "direction": "higher_is_cheaper",
+    },
+    "fcf_yield": {
+        "label": "Free Cash Flow Yield",
+        "plain_english": "Actual cash return per dollar invested. Higher is better — this is money the business could return to you.",
+        "source": ("market_valuation", "fcf_yield"),
+        "direction": "higher_is_cheaper",
+    },
+    "roic": {
+        "label": "Return on Invested Capital",
+        "plain_english": "How efficiently the company turns every dollar of investor money into new profit. Higher is better — a sign of a well-run business.",
+        "source": ("valuation", "roic"),
+        "direction": "higher_is_cheaper",
+    },
+    "roe": {
+        "label": "Return on Equity",
+        "plain_english": "Profit earned for every dollar of shareholder money. Higher is better, but watch for high debt inflating it.",
+        "source": ("revenue_profit", "roe"),
+        "direction": "higher_is_cheaper",
+    },
+    "roa": {
+        "label": "Return on Assets",
+        "plain_english": "Profit earned for every dollar of company assets. Higher is better and harder to fake with debt.",
+        "source": ("valuation", "roa"),
+        "direction": "higher_is_cheaper",
+    },
 }
 
 
@@ -617,6 +759,110 @@ def _get_metric_trend(params: Dict) -> Dict:
         "quarters": len(trend),
         "trend": trend,
     }
+
+
+def _get_historical_valuation(params: Dict) -> Dict:
+    """Get historical valuation percentiles for a single ticker across 9 metrics."""
+    ticker = params.get('ticker', '').upper()
+    if not ticker:
+        return {"success": False, "error": "ticker is required"}
+
+    # Clamp to [1, 20] — prevents quarters=0 from triggering Python's `items[-0:]` quirk
+    # (which returns the full list instead of an empty slice) and rejects negative values.
+    quarters = max(1, min(int(params.get('quarters', 20)), 20))
+
+    resp = metrics_table.query(
+        KeyConditionExpression=Key('ticker').eq(ticker),
+        ScanIndexForward=True
+    )
+    items = resp.get('Items', [])
+
+    if not items:
+        return {"success": False, "error": f"No data found for {ticker}. This tool only supports S&P 500 tickers."}
+
+    items = items[-quarters:]
+
+    # Build time series per metric
+    series_map: Dict[str, List[Optional[float]]] = {k: [] for k in VALUATION_METRIC_META}
+
+    for item in items:
+        for metric_key, meta in VALUATION_METRIC_META.items():
+            source = meta['source']
+            if isinstance(source, tuple):
+                cat, field = source
+                val = _safe_float(item.get(cat, {}).get(field))
+            elif source == "derived_pb":
+                val = _derive_pb_ratio(item)
+            elif source == "derived_price_to_fcf":
+                # fcf_yield is stored as a percent (e.g. 4.0 = 4%), so P/FCF = 100 / fcf_yield.
+                fcf_yield = _safe_float(item.get('market_valuation', {}).get('fcf_yield'))
+                if fcf_yield and fcf_yield > 0:
+                    val = round(100.0 / fcf_yield, 4)
+                else:
+                    val = None
+            else:
+                val = None
+            series_map[metric_key].append(val)
+
+    # Compute current (last non-None) and stats for each metric
+    metrics_out: Dict[str, Dict] = {}
+    for metric_key, meta in VALUATION_METRIC_META.items():
+        series = series_map[metric_key]
+        current: Optional[float] = None
+        for v in reversed(series):
+            if v is not None:
+                current = v
+                break
+
+        stats = _compute_metric_stats(series, current, meta['direction'])
+        entry = {
+            "label": meta['label'],
+            "plain_english": meta['plain_english'],
+            "direction": meta['direction'],
+        }
+        entry.update(stats)
+        metrics_out[metric_key] = entry
+
+    # Sector context
+    company_info = SP500_SECTORS.get(ticker, {})
+    sector_name = company_info.get('sector', 'Unknown')
+
+    sector_agg: Dict = {}
+    try:
+        sector_resp = aggregates_table.get_item(
+            Key={'aggregate_type': 'SECTOR', 'aggregate_key': sector_name}
+        )
+        sector_agg = sector_resp.get('Item', {}) or {}
+    except Exception as e:
+        logger.warning(f"Failed to load sector aggregate for {sector_name}: {e}")
+
+    sector_metrics = sector_agg.get('metrics', {}) if isinstance(sector_agg, dict) else {}
+    sector_medians: Dict[str, Optional[float]] = {}
+    for metric_key in VALUATION_METRIC_META:
+        entry = sector_metrics.get(metric_key) if isinstance(sector_metrics, dict) else None
+        if isinstance(entry, dict):
+            median_val = _safe_float(entry.get('median'))
+            if median_val is not None:
+                sector_medians[metric_key] = median_val
+
+    return {
+        "success": True,
+        "ticker": ticker,
+        "name": company_info.get('name', ticker),
+        "sector": sector_name,
+        "quarters_analyzed": len(items),
+        "fiscal_date_range": {
+            "start": items[0].get('fiscal_date'),
+            "end": items[-1].get('fiscal_date'),
+        },
+        "metrics": metrics_out,
+        "sector_context": {
+            "sector": sector_name,
+            "company_count": _safe_float(sector_agg.get('company_count')) if sector_agg else None,
+            "sector_medians": sector_medians,
+        },
+    }
+
 
 
 def _get_earnings_surprises(params: Dict) -> Dict:
