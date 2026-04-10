@@ -177,11 +177,31 @@ export function CagrChart({ data, quarters, cagr, label, color, formatFn, summar
   });
   const rollingValid = rolling4Q.filter(v => v != null);
 
-  // Min/max across both actual, rolling, and reference line to keep them on the same scale
-  const allVals = [...data, ...rollingValid];
+  // Min/max across both actual, rolling, and reference line to keep them on the same scale.
+  // Filter non-finite values, then clamp outliers so one extreme quarter can't compress
+  // the entire chart into a flat line (e.g., ROIC = -875158% during COVID).
+  const validData = data.filter(v => v != null && isFinite(v));
+  const allVals = [...validData, ...rollingValid];
   if (refLine?.value != null) allVals.push(refLine.value);
-  const min = Math.min(...allVals);
-  const max = Math.max(...allVals);
+
+  let min = Math.min(...allVals);
+  let max = Math.max(...allVals);
+
+  // Trim the extreme 15% on each end, then use the trimmed range with 2x
+  // padding as Y-axis bounds. Handles multiple outliers (e.g., 3 extreme
+  // ROIC quarters for airlines during COVID).
+  if (validData.length >= 4) {
+    const sorted = [...validData].sort((a, b) => a - b);
+    const trim = Math.max(1, Math.floor(sorted.length * 0.15));
+    const lo = sorted[trim];
+    const hi = sorted[sorted.length - 1 - trim];
+    const inner = hi - lo;
+    if (inner > 0) {
+      min = Math.max(min, lo - inner * 2);
+      max = Math.min(max, hi + inner * 2);
+    }
+  }
+
   const range = max - min || 1;
 
   const toX = (i) => PAD.left + (i / (data.length - 1)) * plotW;

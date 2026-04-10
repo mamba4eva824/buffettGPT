@@ -6,8 +6,8 @@ then fetches full financials + earnings + dividends + TTM valuations and updates
 the metrics-history DynamoDB table via update_item (preserves existing attributes).
 
 Runs twice daily via EventBridge:
-  - 9 PM UTC (6 PM ET) — catches after-hours earnings reports
-  - 4:30 PM UTC (11:30 AM ET) — catches pre-market earnings reports
+  - 5:00 PM ET Mon-Fri — catches after-hours earnings reports
+  - 9:30 AM ET Mon-Fri — catches pre-market earnings reports
 
 Event payload options:
   {}                                — auto mode: check calendar, process recently reported
@@ -58,14 +58,18 @@ logger.setLevel(getattr(logging, log_level))
 
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 METRICS_TABLE = os.environ.get('METRICS_HISTORY_CACHE_TABLE', f'metrics-history-{ENVIRONMENT}')
+AGGREGATES_TABLE = os.environ.get('SP500_AGGREGATES_TABLE', f'buffett-{ENVIRONMENT}-sp500-aggregates')
 FMP_SECRET_NAME = os.environ.get('FMP_SECRET_NAME', f'buffett-{ENVIRONMENT}-fmp')
 FMP_RATE_LIMIT_DELAY = 0.5  # Seconds between FMP calls (300 calls/min limit)
+FEED_TTL_DAYS = 90  # How long to keep earnings feed records
+UPCOMING_LOOKAHEAD_DAYS = 30  # How far forward to query upcoming earnings
 
 # ---------------------------------------------------------------------------
 # AWS Clients
 # ---------------------------------------------------------------------------
 dynamodb = boto3.resource('dynamodb')
 metrics_table = dynamodb.Table(METRICS_TABLE)
+aggregates_table = dynamodb.Table(AGGREGATES_TABLE)
 secrets_client = boto3.client('secretsmanager')
 
 _fmp_api_key = None
@@ -87,6 +91,10 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
     """
     Check FMP earnings calendar for S&P 500 tickers that recently reported.
 
+    Queries FMP in weekly chunks to avoid the 4000-result API cap.
+    A single 30-day query exceeds 4000 entries (all stocks, not just S&P 500),
+    causing FMP to silently drop near-term dates.
+
     Returns dict with 'reported' (tickers with new earnings) and 'upcoming'.
     """
     from investment_research.index_tickers import SP500_TICKERS, to_fmp_format
@@ -95,31 +103,44 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
     sp500_fmp = {to_fmp_format(t): t for t in SP500_TICKERS}
 
     today = datetime.now()
-    from_date = (today - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
-    to_date = (today + timedelta(days=7)).strftime('%Y-%m-%d')
-
-    url = "https://financialmodelingprep.com/stable/earnings-calendar"
-    with httpx.Client(timeout=30.0) as client:
-        response = client.get(url, params={
-            'from': from_date,
-            'to': to_date,
-            'apikey': api_key,
-        })
-        response.raise_for_status()
-        calendar = response.json()
-
     today_str = today.strftime('%Y-%m-%d')
+    start = today - timedelta(days=lookback_days)
+    end = today + timedelta(days=UPCOMING_LOOKAHEAD_DAYS)
+
+    # Query in weekly chunks to stay under FMP's 4000-result cap
+    url = "https://financialmodelingprep.com/stable/earnings-calendar"
+    all_entries = []
+    chunk_start = start
+    with httpx.Client(timeout=30.0) as client:
+        while chunk_start < end:
+            chunk_end = min(chunk_start + timedelta(days=7), end)
+            response = client.get(url, params={
+                'from': chunk_start.strftime('%Y-%m-%d'),
+                'to': chunk_end.strftime('%Y-%m-%d'),
+                'apikey': api_key,
+            })
+            response.raise_for_status()
+            all_entries.extend(response.json())
+            chunk_start = chunk_end + timedelta(days=1)
+            time.sleep(FMP_RATE_LIMIT_DELAY)
+
+    # Dedupe by (symbol, date) in case chunks overlap
+    seen = set()
     reported = []
     upcoming = []
 
-    for entry in calendar:
+    for entry in all_entries:
         fmp_symbol = entry.get('symbol', '')
         if fmp_symbol not in sp500_fmp:
             continue
 
-        original_ticker = sp500_fmp[fmp_symbol]
         earnings_date = entry.get('date', '')
+        dedup_key = (fmp_symbol, earnings_date)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
 
+        original_ticker = sp500_fmp[fmp_symbol]
         record = {
             'ticker': original_ticker,
             'fmp_ticker': fmp_symbol,
@@ -134,12 +155,59 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
             upcoming.append(record)
 
     logger.info(f"Earnings calendar: {len(reported)} reported, {len(upcoming)} upcoming "
-                f"(checked {from_date} to {to_date})")
+                f"(checked {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}, "
+                f"{len(all_entries)} total FMP entries)")
 
     return {
         'reported': reported,
         'upcoming': sorted(upcoming, key=lambda x: x['earnings_date']),
     }
+
+
+# ---------------------------------------------------------------------------
+# Freshness Check — Skip Already-Processed Tickers
+# ---------------------------------------------------------------------------
+def _already_updated_since_earnings(ticker: str, earnings_date: str) -> bool:
+    """
+    Check if this ticker was already processed after its earnings_date.
+
+    Looks at cached_at on the latest quarter in metrics-history.
+    If cached_at > earnings_date (as epoch > date), the ticker was already
+    updated for this earnings cycle — skip it.
+    """
+    try:
+        response = metrics_table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('ticker').eq(ticker),
+            ScanIndexForward=False,
+            Limit=1,
+            ProjectionExpression='ticker, cached_at, earnings_events',
+        )
+        items = response.get('Items', [])
+        if not items:
+            return False
+
+        item = items[0]
+        cached_at = item.get('cached_at')
+        if not cached_at:
+            return False
+
+        # Convert earnings_date to epoch for comparison
+        from datetime import datetime
+        earnings_epoch = datetime.strptime(earnings_date, '%Y-%m-%d').timestamp()
+
+        # If the item was cached after the earnings date, it's already been processed
+        if float(cached_at) > earnings_epoch:
+            ee = item.get('earnings_events', {})
+            # Double-check: does it actually have eps_actual? (not just an estimate)
+            if ee.get('eps_actual') is not None:
+                logger.debug(f"{ticker}: already updated after {earnings_date} (cached_at={cached_at})")
+                return True
+
+        return False
+
+    except Exception as e:
+        logger.warning(f"Freshness check failed for {ticker}: {e}")
+        return False  # On error, process the ticker
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +360,149 @@ def _update_items(items: List[Dict[str, Any]]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Earnings Feed — persist event records for the dashboard
+# ---------------------------------------------------------------------------
+def _write_feed_record(result: Dict[str, Any]) -> None:
+    """Write a single earnings result to sp500-aggregates as an EARNINGS_RECENT record."""
+    from investment_research.index_tickers import SP500_SECTORS
+
+    ticker = result.get('ticker', '')
+    earnings_date = result.get('earnings_date', '')
+    if not ticker or not earnings_date or result.get('status') != 'success':
+        return
+
+    company_info = SP500_SECTORS.get(ticker, {})
+    now = datetime.now()
+    ttl = int(now.timestamp()) + (FEED_TTL_DAYS * 24 * 60 * 60)
+
+    item = {
+        'aggregate_type': 'EARNINGS_RECENT',
+        'aggregate_key': f'{earnings_date}#{ticker}',
+        'ticker': ticker,
+        'company_name': company_info.get('name', ticker),
+        'sector': company_info.get('sector', 'Unknown'),
+        'earnings_date': earnings_date,
+        'eps_actual': Decimal(str(result['eps_actual'])) if result.get('eps_actual') is not None else None,
+        'eps_estimated': Decimal(str(result['eps_estimated'])) if result.get('eps_estimated') is not None else None,
+        'eps_beat': result.get('eps_beat'),
+        'eps_surprise_pct': Decimal(str(result['eps_surprise_pct'])) if result.get('eps_surprise_pct') is not None else None,
+        'updated_at': now.isoformat(),
+        'expires_at': ttl,
+    }
+
+    # Remove None values (DynamoDB doesn't accept None)
+    item = {k: v for k, v in item.items() if v is not None}
+
+    try:
+        aggregates_table.put_item(Item=item)
+    except Exception as e:
+        logger.warning(f"Failed to write feed record for {ticker}: {e}")
+
+
+def _write_upcoming_records(upcoming: List[Dict[str, Any]]) -> None:
+    """Write upcoming earnings to sp500-aggregates as EARNINGS_UPCOMING records."""
+    from investment_research.index_tickers import SP500_SECTORS
+
+    now = datetime.now()
+    ttl = int(now.timestamp()) + (UPCOMING_LOOKAHEAD_DAYS * 24 * 60 * 60)
+
+    with aggregates_table.batch_writer() as batch:
+        for entry in upcoming:
+            ticker = entry.get('ticker', '')
+            earnings_date = entry.get('earnings_date', '')
+            if not ticker or not earnings_date:
+                continue
+
+            company_info = SP500_SECTORS.get(ticker, {})
+            item = {
+                'aggregate_type': 'EARNINGS_UPCOMING',
+                'aggregate_key': f'{earnings_date}#{ticker}',
+                'ticker': ticker,
+                'company_name': company_info.get('name', ticker),
+                'sector': company_info.get('sector', 'Unknown'),
+                'earnings_date': earnings_date,
+                'updated_at': now.isoformat(),
+                'expires_at': ttl,
+            }
+
+            if entry.get('eps_estimated') is not None:
+                item['eps_estimated'] = Decimal(str(entry['eps_estimated']))
+            if entry.get('revenue_estimated') is not None:
+                item['revenue_estimated'] = Decimal(str(entry['revenue_estimated']))
+
+            batch.put_item(Item=item)
+
+    logger.info(f"Wrote {len(upcoming)} upcoming earnings records")
+
+
+def _ensure_feed_record(ticker: str, earnings_date: str) -> None:
+    """Write an EARNINGS_RECENT feed record for a skipped (already-processed) ticker.
+
+    Reads existing data from metrics-history so we don't need to re-fetch from FMP.
+    No-ops if a feed record already exists for this ticker+date.
+    """
+    from investment_research.index_tickers import SP500_SECTORS
+
+    # Check if feed record already exists
+    try:
+        existing = aggregates_table.get_item(
+            Key={'aggregate_type': 'EARNINGS_RECENT', 'aggregate_key': f'{earnings_date}#{ticker}'}
+        )
+        if existing.get('Item'):
+            return  # Already have a feed record
+    except Exception:
+        pass  # Proceed to write
+
+    # Read latest quarter from metrics-history
+    try:
+        resp = metrics_table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('ticker').eq(ticker),
+            ScanIndexForward=False,
+            Limit=1,
+        )
+        items = resp.get('Items', [])
+        if not items:
+            logger.warning(f"_ensure_feed_record: no metrics data for {ticker}")
+            return
+
+        item = items[0]
+        ee = item.get('earnings_events', {})
+        if isinstance(ee, str):
+            try:
+                ee = json.loads(ee)
+            except (json.JSONDecodeError, TypeError):
+                ee = {}
+
+        eps_actual = ee.get('eps_actual')
+        eps_estimated = ee.get('eps_estimated')
+
+        # Compute beat/miss
+        eps_beat = None
+        eps_surprise_pct = None
+        if eps_actual is not None and eps_estimated is not None:
+            eps_beat = float(eps_actual) >= float(eps_estimated)
+            if float(eps_estimated) != 0:
+                eps_surprise_pct = round(
+                    (float(eps_actual) - float(eps_estimated)) / abs(float(eps_estimated)) * 100, 2
+                )
+
+        result = {
+            'ticker': ticker,
+            'status': 'success',
+            'earnings_date': earnings_date,
+            'eps_actual': float(eps_actual) if eps_actual is not None else None,
+            'eps_estimated': float(eps_estimated) if eps_estimated is not None else None,
+            'eps_beat': eps_beat,
+            'eps_surprise_pct': eps_surprise_pct,
+        }
+        _write_feed_record(result)
+        logger.info(f"Wrote feed record for skipped ticker {ticker} (earnings {earnings_date})")
+
+    except Exception as e:
+        logger.warning(f"_ensure_feed_record failed for {ticker}: {e}")
+
+
+# ---------------------------------------------------------------------------
 # SNS Notifications
 # ---------------------------------------------------------------------------
 SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN', '')
@@ -374,23 +585,55 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     }
 
     # Determine which tickers to process
+    earnings_dates_by_ticker = {}
     if manual_tickers:
         tickers_to_process = sorted(manual_tickers)
         logger.info(f"Manual mode: processing {len(tickers_to_process)} tickers")
     else:
         calendar = _check_earnings_calendar(lookback_days)
-        tickers_to_process = sorted(set(r['ticker'] for r in calendar['reported']))
+        reported = calendar['reported']
+        # Build earnings_date lookup for freshness check
+        for r in reported:
+            earnings_dates_by_ticker[r['ticker']] = r['earnings_date']
+        tickers_to_process = sorted(set(r['ticker'] for r in reported))
         if include_upcoming:
             response['upcoming'] = calendar['upcoming']
         logger.info(f"Auto mode: {len(tickers_to_process)} tickers recently reported")
 
     response['tickers_checked'] = len(tickers_to_process)
 
+    # Persist upcoming earnings regardless of whether any tickers reported
+    if response.get('upcoming'):
+        try:
+            _write_upcoming_records(response['upcoming'])
+        except Exception as e:
+            logger.warning(f"Failed to write upcoming earnings: {e}")
+
     if not tickers_to_process:
         response['message'] = 'No tickers to process'
         logger.info("No tickers to process — no recent earnings reports")
         _publish_sns_summary(response)
         return response
+
+    # Filter out tickers already processed for this earnings cycle.
+    # Skipped tickers still get feed records written (for the dashboard).
+    skipped_fresh = []
+    if not manual_tickers:  # Only skip in auto mode — manual mode always processes
+        filtered = []
+        for ticker in tickers_to_process:
+            earnings_date = earnings_dates_by_ticker.get(ticker, '')
+            if earnings_date and _already_updated_since_earnings(ticker, earnings_date):
+                skipped_fresh.append(ticker)
+                # Still write a feed record from existing metrics-history data
+                _ensure_feed_record(ticker, earnings_date)
+            else:
+                filtered.append(ticker)
+        if skipped_fresh:
+            logger.info(f"Skipping {len(skipped_fresh)} already-processed tickers "
+                        f"(feed records ensured): {skipped_fresh}")
+        tickers_to_process = filtered
+
+    response['skipped_already_processed'] = skipped_fresh
 
     # Process each ticker
     for i, ticker in enumerate(tickers_to_process):
@@ -407,6 +650,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             response['results'].append(result)
             if result['status'] == 'success':
                 response['tickers_updated'].append(ticker)
+                _write_feed_record(result)
 
             if (i + 1) % 10 == 0:
                 logger.info(f"Progress: {i + 1}/{len(tickers_to_process)} processed")
@@ -422,6 +666,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     response['completed_at'] = datetime.now().isoformat()
     response['total_updated'] = len(response['tickers_updated'])
     response['total_failures'] = len(response['failures'])
+
+    # NOTE: upcoming earnings already written above (before early-return check)
 
     logger.info(f"Earnings update complete: {response['total_updated']} updated, "
                 f"{response['total_failures']} failures")

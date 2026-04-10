@@ -40,6 +40,8 @@ FUNCTIONS=(
     "market_intel_chat"
     "value_insights_handler"
     "sp500_eod_ingest"
+    "earnings_feed_handler"
+    "watchlist_handler"
 )
 
 # Build each function
@@ -74,7 +76,7 @@ for FUNCTION in "${FUNCTIONS[@]}"; do
 
     # Copy investment_research module for sp500 pipeline functions
     INVEST_DIR="${BACKEND_DIR}/investment_research"
-    if [[ "${FUNCTION}" == sp500_* || "${FUNCTION}" == "earnings_update" || "${FUNCTION}" == "market_intel_chat" ]]; then
+    if [[ "${FUNCTION}" == sp500_* || "${FUNCTION}" == "earnings_update" || "${FUNCTION}" == "market_intel_chat" || "${FUNCTION}" == "watchlist_handler" ]]; then
         if [ -d "${INVEST_DIR}" ]; then
             cp -r "${INVEST_DIR}" "${TEMP_DIR}/"
         fi

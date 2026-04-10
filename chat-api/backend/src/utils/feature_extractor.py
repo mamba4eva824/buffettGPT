@@ -600,14 +600,23 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         net_debt_val = total_debt - cash
 
         # Return calculations (annualized for quarterly data)
+        # Minimum denominator threshold: 1% of revenue guards against near-zero
+        # denominators that produce extreme ratios (e.g., airlines during COVID)
+        min_denom = abs(revenue) * 0.01 if revenue else 1e6
         roa = round(safe_divide(net_income * 4, total_assets) * 100, 1)  # Annualized
-        roe = round(safe_divide(net_income * 4, total_equity) * 100, 1)  # Annualized
+        if abs(total_equity) < min_denom:
+            roe = None
+        else:
+            roe = max(-200.0, min(200.0, round(safe_divide(net_income * 4, total_equity) * 100, 1)))
         # ROIC = NOPAT / Invested Capital, where NOPAT = Operating Income * (1 - tax rate)
         # Invested Capital = Total Equity + Total Debt - Cash
         tax_rate = safe_divide(income_tax, max(operating_income - interest_expense_val, 1))
         nopat = operating_income * (1 - min(tax_rate, 0.4))  # Cap tax rate at 40%
         invested_capital = total_equity + total_debt - cash
-        roic = round(safe_divide(nopat * 4, invested_capital) * 100, 1)  # Annualized
+        if abs(invested_capital) < min_denom:
+            roic = None
+        else:
+            roic = max(-200.0, min(200.0, round(safe_divide(nopat * 4, invested_capital) * 100, 1)))
 
         # Margin calculations
         gross_margin = round(safe_divide(gross_profit, revenue) * 100, 1)
@@ -651,7 +660,13 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         trends['free_cash_flow'].append(fcf)
         trends['fcf_margin'].append(fcf_margin)
         trends['ocf_to_revenue'].append(round(safe_divide(ocf, revenue) * 100, 1))
-        trends['fcf_to_net_income'].append(round(safe_divide(fcf, max(net_income, 1)), 2))
+        # Only meaningful when net_income > 0; clamp to +/-10x to prevent
+        # extreme spikes from quarters with tiny positive net_income
+        if net_income and net_income > 0:
+            fcf_ni = max(-10.0, min(10.0, round(safe_divide(fcf, net_income), 2)))
+        else:
+            fcf_ni = None
+        trends['fcf_to_net_income'].append(fcf_ni)
         # Capital allocation (5)
         trends['capex'].append(capex)
         trends['capex_intensity'].append(round(safe_divide(capex, revenue) * 100, 1))

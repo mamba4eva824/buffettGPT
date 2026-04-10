@@ -91,7 +91,10 @@ resource "aws_iam_policy" "lambda_policy" {
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/waitlist-${var.environment}-${var.project_name}/index/*",
           # Stock data 4H table (daily EOD prices)
           "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/stock-data-4h-${var.environment}",
-          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/stock-data-4h-${var.environment}/index/*"
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/stock-data-4h-${var.environment}/index/*",
+          # Watchlist table (per-user stock watchlist)
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/watchlist-${var.project_name}-${var.environment}",
+          "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/watchlist-${var.project_name}-${var.environment}/index/*"
         ]
       },
       # SQS Access - REMOVED (2026-02) - chat processing queue deprecated

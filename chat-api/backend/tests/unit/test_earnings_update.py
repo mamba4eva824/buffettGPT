@@ -58,12 +58,16 @@ MOCK_ITEMS = [
 class TestEarningsUpdateHandler:
     """Test the lambda_handler function."""
 
+    @patch('handlers.earnings_update._already_updated_since_earnings', return_value=False)
     @patch('handlers.earnings_update._check_earnings_calendar')
     @patch('handlers.earnings_update._process_ticker')
-    def test_auto_mode_checks_calendar(self, mock_process, mock_calendar):
+    def test_auto_mode_checks_calendar(self, mock_process, mock_calendar, mock_fresh):
         """Auto mode (no tickers in event) checks earnings calendar."""
         mock_calendar.return_value = {
-            'reported': [{'ticker': 'AAPL'}, {'ticker': 'MSFT'}],
+            'reported': [
+                {'ticker': 'AAPL', 'earnings_date': '2026-04-02'},
+                {'ticker': 'MSFT', 'earnings_date': '2026-04-02'},
+            ],
             'upcoming': [{'ticker': 'NVDA', 'earnings_date': '2026-04-10'}],
         }
         mock_process.return_value = {'ticker': 'AAPL', 'status': 'success'}
@@ -96,6 +100,30 @@ class TestEarningsUpdateHandler:
 
         assert result['tickers_checked'] == 0
         assert 'No tickers' in result.get('message', '')
+
+    @patch('handlers.earnings_update._already_updated_since_earnings')
+    @patch('handlers.earnings_update._check_earnings_calendar')
+    @patch('handlers.earnings_update._process_ticker')
+    def test_auto_mode_skips_already_processed(self, mock_process, mock_calendar, mock_fresh):
+        """Auto mode skips tickers already processed for this earnings cycle."""
+        mock_calendar.return_value = {
+            'reported': [
+                {'ticker': 'AAPL', 'earnings_date': '2026-04-02'},
+                {'ticker': 'MSFT', 'earnings_date': '2026-04-02'},
+            ],
+            'upcoming': [],
+        }
+        # AAPL already processed, MSFT not
+        mock_fresh.side_effect = lambda t, d: t == 'AAPL'
+        mock_process.return_value = {'ticker': 'MSFT', 'status': 'success'}
+
+        from handlers.earnings_update import lambda_handler
+        result = lambda_handler({}, None)
+
+        # Only MSFT should be processed
+        assert mock_process.call_count == 1
+        assert 'AAPL' in result['skipped_already_processed']
+        assert 'MSFT' in result['tickers_updated']
 
     @patch('handlers.earnings_update._process_ticker')
     def test_response_includes_notification_data(self, mock_process):
