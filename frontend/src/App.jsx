@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense, lazy } from "react";
 import { Routes, Route, useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown, ExternalLink } from "lucide-react";
+import { Plus, Search, Send, Settings, Loader2, Trash2, MessageSquare, Archive, FolderOpen, X, Menu, ChevronDown, ChevronLeft, ChevronRight, LogOut, Sun, Moon, PanelLeftClose, BookOpen, HelpCircle, FileText, Shield, Crown, ExternalLink } from "lucide-react";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import UpgradeModal from "./components/UpgradeModal.jsx";
 import { stripeApi } from "./api/stripeApi.js";
@@ -8,6 +8,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { AuthProvider, useAuth, GoogleLoginButton } from "./auth.jsx";
 import { useConversations } from "./hooks/useConversations.js";
+import { useModeHistory } from "./hooks/useModeHistory.js";
 import { ConversationList } from "./components/ConversationList.jsx";
 import { loadConversationHistory, conversationsApi } from "./api/conversationsApi.js";
 import { Avatar } from "./components/Avatar.jsx";
@@ -190,6 +191,7 @@ function ChatApp() {
     const mode = new URLSearchParams(window.location.search).get('mode');
     return mode === 'value-insights' || mode === 'market-intelligence' || mode === 'earnings-tracker' ? mode : 'value-insights';
   }); // 'value-insights' | 'market-intelligence' | 'earnings-tracker'
+  const { navigateToMode, goBack, goForward, canGoBack, canGoForward } = useModeHistory(appMode);
   const [marketIntelConversationId, setMarketIntelConversationId] = useState(null);
   const [marketIntelMessages, setMarketIntelMessages] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -599,16 +601,25 @@ function ChatApp() {
   // Sync appMode to URL search params
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
-    if (appMode === 'chat') {
-      params.delete('mode');
-      params.delete('ticker');
-      params.delete('tab');
-      params.delete('range');
-    } else {
-      params.set('mode', appMode);
-    }
+    params.set('mode', appMode);
     setSearchParams(params, { replace: true });
   }, [appMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Mode navigation handlers (back/forward + pill clicks)
+  const handleModeChange = useCallback((newMode) => {
+    navigateToMode(newMode);
+    setAppMode(newMode);
+  }, [navigateToMode]);
+
+  const handleGoBack = useCallback(() => {
+    const mode = goBack();
+    if (mode) setAppMode(mode);
+  }, [goBack]);
+
+  const handleGoForward = useCallback(() => {
+    const mode = goForward();
+    if (mode) setAppMode(mode);
+  }, [goForward]);
 
   // Dark mode toggle and persistence
   const toggleDarkMode = useCallback(() => {
@@ -1266,7 +1277,7 @@ function ChatApp() {
       if (isMarketIntelConversation) {
         resetResearch();
         setShowInvestmentResearch(false);
-        setAppMode('market-intelligence');
+        handleModeChange('market-intelligence');
         setMarketIntelConversationId(conversationId);
         setMarketIntelMessages(formattedMessages);
         setMessages([]);
@@ -1286,7 +1297,7 @@ function ChatApp() {
       logger.error('Error loading conversation messages:', error);
       // Don't alert on error, just log it
     }
-  }, [token, setMessages, startResearch, loadSavedReport, fetchSection, fetchSectionsBatch, setInteractionLog, resetResearch]);
+  }, [token, setMessages, startResearch, loadSavedReport, fetchSection, fetchSectionsBatch, setInteractionLog, resetResearch, handleModeChange]);
 
   // Sync URL → conversation state
   // Fires on: initial mount with /c/:id, browser back/forward, navigate() calls
@@ -1529,7 +1540,7 @@ function ChatApp() {
           <main className="relative flex min-w-0 flex-1 flex-col min-h-0 overflow-hidden">
             {/* Header - minimal, only for mobile menu and non-authenticated users */}
             <div className="flex items-center justify-between px-4 md:px-6 py-2">
-              <div className="flex items-center gap-2 md:gap-3">
+              <div className="flex items-center gap-1 md:gap-2">
                 {/* Mobile hamburger menu - only show on mobile when authenticated */}
                 {isAuthenticated && (
                   <button
@@ -1540,12 +1551,37 @@ function ChatApp() {
                     <Menu className="h-5 w-5" />
                   </button>
                 )}
+                {/* Back / Forward navigation */}
+                <button
+                  onClick={handleGoBack}
+                  disabled={!canGoBack}
+                  aria-label="Go back"
+                  className={`p-2 rounded-lg transition-all duration-200 ${
+                    canGoBack
+                      ? 'text-sand-500 dark:text-warm-300 hover:text-sand-900 dark:hover:text-warm-50 hover:bg-sand-200 dark:hover:bg-warm-700 hover:shadow-sm'
+                      : 'text-sand-300 dark:text-warm-600 cursor-not-allowed'
+                  }`}
+                >
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={handleGoForward}
+                  disabled={!canGoForward}
+                  aria-label="Go forward"
+                  className={`p-2 rounded-lg transition-all duration-200 ${
+                    canGoForward
+                      ? 'text-sand-500 dark:text-warm-300 hover:text-sand-900 dark:hover:text-warm-50 hover:bg-sand-200 dark:hover:bg-warm-700 hover:shadow-sm'
+                      : 'text-sand-300 dark:text-warm-600 cursor-not-allowed'
+                  }`}
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </button>
               </div>
 
-              {/* Mode pill toggle — Value Insights / Market Intelligence */}
+              {/* Mode pill toggle — Value Insights / Market Intelligence / Earnings */}
               <div className="flex items-center bg-sand-200 dark:bg-warm-800 rounded-full p-1 gap-1">
                 <button
-                  onClick={() => setAppMode('value-insights')}
+                  onClick={() => handleModeChange('value-insights')}
                   className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
                     appMode === 'value-insights'
                       ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
@@ -1556,11 +1592,11 @@ function ChatApp() {
                 </button>
                 <button
                   onClick={() => {
-                    setAppMode('market-intelligence');
                     if (appMode !== 'market-intelligence') {
                       setMarketIntelConversationId(null);
                       setMarketIntelMessages(null);
                     }
+                    handleModeChange('market-intelligence');
                   }}
                   className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
                     appMode === 'market-intelligence'
@@ -1571,7 +1607,7 @@ function ChatApp() {
                   Market Intel
                 </button>
                 <button
-                  onClick={() => setAppMode('earnings-tracker')}
+                  onClick={() => handleModeChange('earnings-tracker')}
                   className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
                     appMode === 'earnings-tracker'
                       ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
@@ -1635,7 +1671,7 @@ function ChatApp() {
                     params.set('ticker', ticker);
                     params.set('tab', 'earnings_performance');
                     setSearchParams(params, { replace: true });
-                    setAppMode('value-insights');
+                    handleModeChange('value-insights');
                   }}
                   isAuthenticated={isAuthenticated}
                   token={token}
