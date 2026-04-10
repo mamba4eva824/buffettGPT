@@ -17,6 +17,7 @@ Environment Variables:
   LOG_LEVEL               — DEBUG/INFO/WARNING
 """
 
+import base64
 import json
 import logging
 import os
@@ -108,17 +109,27 @@ def _get_recent_earnings(params: Dict) -> Dict:
 # Endpoint: GET /earnings/upcoming
 # ---------------------------------------------------------------------------
 def _get_upcoming_earnings(params: Dict) -> Dict:
-    """Return upcoming earnings sorted by date ascending."""
+    """Return upcoming earnings sorted by date ascending with cursor pagination."""
     from datetime import datetime
     limit = min(int(params.get('limit', '50')), 200)
+    cursor = params.get('cursor')
     today_str = datetime.now().strftime('%Y-%m-%d')
 
-    result = aggregates_table.query(
-        KeyConditionExpression=Key('aggregate_type').eq('EARNINGS_UPCOMING'),
-        ScanIndexForward=True,  # soonest first
-        Limit=limit,
-    )
+    query_kwargs = {
+        'KeyConditionExpression': Key('aggregate_type').eq('EARNINGS_UPCOMING'),
+        'ScanIndexForward': True,  # soonest first
+        'Limit': limit,
+    }
 
+    # Resume from cursor if provided
+    if cursor:
+        try:
+            decoded = json.loads(base64.b64decode(cursor).decode('utf-8'))
+            query_kwargs['ExclusiveStartKey'] = decoded
+        except Exception:
+            logger.warning(f"Invalid cursor: {cursor}")
+
+    result = aggregates_table.query(**query_kwargs)
     items = result.get('Items', [])
 
     events = []
@@ -138,10 +149,17 @@ def _get_upcoming_earnings(params: Dict) -> Dict:
 
     latest_updated_at = max((item.get('updated_at', '') for item in items), default='') or None
 
+    # Build next_cursor from DynamoDB's LastEvaluatedKey
+    next_cursor = None
+    last_key = result.get('LastEvaluatedKey')
+    if last_key:
+        next_cursor = base64.b64encode(json.dumps(last_key, cls=DecimalEncoder).encode('utf-8')).decode('utf-8')
+
     return _response(200, {
         'events': events,
         'count': len(events),
         'updated_at': latest_updated_at,
+        'next_cursor': next_cursor,
     })
 
 

@@ -19,9 +19,10 @@ export async function fetchRecentEarnings(limit = 50) {
   return response.json();
 }
 
-export async function fetchUpcomingEarnings(limit = 50) {
-  const url = `${API_BASE_URL}/earnings/upcoming?limit=${limit}`;
-  logger.info('Fetching upcoming earnings');
+export async function fetchUpcomingEarnings(limit = 50, cursor = null) {
+  let url = `${API_BASE_URL}/earnings/upcoming?limit=${limit}`;
+  if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+  logger.info('Fetching upcoming earnings', { cursor: !!cursor });
 
   const response = await fetch(url, {
     method: 'GET',

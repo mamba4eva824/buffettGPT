@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchRecentEarnings, fetchUpcomingEarnings, fetchSeasonOverview } from '../api/earningsApi';
 
 export default function useEarningsData(activeTab) {
@@ -9,6 +9,10 @@ export default function useEarningsData(activeTab) {
   const [error, setError] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
   const abortRef = useRef(null);
+
+  // Upcoming pagination state
+  const [upcomingCursor, setUpcomingCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     if (abortRef.current) abortRef.current.abort();
@@ -22,6 +26,8 @@ export default function useEarningsData(activeTab) {
     if (activeTab === 'recent') {
       fetcher = fetchRecentEarnings();
     } else if (activeTab === 'upcoming') {
+      // Reset pagination on fresh load
+      setUpcomingCursor(null);
       fetcher = fetchUpcomingEarnings();
     } else if (activeTab === 'season') {
       fetcher = fetchSeasonOverview();
@@ -35,7 +41,10 @@ export default function useEarningsData(activeTab) {
         if (controller.signal.aborted) return;
 
         if (activeTab === 'recent') setRecentData(result);
-        else if (activeTab === 'upcoming') setUpcomingData(result);
+        else if (activeTab === 'upcoming') {
+          setUpcomingData(result);
+          setUpcomingCursor(result.next_cursor || null);
+        }
         else if (activeTab === 'season') setSeasonData(result);
 
         setUpdatedAt(result.updated_at || null);
@@ -50,5 +59,29 @@ export default function useEarningsData(activeTab) {
     return () => controller.abort();
   }, [activeTab]);
 
-  return { recentData, upcomingData, seasonData, loading, error, updatedAt };
+  // Load more upcoming earnings (append to existing)
+  const loadMoreUpcoming = useCallback(async () => {
+    if (!upcomingCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const result = await fetchUpcomingEarnings(50, upcomingCursor);
+      setUpcomingData(prev => {
+        if (!prev) return result;
+        return {
+          ...result,
+          events: [...(prev.events || []), ...(result.events || [])],
+          count: (prev.count || 0) + (result.count || 0),
+        };
+      });
+      setUpcomingCursor(result.next_cursor || null);
+    } catch (err) {
+      setError(err.message || 'Failed to load more earnings');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [upcomingCursor, loadingMore]);
+
+  const hasMoreUpcoming = !!upcomingCursor;
+
+  return { recentData, upcomingData, seasonData, loading, error, updatedAt, loadMoreUpcoming, loadingMore, hasMoreUpcoming };
 }

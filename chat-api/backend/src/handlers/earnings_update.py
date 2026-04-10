@@ -91,6 +91,10 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
     """
     Check FMP earnings calendar for S&P 500 tickers that recently reported.
 
+    Queries FMP in weekly chunks to avoid the 4000-result API cap.
+    A single 30-day query exceeds 4000 entries (all stocks, not just S&P 500),
+    causing FMP to silently drop near-term dates.
+
     Returns dict with 'reported' (tickers with new earnings) and 'upcoming'.
     """
     from investment_research.index_tickers import SP500_TICKERS, to_fmp_format
@@ -99,31 +103,44 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
     sp500_fmp = {to_fmp_format(t): t for t in SP500_TICKERS}
 
     today = datetime.now()
-    from_date = (today - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
-    to_date = (today + timedelta(days=UPCOMING_LOOKAHEAD_DAYS)).strftime('%Y-%m-%d')
-
-    url = "https://financialmodelingprep.com/stable/earnings-calendar"
-    with httpx.Client(timeout=30.0) as client:
-        response = client.get(url, params={
-            'from': from_date,
-            'to': to_date,
-            'apikey': api_key,
-        })
-        response.raise_for_status()
-        calendar = response.json()
-
     today_str = today.strftime('%Y-%m-%d')
+    start = today - timedelta(days=lookback_days)
+    end = today + timedelta(days=UPCOMING_LOOKAHEAD_DAYS)
+
+    # Query in weekly chunks to stay under FMP's 4000-result cap
+    url = "https://financialmodelingprep.com/stable/earnings-calendar"
+    all_entries = []
+    chunk_start = start
+    with httpx.Client(timeout=30.0) as client:
+        while chunk_start < end:
+            chunk_end = min(chunk_start + timedelta(days=7), end)
+            response = client.get(url, params={
+                'from': chunk_start.strftime('%Y-%m-%d'),
+                'to': chunk_end.strftime('%Y-%m-%d'),
+                'apikey': api_key,
+            })
+            response.raise_for_status()
+            all_entries.extend(response.json())
+            chunk_start = chunk_end + timedelta(days=1)
+            time.sleep(FMP_RATE_LIMIT_DELAY)
+
+    # Dedupe by (symbol, date) in case chunks overlap
+    seen = set()
     reported = []
     upcoming = []
 
-    for entry in calendar:
+    for entry in all_entries:
         fmp_symbol = entry.get('symbol', '')
         if fmp_symbol not in sp500_fmp:
             continue
 
-        original_ticker = sp500_fmp[fmp_symbol]
         earnings_date = entry.get('date', '')
+        dedup_key = (fmp_symbol, earnings_date)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
 
+        original_ticker = sp500_fmp[fmp_symbol]
         record = {
             'ticker': original_ticker,
             'fmp_ticker': fmp_symbol,
@@ -138,7 +155,8 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
             upcoming.append(record)
 
     logger.info(f"Earnings calendar: {len(reported)} reported, {len(upcoming)} upcoming "
-                f"(checked {from_date} to {to_date})")
+                f"(checked {start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}, "
+                f"{len(all_entries)} total FMP entries)")
 
     return {
         'reported': reported,

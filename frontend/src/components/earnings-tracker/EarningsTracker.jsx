@@ -48,7 +48,7 @@ export default function EarningsTracker({ onNavigateToInsights, isAuthenticated,
     setSearchParams(params, { replace: true });
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { recentData, upcomingData, seasonData, loading, error, updatedAt } = useEarningsData(activeTab);
+  const { recentData, upcomingData, seasonData, loading, error, updatedAt, loadMoreUpcoming, loadingMore, hasMoreUpcoming } = useEarningsData(activeTab);
 
   const { watchlistData, loading: watchlistLoading, error: watchlistError, addTicker, removeTicker } = useWatchlist(token);
   const [addLoading, setAddLoading] = useState(false);
@@ -128,7 +128,7 @@ export default function EarningsTracker({ onNavigateToInsights, isAuthenticated,
               <RecentFeed data={recentData} onSelectTicker={handleSelectTicker} />
             )}
             {activeTab === 'upcoming' && (
-              <UpcomingCalendar data={upcomingData} onSelectTicker={handleSelectTicker} />
+              <UpcomingCalendar data={upcomingData} onSelectTicker={handleSelectTicker} onLoadMore={loadMoreUpcoming} loadingMore={loadingMore} hasMore={hasMoreUpcoming} />
             )}
             {activeTab === 'season' && (
               <SeasonHeatmap data={seasonData} />
