@@ -8,6 +8,7 @@ Reuses existing FMP client and feature extractor from prediction_ensemble.
 import json
 import boto3
 import anthropic
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from decimal import Decimal
@@ -144,6 +145,7 @@ class ReportGenerator:
         5.0: 'investment_report_prompt_v5_0.txt',  # Audit grade v5.0 (visual momentum dashboards, progress bars, pattern alerts)
         5.1: 'investment_report_prompt_v5_1.txt',  # Audit grade v5.1 (revenue stickiness, margin waterfall, operating leverage, peer comparisons, decision triggers)
         5.2: 'investment_report_prompt_v5_2.txt',  # Audit grade v5.2 (cross-report uniqueness, anti-templating, variable DCA/momentum formats)
+        6.0: 'investment_report_prompt_v6_slim.txt',  # Slim mode v6.0 (executive summary + decision triggers only, ~68% less content)
     }
 
     def __init__(self, use_api: bool = False, prompt_version: float = 5.2):
@@ -237,17 +239,29 @@ class ReportGenerator:
         features = extract_all_features(raw_financials)
         quarterly_trends = extract_quarterly_trends(raw_financials)
 
-        # 3. Fetch valuation data for mean reversion analysis
+        # 3. Fetch valuation data for mean reversion analysis (parallel)
         print(f"  Fetching valuation data for {ticker}...")
-        valuation_data = {
-            'key_metrics_historical': fetch_key_metrics(ticker, limit=5),
-            'key_metrics_ttm': fetch_key_metrics_ttm(ticker),
-            'financial_ratios_ttm': fetch_financial_ratios_ttm(ticker),
-            'analyst_estimates': fetch_analyst_estimates(ticker, limit=10),
-            'earnings_history': fetch_earnings(ticker, limit=12),
-            'earnings_calendar': fetch_earnings_calendar_upcoming(ticker),
-            'dividend_history': fetch_dividends(ticker),
-        }
+
+        def _safe_fetch(fn, *args, **kwargs):
+            try:
+                return fn(*args, **kwargs)
+            except Exception:
+                return None
+
+        valuation_data = {}
+        with ThreadPoolExecutor(max_workers=7) as executor:
+            futures = {
+                executor.submit(_safe_fetch, fetch_key_metrics, ticker, limit=5): 'key_metrics_historical',
+                executor.submit(_safe_fetch, fetch_key_metrics_ttm, ticker): 'key_metrics_ttm',
+                executor.submit(_safe_fetch, fetch_financial_ratios_ttm, ticker): 'financial_ratios_ttm',
+                executor.submit(_safe_fetch, fetch_analyst_estimates, ticker, limit=10): 'analyst_estimates',
+                executor.submit(_safe_fetch, fetch_earnings, ticker, limit=12): 'earnings_history',
+                executor.submit(_safe_fetch, fetch_earnings_calendar_upcoming, ticker): 'earnings_calendar',
+                executor.submit(_safe_fetch, fetch_dividends, ticker): 'dividend_history',
+            }
+            for future in as_completed(futures):
+                key = futures[future]
+                valuation_data[key] = future.result()
 
         # 4. Format data for analysis (with multi-currency support and valuation)
         metrics_context = self._format_metrics_for_prompt(

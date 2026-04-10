@@ -188,8 +188,8 @@ function ChatApp() {
   const [showInvestmentResearch, setShowInvestmentResearch] = useState(false);
   const [appMode, setAppMode] = useState(() => {
     const mode = new URLSearchParams(window.location.search).get('mode');
-    return mode === 'value-insights' || mode === 'market-intelligence' || mode === 'earnings-tracker' ? mode : 'chat';
-  }); // 'chat' | 'value-insights' | 'market-intelligence'
+    return mode === 'value-insights' || mode === 'market-intelligence' || mode === 'earnings-tracker' ? mode : 'value-insights';
+  }); // 'value-insights' | 'market-intelligence' | 'earnings-tracker'
   const [marketIntelConversationId, setMarketIntelConversationId] = useState(null);
   const [marketIntelMessages, setMarketIntelMessages] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1542,22 +1542,8 @@ function ChatApp() {
                 )}
               </div>
 
-              {/* Mode pill toggle — Chat / Value Insights / Market Intelligence */}
+              {/* Mode pill toggle — Value Insights / Market Intelligence */}
               <div className="flex items-center bg-sand-200 dark:bg-warm-800 rounded-full p-1 gap-1">
-                <button
-                  onClick={() => {
-                    setAppMode('chat');
-                    setMarketIntelConversationId(null);
-                    setMarketIntelMessages(null);
-                  }}
-                  className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${
-                    appMode === 'chat'
-                      ? 'bg-white dark:bg-warm-600 text-sand-900 dark:text-warm-50 shadow-sm'
-                      : 'text-sand-500 dark:text-warm-300 hover:text-sand-700 dark:hover:text-warm-100'
-                  }`}
-                >
-                  Chat
-                </button>
                 <button
                   onClick={() => setAppMode('value-insights')}
                   className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all ${

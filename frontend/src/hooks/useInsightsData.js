@@ -12,6 +12,8 @@ export default function useInsightsData(ticker, sector = '') {
   const [latestPrice, setLatestPrice] = useState(null);
   const [sectorAggregate, setSectorAggregate] = useState(null);
   const [postEarnings, setPostEarnings] = useState(null);
+  const [executiveSummary, setExecutiveSummary] = useState(null);
+  const [triggers, setTriggers] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const abortRef = useRef(null);
@@ -37,6 +39,8 @@ export default function useInsightsData(ticker, sector = '') {
           setLatestPrice(null);
           setSectorAggregate(null);
           setPostEarnings(null);
+          setExecutiveSummary(null);
+          setTriggers(null);
           setError('no_data');
           setLoading(false);
           return;
@@ -63,6 +67,8 @@ export default function useInsightsData(ticker, sector = '') {
         }
         setSectorAggregate(result.sector_aggregate || null);
         setPostEarnings(result.post_earnings || null);
+        setExecutiveSummary(result.executive_summary || null);
+        setTriggers(result.triggers || null);
         setLoading(false);
       })
       .catch((err) => {
@@ -74,5 +80,5 @@ export default function useInsightsData(ticker, sector = '') {
     return () => controller.abort();
   }, [ticker, sector]);
 
-  return { data, ratings, latestPrice, sectorAggregate, postEarnings, loading, error };
+  return { data, ratings, latestPrice, sectorAggregate, postEarnings, executiveSummary, triggers, loading, error };
 }
