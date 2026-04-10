@@ -981,7 +981,7 @@ class TestOrchestrationLoop:
     def _mock_execute_tool(self, handler_module, return_value):
         """Inject mock execute_tool into handler module."""
         mock_func = MagicMock(return_value=return_value)
-        handler_module.execute_tool = mock_func
+        handler_module.unified_execute = mock_func
         return mock_func
 
     def test_stream_single_turn_no_tools(self, handler_module, mock_boto3):

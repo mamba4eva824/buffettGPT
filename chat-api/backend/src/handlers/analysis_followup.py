@@ -28,7 +28,8 @@ from functools import lru_cache
 from utils.token_usage_tracker import TokenUsageTracker
 
 # Import tool executor for orchestration loop
-from utils.tool_executor import execute_tool, DecimalEncoder
+from utils.tool_executor import DecimalEncoder
+from utils.unified_tool_executor import execute_tool as unified_execute, get_tools_for_context
 
 # Configure logging - must set level on root logger for Lambda
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -477,6 +478,9 @@ def stream_followup_response(event: Dict[str, Any], context: Any, user_id: str =
         agent_type = body.get('agent_type', 'debt')
         ticker = body.get('ticker', '')
 
+        # Get dynamic tool config based on agent type
+        tool_config = get_tools_for_context(agent_type)
+
         if not question:
             yield format_sse_event(json.dumps({
                 "type": "error",
@@ -619,7 +623,7 @@ Current context: {ticker} | {agent_type} analysis"""
                 modelId=FOLLOWUP_MODEL_ID,
                 messages=messages,
                 system=[{"text": system_prompt}],
-                toolConfig=FOLLOWUP_TOOLS,
+                toolConfig=tool_config,
                 inferenceConfig={
                     "maxTokens": 2048,
                     "temperature": 0.7
@@ -720,8 +724,8 @@ Current context: {ticker} | {agent_type} analysis"""
                         tool_input = tool_use.get('input', {})
                         logger.info(f"[STREAMING] Executing tool: {tool_use['name']} with input: {json.dumps(tool_input)}")
 
-                        # Execute the tool
-                        result = execute_tool(tool_use['name'], tool_input)
+                        # Execute the tool via unified dispatcher
+                        result = unified_execute(tool_use['name'], tool_input)
 
                         # Log result summary
                         result_success = result.get('success', False)
@@ -923,6 +927,9 @@ def lambda_handler(event: Dict[str, Any], context: Any):
         agent_type = body.get('agent_type', 'debt')
         ticker = body.get('ticker', '')
 
+        # Get dynamic tool config based on agent type
+        tool_config = get_tools_for_context(agent_type)
+
         if not question:
             return error_response(400, "Question is required")
 
@@ -1069,7 +1076,7 @@ Current context: {ticker} | {agent_type} analysis"""
                 modelId=FOLLOWUP_MODEL_ID,
                 messages=messages,
                 system=[{"text": system_prompt}],
-                toolConfig=FOLLOWUP_TOOLS,
+                toolConfig=tool_config,
                 inferenceConfig={"maxTokens": 2048, "temperature": 0.7}
             )
 
@@ -1107,7 +1114,7 @@ Current context: {ticker} | {agent_type} analysis"""
                         tool_input = tool_use.get('input', {})
                         logger.info(f"[NON-STREAMING] Executing tool: {tool_use['name']} with input: {json.dumps(tool_input)}")
 
-                        result = execute_tool(tool_use['name'], tool_input)
+                        result = unified_execute(tool_use['name'], tool_input)
 
                         # Log result summary
                         result_success = result.get('success', False)

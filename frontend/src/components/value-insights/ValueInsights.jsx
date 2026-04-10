@@ -39,7 +39,7 @@ export default function ValueInsights() {
 
   const companyInfo = sp500Companies.find(c => c.ticker === ticker);
   const sector = companyInfo?.sector || '';
-  const { data, ratings, latestPrice, sectorAggregate, postEarnings, loading, error } = useInsightsData(ticker, sector);
+  const { data, ratings, latestPrice, sectorAggregate, postEarnings, executiveSummary, triggers, loading, error } = useInsightsData(ticker, sector);
 
   // Client-side fuzzy search over S&P 500 index
   const searchResults = useMemo(() => {
@@ -236,6 +236,8 @@ export default function ValueInsights() {
             sectorAggregate={sectorAggregate}
             sector={sector}
             onSelectCategory={setActiveCategory}
+            triggers={triggers}
+            executiveSummary={executiveSummary}
           />
         )}
 
