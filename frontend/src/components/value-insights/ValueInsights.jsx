@@ -187,7 +187,7 @@ export default function ValueInsights() {
       {/* Main content area with chat panel */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Main scrollable content */}
-        <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0">
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
           {/* Page header */}
           <header className="mb-8 md:mb-10">
             <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-tight mb-1">

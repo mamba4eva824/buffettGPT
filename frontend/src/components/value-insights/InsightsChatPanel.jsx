@@ -62,16 +62,25 @@ function generateSessionId() {
   return 'vi-' + crypto.randomUUID();
 }
 
+const DEFAULT_WIDTH = 400;
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 700;
+const COLLAPSED_WIDTH = 40;
+
 export default function InsightsChatPanel({ ticker, activeCategory, isOpen, onClose }) {
   const { token } = useAuth();
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [isMinimized, setIsMinimized] = useState(false);
   const sessionIdRef = useRef(generateSessionId());
   const abortRef = useRef(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const isResizingRef = useRef(false);
+  const panelRef = useRef(null);
 
   // Reset session when ticker changes
   useEffect(() => {
@@ -80,9 +89,14 @@ export default function InsightsChatPanel({ ticker, activeCategory, isOpen, onCl
     sessionIdRef.current = generateSessionId();
   }, [ticker]);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages (block: 'end' avoids default 'start' aligning the sentinel to the
+  // top of the panel, which reads as the whole chat "jumping up")
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length === 0) return;
+    const scrollTimeout = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end', inline: 'nearest' });
+    }, 100);
+    return () => clearTimeout(scrollTimeout);
   }, [messages]);
 
   // Focus input when panel opens
@@ -91,6 +105,33 @@ export default function InsightsChatPanel({ ticker, activeCategory, isOpen, onCl
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
+
+  // Drag-to-resize handler
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = panelWidth;
+
+    const handleMouseMove = (moveEvent) => {
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + delta));
+      setPanelWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [panelWidth]);
 
   const suggestions = useMemo(() => {
     return SUGGESTED_QUESTIONS[activeCategory] || SUGGESTED_QUESTIONS.dashboard;
@@ -243,14 +284,44 @@ export default function InsightsChatPanel({ ticker, activeCategory, isOpen, onCl
         onClick={onClose}
       />
 
+      {/* Minimized bar (desktop only) */}
+      {isMinimized && (
+        <div
+          className="hidden lg:flex flex-col items-center py-3 shrink-0 bg-sand-50 dark:bg-warm-950 border-l border-sand-200 dark:border-warm-800 cursor-pointer hover:bg-sand-100 dark:hover:bg-warm-900 transition-colors"
+          style={{ width: COLLAPSED_WIDTH }}
+          onClick={() => setIsMinimized(false)}
+          title="Expand chat panel"
+        >
+          <span className="material-symbols-outlined text-vi-gold text-lg">chat</span>
+          <span
+            className="text-[10px] font-semibold text-sand-500 dark:text-warm-400 mt-2"
+            style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+          >
+            Ask AI
+          </span>
+        </div>
+      )}
+
       {/* Panel */}
-      <div className={`
-        fixed right-0 top-0 bottom-0 z-50 w-[350px] max-w-[90vw]
-        lg:relative lg:z-auto lg:w-[350px] lg:shrink-0
-        flex flex-col
-        bg-sand-50 dark:bg-warm-950
-        border-l border-sand-200 dark:border-warm-800
-      `}>
+      <div
+        ref={panelRef}
+        className={`
+          fixed right-0 top-0 bottom-0 z-50 max-w-[90vw]
+          lg:relative lg:z-auto lg:shrink-0
+          flex flex-col
+          bg-sand-50 dark:bg-warm-950
+          border-l border-sand-200 dark:border-warm-800
+          ${isMinimized ? 'hidden lg:hidden' : ''}
+        `}
+        style={{ width: window.innerWidth >= 1024 ? panelWidth : 350 }}
+      >
+        {/* Resize handle (desktop only) */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="hidden lg:block absolute left-0 top-0 bottom-0 w-1.5 cursor-col-resize z-10
+            hover:bg-vi-gold/30 active:bg-vi-gold/50 transition-colors"
+        />
+
         {/* Header */}
         <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-sand-200 dark:border-warm-800">
           <div className="flex items-center gap-2 min-w-0">
@@ -259,29 +330,43 @@ export default function InsightsChatPanel({ ticker, activeCategory, isOpen, onCl
               Ask about {categoryLabel}
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="lg:hidden p-1 rounded hover:bg-sand-200 dark:hover:bg-warm-800 transition-colors"
-          >
-            <span className="material-symbols-outlined text-sand-500 dark:text-warm-400 text-lg">close</span>
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Minimize button (desktop) */}
+            <button
+              onClick={() => setIsMinimized(true)}
+              className="hidden lg:block p-1 rounded hover:bg-sand-200 dark:hover:bg-warm-800 transition-colors"
+              title="Minimize panel"
+            >
+              <span className="material-symbols-outlined text-sand-500 dark:text-warm-400 text-lg">right_panel_close</span>
+            </button>
+            {/* Close button (mobile) */}
+            <button
+              onClick={onClose}
+              className="lg:hidden p-1 rounded hover:bg-sand-200 dark:hover:bg-warm-800 transition-colors"
+            >
+              <span className="material-symbols-outlined text-sand-500 dark:text-warm-400 text-lg">close</span>
+            </button>
+          </div>
         </div>
 
         {/* Messages area */}
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
-          {/* Empty state with suggestions */}
-          {messages.length === 0 && !isStreaming && (
-            <div className="flex flex-col gap-3 pt-4">
-              <p className="text-xs text-sand-400 dark:text-warm-500 text-center px-2">
-                Ask questions about {ticker}&apos;s {categoryLabel.toLowerCase()} metrics. The AI has access to the financial data shown in this tab.
-              </p>
-              <div className="flex flex-col gap-1.5 mt-2">
+        <div className="flex-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
+          <div className="px-3 py-3 space-y-3">
+            {/* Suggested questions — always at the top */}
+            {!isStreaming && (
+              <div className="flex flex-col gap-1.5">
+                {messages.length === 0 && (
+                  <p className="text-xs text-sand-400 dark:text-warm-500 text-center px-2 mb-1">
+                    Ask questions about {ticker}&apos;s {categoryLabel.toLowerCase()} metrics. The AI has access to the financial data shown in this tab.
+                  </p>
+                )}
                 {suggestions.map((q, i) => (
                   <button
                     key={i}
+                    type="button"
                     onClick={() => sendMessage(q)}
                     className="text-left px-3 py-2.5 rounded-lg border border-sand-200 dark:border-warm-700
-                      text-xs text-sand-600 dark:text-warm-200
+                      text-sm text-sand-800 dark:text-warm-50
                       hover:bg-sand-100 dark:hover:bg-warm-900 hover:border-sand-300 dark:hover:border-warm-600
                       transition-colors"
                   >
@@ -289,69 +374,78 @@ export default function InsightsChatPanel({ ticker, activeCategory, isOpen, onCl
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Message list */}
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`rounded-xl px-3 py-2 text-xs leading-relaxed max-w-[85%] ${
-                msg.role === 'user'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-sand-100 dark:bg-warm-900 text-sand-800 dark:text-warm-50'
-              }`}>
-                {msg.role === 'user' ? (
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
-                ) : msg.content ? (
-                  <div className="prose prose-xs dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0.5">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
-                    </ReactMarkdown>
-                    {msg.isStreaming && (
-                      <span className="inline-block w-1.5 h-3.5 bg-vi-gold animate-pulse ml-0.5 align-middle" />
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-sand-400 dark:text-warm-500">
-                    <span className="inline-block w-1.5 h-3.5 bg-vi-gold animate-pulse" />
-                    Analyzing...
-                  </div>
-                )}
+            {/* Message list */}
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`rounded-xl px-3 py-2 text-xs leading-relaxed max-w-[85%] ${
+                  msg.role === 'user'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-sand-100 dark:bg-warm-900 text-sand-800 dark:text-warm-50'
+                }`}>
+                  {msg.role === 'user' ? (
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  ) : msg.content ? (
+                    <div className="prose prose-xs dark:prose-invert max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-li:my-0.5">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                      {msg.isStreaming && (
+                        <span className="inline-block w-1.5 h-3.5 bg-vi-gold animate-pulse ml-0.5 align-middle" />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-sand-400 dark:text-warm-500">
+                      <span className="inline-block w-1.5 h-3.5 bg-vi-gold animate-pulse" />
+                      Analyzing...
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
 
-          {/* Error display */}
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2 text-xs text-red-700 dark:text-red-300">
-              {error}
-            </div>
-          )}
+            {error && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2 text-xs text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            )}
 
-          <div ref={messagesEndRef} />
+              <div ref={messagesEndRef} />
+          </div>
         </div>
 
         {/* Input bar */}
-        <div className="shrink-0 border-t border-sand-200 dark:border-warm-800 px-3 py-2.5">
-          <form onSubmit={handleSubmit} className="flex gap-2">
-            <input
+        <div className="shrink-0 border-t border-sand-200 dark:border-warm-800 px-3 py-3">
+          <form onSubmit={handleSubmit} className="flex items-end gap-2">
+            <textarea
               ref={inputRef}
-              type="text"
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSubmit(e);
+                }
+              }}
               placeholder={`Ask about ${ticker}...`}
               disabled={isStreaming}
+              rows={1}
               className="flex-1 rounded-lg border border-sand-200 dark:border-warm-700
-                bg-white dark:bg-warm-900 px-3 py-2 text-xs
+                bg-white dark:bg-warm-900 px-4 py-3 text-sm
                 text-sand-800 dark:text-warm-50
                 placeholder:text-sand-400 dark:placeholder:text-warm-500
                 focus:outline-none focus:ring-2 focus:ring-vi-gold/50 focus:border-vi-gold
-                disabled:opacity-50 transition-all"
+                disabled:opacity-50 transition-all resize-none overflow-y-auto"
             />
             <button
               type="submit"
               disabled={!inputValue.trim() || isStreaming}
-              className="shrink-0 rounded-lg bg-vi-gold px-3 py-2 text-xs font-semibold text-[#402d00]
+              className="shrink-0 rounded-lg bg-vi-gold px-4 py-3 text-sm font-semibold text-[#402d00]
                 hover:bg-vi-gold/80 disabled:opacity-50 disabled:cursor-not-allowed
                 transition-colors"
             >
