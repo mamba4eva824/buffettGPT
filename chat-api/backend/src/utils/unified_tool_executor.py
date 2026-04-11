@@ -39,6 +39,7 @@ MARKET_INTEL_TOOL_NAMES = {
     'getMetricTrend',
     'getEarningsSurprises',
     'compareSectors',
+    'getHistoricalValuation',
 }
 
 # Company tab agent_type values that should get follow-up tools + getCompanyProfile
