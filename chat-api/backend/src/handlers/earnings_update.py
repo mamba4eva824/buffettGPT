@@ -36,7 +36,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import boto3
 import httpx
@@ -213,10 +213,13 @@ def _already_updated_since_earnings(ticker: str, earnings_date: str, fmp_eps_act
 # ---------------------------------------------------------------------------
 # Per-Ticker Processing
 # ---------------------------------------------------------------------------
-def _process_ticker(ticker: str) -> Dict[str, Any]:
+def _process_ticker(ticker: str, earnings_date: Optional[str] = None) -> Dict[str, Any]:
     """
     Fetch full financials + earnings + dividends + TTM for a single ticker
     and update all categories in metrics-history via update_item.
+
+    When earnings_date is provided, force-refreshes the FMP cache and validates
+    fresh data reflects the reported quarter.
 
     Returns a summary dict for the response.
     """
@@ -226,11 +229,36 @@ def _process_ticker(ticker: str) -> Dict[str, Any]:
     result = {'ticker': ticker, 'status': 'success'}
 
     # 1. Fetch financial data (income, balance sheet, cash flow)
-    financial_data = get_financial_data(fmp_ticker)
+    financial_data = get_financial_data(fmp_ticker, force_refresh=True)
     raw_financials = financial_data.get('raw_financials', {})
     if not raw_financials:
         result['status'] = 'no_financial_data'
         return result
+
+    # Propagation-lag guard: verify FMP's fresh response reflects the reported quarter.
+    # If earnings_date provided but FMP's latest income_statement is older than
+    # earnings_date - 10 days, FMP hasn't propagated the 10-Q yet. Log + flag the result.
+    if earnings_date:
+        income_statements = raw_financials.get('income_statement', [])
+        if income_statements:
+            latest_date = income_statements[0].get('date', '')
+            if latest_date and latest_date < earnings_date:
+                from datetime import datetime as _dt
+                try:
+                    gap_days = (_dt.strptime(earnings_date[:10], '%Y-%m-%d') -
+                                _dt.strptime(latest_date[:10], '%Y-%m-%d')).days
+                    if gap_days > 10:
+                        logger.warning(
+                            f"{ticker}: FMP income_statement latest={latest_date} is "
+                            f"{gap_days} days older than earnings_date={earnings_date} — "
+                            f"FMP propagation lag, will retry next run"
+                        )
+                        result['status'] = 'fmp_propagation_lag'
+                        result['latest_statement_date'] = latest_date
+                        result['earnings_date'] = earnings_date
+                        return result
+                except ValueError:
+                    pass  # Date parse errors fall through to normal processing
 
     currency = financial_data.get('currency_info', {}).get('code', 'USD')
     cache_key = financial_data.get('cache_key', f'v3:{ticker}:{datetime.now().year}')
@@ -668,7 +696,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 break
 
         try:
-            result = _process_ticker(ticker)
+            ticker_earnings_info = earnings_dates_by_ticker.get(ticker, {})
+            result = _process_ticker(ticker, earnings_date=ticker_earnings_info.get('earnings_date'))
             response['results'].append(result)
             if result['status'] == 'success':
                 response['tickers_updated'].append(ticker)
@@ -687,6 +716,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     response['completed_at'] = datetime.now().isoformat()
     response['total_updated'] = len(response['tickers_updated'])
+    response['propagation_lag'] = [
+        r['ticker'] for r in response['results']
+        if r.get('status') == 'fmp_propagation_lag'
+    ]
     response['total_failures'] = len(response['failures'])
 
     # NOTE: upcoming earnings already written above (before early-return check)

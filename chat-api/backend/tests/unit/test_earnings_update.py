@@ -399,3 +399,124 @@ class TestEnsureFeedRecord:
         written = mock_aggregates.put_item.call_args.kwargs['Item']
         assert written['ticker'] == 'NFLX'
         assert written['earnings_date'] == '2026-04-16'
+
+
+class TestForceRefreshAndPropagationLag:
+    """Test force_refresh kwarg and FMP propagation-lag guard in _process_ticker."""
+
+    @patch('handlers.earnings_update.fetch_ttm_valuations')
+    @patch('handlers.earnings_update.fetch_dividends')
+    @patch('handlers.earnings_update.fetch_earnings')
+    @patch('handlers.earnings_update.prepare_metrics_for_cache')
+    @patch('handlers.earnings_update.extract_quarterly_trends')
+    @patch('handlers.earnings_update.get_financial_data')
+    @patch('handlers.earnings_update.metrics_table')
+    def test_process_ticker_passes_force_refresh_true(
+        self, mock_table, mock_get_financial_data, mock_extract,
+        mock_prepare, mock_earnings, mock_dividends, mock_ttm,
+    ):
+        """_process_ticker always calls get_financial_data with force_refresh=True."""
+        mock_get_financial_data.return_value = {
+            'raw_financials': {
+                'income_statement': [{'date': '2026-04-16'}],
+                'balance_sheet': [{'date': '2026-04-16'}],
+                'cash_flow': [{'date': '2026-04-16'}],
+            },
+            'currency_info': {'code': 'USD'},
+            'cache_key': 'v3:AAPL:2026',
+        }
+        mock_extract.return_value = {'quarters': [1]}
+        mock_prepare.return_value = MOCK_ITEMS
+        mock_earnings.return_value = []
+        mock_dividends.return_value = []
+        mock_ttm.return_value = {}
+        mock_table.update_item.return_value = {}
+
+        from handlers.earnings_update import _process_ticker
+        _process_ticker('AAPL', earnings_date='2026-04-16')
+
+        assert mock_get_financial_data.call_args.kwargs == {'force_refresh': True}
+
+    @patch('handlers.earnings_update.fetch_ttm_valuations')
+    @patch('handlers.earnings_update.fetch_dividends')
+    @patch('handlers.earnings_update.fetch_earnings')
+    @patch('handlers.earnings_update.prepare_metrics_for_cache')
+    @patch('handlers.earnings_update.extract_quarterly_trends')
+    @patch('handlers.earnings_update.get_financial_data')
+    @patch('handlers.earnings_update.metrics_table')
+    def test_propagation_lag_returns_early_with_lag_status(
+        self, mock_table, mock_get_financial_data, mock_extract,
+        mock_prepare, mock_earnings, mock_dividends, mock_ttm,
+    ):
+        """When FMP hasn't propagated the reported quarter, return lag status and skip processing."""
+        mock_get_financial_data.return_value = {
+            'raw_financials': {
+                'income_statement': [{'date': '2026-01-20'}],
+                'balance_sheet': [{'date': '2026-01-20'}],
+                'cash_flow': [{'date': '2026-01-20'}],
+            },
+            'currency_info': {'code': 'USD'},
+            'cache_key': 'v3:NFLX:2026',
+        }
+
+        from handlers.earnings_update import _process_ticker
+        # Gap = 2026-04-16 - 2026-01-20 = 86 days (> 10).
+        result = _process_ticker('NFLX', earnings_date='2026-04-16')
+
+        assert result['status'] == 'fmp_propagation_lag'
+        assert result['latest_statement_date'] == '2026-01-20'
+        assert result['earnings_date'] == '2026-04-16'
+        # Early return: pipeline steps below the guard must not execute.
+        mock_extract.assert_not_called()
+        mock_prepare.assert_not_called()
+
+    @patch('handlers.earnings_update.fetch_ttm_valuations')
+    @patch('handlers.earnings_update.fetch_dividends')
+    @patch('handlers.earnings_update.fetch_earnings')
+    @patch('handlers.earnings_update.prepare_metrics_for_cache')
+    @patch('handlers.earnings_update.extract_quarterly_trends')
+    @patch('handlers.earnings_update.get_financial_data')
+    @patch('handlers.earnings_update.metrics_table')
+    def test_no_lag_guard_when_earnings_date_none(
+        self, mock_table, mock_get_financial_data, mock_extract,
+        mock_prepare, mock_earnings, mock_dividends, mock_ttm,
+    ):
+        """When earnings_date is None (manual mode), the lag guard is a no-op."""
+        mock_get_financial_data.return_value = {
+            'raw_financials': {
+                'income_statement': [{'date': '2026-01-20'}],
+                'balance_sheet': [{'date': '2026-01-20'}],
+                'cash_flow': [{'date': '2026-01-20'}],
+            },
+            'currency_info': {'code': 'USD'},
+            'cache_key': 'v3:AAPL:2026',
+        }
+        mock_extract.return_value = {'quarters': [1]}
+        mock_prepare.return_value = MOCK_ITEMS
+        mock_earnings.return_value = []
+        mock_dividends.return_value = []
+        mock_ttm.return_value = {}
+        mock_table.update_item.return_value = {}
+
+        from handlers.earnings_update import _process_ticker
+        result = _process_ticker('AAPL')
+
+        assert result['status'] == 'success'
+        # Pipeline ran — guard was a no-op.
+        mock_extract.assert_called_once()
+        mock_prepare.assert_called_once()
+
+    @patch('handlers.earnings_update._process_ticker')
+    def test_handler_surfaces_propagation_lag_in_response(self, mock_process):
+        """Handler response surfaces tickers hit by FMP propagation lag."""
+        mock_process.return_value = {
+            'ticker': 'NFLX',
+            'status': 'fmp_propagation_lag',
+            'latest_statement_date': '2026-01-20',
+            'earnings_date': '2026-04-16',
+        }
+
+        from handlers.earnings_update import lambda_handler
+        result = lambda_handler({'tickers': ['NFLX']}, None)
+
+        assert result['propagation_lag'] == ['NFLX']

@@ -6,6 +6,50 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Force-Refresh FMP Cache on Earnings Day (2026-04-16)
+
+**Fixed**
+- `earnings_update` Lambda was ingesting stale financial statements for just-reported tickers because `utils/fmp_client.get_financial_data()` served cached FMP data (90-day TTL) instead of fetching the newly-available 10-Q numbers
+- Tonight's confirmation: NFLX/PLD/SCHW all got `[FMP_DEBUG] CACHE HIT` from a cache entry written 2026-02-07 — 68 days stale — so no Q1 2026 row landed in `metrics-history-dev` despite FMP's `/income-statement`, `/balance-sheet-statement`, and `/cash-flow-statement` endpoints already having the Q1 2026 data
+
+**Added**
+- `force_refresh: bool = False` kwarg on `utils.fmp_client.get_financial_data()` — when `True`, the DynamoDB cache read is skipped and FMP is fetched fresh. Fresh response is still written to cache for subsequent readers
+- `earnings_update._process_ticker` now passes `force_refresh=True` unconditionally — every ticker processed by the Lambda bypasses the stale cache
+- Propagation-lag guard: after the fresh FMP fetch, if `raw_financials.income_statement[0].date` is more than 10 days older than `earnings_date`, `_process_ticker` returns early with `status='fmp_propagation_lag'` rather than writing the stale snapshot back to cache (preserves correctness if FMP's inter-endpoint lag means calendar data is ahead of statement data)
+- New response field `propagation_lag: [ticker, ...]` surfaces lagged tickers in the Lambda response + SNS summary for operator visibility
+- 4 regression tests in `tests/unit/test_earnings_update.py::TestForceRefreshAndPropagationLag`:
+  - `test_process_ticker_passes_force_refresh_true`
+  - `test_propagation_lag_returns_early_with_lag_status`
+  - `test_no_lag_guard_when_earnings_date_none`
+  - `test_handler_surfaces_propagation_lag_in_response`
+- 1 new test file `tests/unit/test_fmp_client.py::test_force_refresh_skips_cache` verifies: cache read skipped, fresh FMP call made, cache still written after fetch
+
+**Design decisions**
+- **`force_refresh` default is `False`** — preserves zero-behavior-change for `action_group_handler.get_financial_analysis` (user-facing Bedrock expert agents — latency-critical), `report_generator.prepare_data` (local Claude Code mode), and `sp500_pipeline` (batch ingestion). Verified all call sites use positional args only, cannot accidentally trigger
+- **Kwarg in `fmp_client.py`** (not handler-side cache bust) — keeps cache-key construction (`v3:{ticker}:{fiscal_year}`) encapsulated in one place. Protects against `CACHE_VERSION` drift silently breaking a handler-side hardcode
+- **Propagation-lag guard over aggressive retries** — rather than polling FMP or rolling back cache writes, we defer to the next scheduled run (earnings_update fires twice daily). Worst case: one Lambda cycle delay
+- **No Terraform or IAM change** — existing Lambda role already has `DeleteItem` on `buffett-dev-*` tables via wildcard (not currently used by this change, but ready for future follow-up)
+
+**Backfill**
+- Pre-deploy stale cache entries for NFLX/PLD/SCHW (cached 2026-02-07) explicitly deleted before re-invoking `earnings_update` in manual mode
+- Post-backfill verification: `metrics-history-dev` rows with `fiscal_date='2026-03-31'` present for all three tickers with all 7 categorized buckets populated
+
+**Files modified**
+- `chat-api/backend/src/utils/fmp_client.py` (+18 / -9 lines across `get_financial_data`)
+- `chat-api/backend/src/handlers/earnings_update.py` (+36 / -3 lines: signature change, propagation-lag guard, response surfacing)
+- `chat-api/backend/tests/unit/test_earnings_update.py` (+121 lines, 4 new tests, 0 weakened assertions)
+- `chat-api/backend/tests/unit/test_fmp_client.py` (NEW, 45 lines)
+
+**Verification**
+- 22/22 targeted unit tests pass (17 pre-existing + 4 new + 1 new fmp_client)
+- 421/421 broader unit subtree passes (no regressions in other `get_financial_data` callers)
+- 5/5 FMP integration tests pass (live FMP + DynamoDB)
+- All 13 Lambda zips rebuild cleanly (`utils/fmp_client.py` is copied into every function package)
+- Manual-mode `{"tickers":[...]}` invocation for NFLX/PLD/SCHW produces fresh Q1 2026 rows in `metrics-history-dev`
+
+**Future-feature enablement**
+- This fix is the data-pipeline prerequisite for the planned "AI-generated earnings summary + user push notifications on earnings day" feature. That feature will read directly from `metrics-history-dev` on earnings day to produce plain-English summaries and flag anomalous signals (margin expansion, FCF inflection, leverage changes, capex spikes)
+
 ### After-Hours Earnings Reporter Fix (2026-04-16)
 
 **Fixed**
