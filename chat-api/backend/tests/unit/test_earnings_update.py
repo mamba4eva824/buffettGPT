@@ -101,20 +101,21 @@ class TestEarningsUpdateHandler:
         assert result['tickers_checked'] == 0
         assert 'No tickers' in result.get('message', '')
 
+    @patch('handlers.earnings_update._ensure_feed_record')
     @patch('handlers.earnings_update._already_updated_since_earnings')
     @patch('handlers.earnings_update._check_earnings_calendar')
     @patch('handlers.earnings_update._process_ticker')
-    def test_auto_mode_skips_already_processed(self, mock_process, mock_calendar, mock_fresh):
+    def test_auto_mode_skips_already_processed(self, mock_process, mock_calendar, mock_fresh, mock_ensure):
         """Auto mode skips tickers already processed for this earnings cycle."""
         mock_calendar.return_value = {
             'reported': [
-                {'ticker': 'AAPL', 'earnings_date': '2026-04-02'},
-                {'ticker': 'MSFT', 'earnings_date': '2026-04-02'},
+                {'ticker': 'AAPL', 'earnings_date': '2026-04-02', 'eps_actual': 2.84},
+                {'ticker': 'MSFT', 'earnings_date': '2026-04-02', 'eps_actual': 3.95},
             ],
             'upcoming': [],
         }
         # AAPL already processed, MSFT not
-        mock_fresh.side_effect = lambda t, d: t == 'AAPL'
+        mock_fresh.side_effect = lambda t, d, fmp_actual: t == 'AAPL'
         mock_process.return_value = {'ticker': 'MSFT', 'status': 'success'}
 
         from handlers.earnings_update import lambda_handler
@@ -279,3 +280,122 @@ class TestCalendarCheck:
         # RANDOMTICKER should be filtered out
         all_tickers = [r['ticker'] for r in result['reported']] + [r['ticker'] for r in result['upcoming']]
         assert 'RANDOMTICKER' not in all_tickers
+
+
+class TestAlreadyUpdatedSinceEarnings:
+    """Test _already_updated_since_earnings freshness check (post-fix behavior)."""
+
+    @patch('handlers.earnings_update.metrics_table')
+    def test_skips_when_fmp_actual_present_and_stored_matches(self, mock_table):
+        """Returns True when FMP has actual AND stored row matches the announced cycle."""
+        mock_table.query.return_value = {
+            'Items': [{
+                'ticker': 'NFLX',
+                'earnings_events': {
+                    'earnings_date': '2026-04-16',
+                    'eps_actual': Decimal('1.25'),
+                    'eps_estimated': Decimal('1.20'),
+                },
+            }],
+        }
+
+        from handlers.earnings_update import _already_updated_since_earnings
+        assert _already_updated_since_earnings('NFLX', '2026-04-16', 1.25) is True
+
+    @patch('handlers.earnings_update.metrics_table')
+    def test_processes_when_fmp_actual_none(self, mock_table):
+        """Returns False when FMP has no eps_actual yet (after-hours reporter, morning run)."""
+        # Even if metrics row looks "fresh" for some prior cycle, FMP-actual=None wins.
+        mock_table.query.return_value = {
+            'Items': [{
+                'ticker': 'NFLX',
+                'earnings_events': {
+                    'earnings_date': '2026-01-20',
+                    'eps_actual': Decimal('0.56'),
+                },
+            }],
+        }
+
+        from handlers.earnings_update import _already_updated_since_earnings
+        assert _already_updated_since_earnings('NFLX', '2026-04-16', None) is False
+
+    @patch('handlers.earnings_update.metrics_table')
+    def test_processes_when_stored_date_mismatch(self, mock_table):
+        """Returns False when stored cycle != announced cycle (prior-cycle false positive guard)."""
+        mock_table.query.return_value = {
+            'Items': [{
+                'ticker': 'NFLX',
+                'earnings_events': {
+                    'earnings_date': '2026-01-20',
+                    'eps_actual': Decimal('0.56'),
+                },
+            }],
+        }
+
+        from handlers.earnings_update import _already_updated_since_earnings
+        assert _already_updated_since_earnings('NFLX', '2026-04-16', 1.25) is False
+
+    @patch('handlers.earnings_update.metrics_table')
+    def test_normalizes_date_with_time_suffix(self, mock_table):
+        """Returns True even if stored date has a time suffix (e.g. '2026-04-16 16:00:00')."""
+        mock_table.query.return_value = {
+            'Items': [{
+                'ticker': 'NFLX',
+                'earnings_events': {
+                    'earnings_date': '2026-04-16 16:00:00',
+                    'eps_actual': Decimal('1.25'),
+                },
+            }],
+        }
+
+        from handlers.earnings_update import _already_updated_since_earnings
+        assert _already_updated_since_earnings('NFLX', '2026-04-16', 1.25) is True
+
+
+class TestEnsureFeedRecord:
+    """Test _ensure_feed_record date-mismatch guard."""
+
+    @patch('handlers.earnings_update.aggregates_table')
+    @patch('handlers.earnings_update.metrics_table')
+    def test_refuses_on_earnings_date_mismatch(self, mock_metrics, mock_aggregates):
+        """Refuses to write a feed record when stored metrics earnings_date doesn't match."""
+        mock_aggregates.get_item.return_value = {}  # No existing feed record
+        mock_metrics.query.return_value = {
+            'Items': [{
+                'ticker': 'NFLX',
+                'earnings_events': {
+                    'earnings_date': '2026-01-20',
+                    'eps_actual': Decimal('0.56'),
+                    'eps_estimated': Decimal('0.50'),
+                },
+            }],
+        }
+
+        from handlers.earnings_update import _ensure_feed_record
+        _ensure_feed_record('NFLX', '2026-04-16')
+
+        mock_aggregates.put_item.assert_not_called()
+
+    @patch('handlers.earnings_update.aggregates_table')
+    @patch('handlers.earnings_update.metrics_table')
+    def test_writes_when_earnings_date_matches(self, mock_metrics, mock_aggregates):
+        """Writes a feed record when stored metrics earnings_date matches the request."""
+        mock_aggregates.get_item.return_value = {}  # No existing feed record
+        mock_metrics.query.return_value = {
+            'Items': [{
+                'ticker': 'NFLX',
+                'earnings_events': {
+                    'earnings_date': '2026-04-16',
+                    'eps_actual': Decimal('1.25'),
+                    'eps_estimated': Decimal('1.20'),
+                },
+            }],
+        }
+
+        from handlers.earnings_update import _ensure_feed_record
+        _ensure_feed_record('NFLX', '2026-04-16')
+
+        mock_aggregates.put_item.assert_called_once()
+        written = mock_aggregates.put_item.call_args.kwargs['Item']
+        assert written['ticker'] == 'NFLX'
+        assert written['earnings_date'] == '2026-04-16'

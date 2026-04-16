@@ -6,6 +6,38 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### After-Hours Earnings Reporter Fix (2026-04-16)
+
+**Fixed**
+- Afternoon EventBridge run of `earnings_update` Lambda was silently skipping after-hours reporters (NFLX, PLD, SCHW on 2026-04-16) and writing stale prior-cycle values into `buffett-dev-sp500-aggregates` (EARNINGS_RECENT rows)
+- Root cause: `_already_updated_since_earnings` compared epoch `cached_at > local-midnight(earnings_date)`, which was already "after" the earnings date during the 13:30 UTC morning run. The only guard (`eps_actual is not None`) passed because the prior cycle's actual was still on the latest metrics-history row
+- Side-effect: `_ensure_feed_record` then copied the prior-cycle eps values into an aggregate row keyed under today's `earnings_date`, surfacing stale numbers on the Earnings Tracker dashboard
+
+**Changed**
+- Freshness check now gates on FMP's own `epsActual` field (authoritative "quarter has been reported" signal) — no more `cached_at` epoch math
+- `_already_updated_since_earnings(ticker, earnings_date, fmp_eps_actual)` skips only when all three hold: (1) FMP has eps_actual populated, (2) stored `earnings_events.earnings_date[:10]` matches the announced cycle, (3) stored `eps_actual` is not None
+- Three-way skip loop in `lambda_handler`: `fmp_eps_actual is None` → `skipped_awaiting_fmp` (no feed-record write); cycle already captured → `skipped_fresh` (safe to ensure feed record); else → process
+- `_ensure_feed_record` hardened with an `earnings_date[:10]` equality guard that WARN-logs and refuses to write a stale aggregate row when the latest metrics-history row belongs to a prior cycle
+
+**Added**
+- `skipped_awaiting_fmp` list in Lambda response JSON alongside `skipped_already_processed`
+- 6 regression tests in `tests/unit/test_earnings_update.py`:
+  - `TestAlreadyUpdatedSinceEarnings` (4 tests): happy path, FMP `epsActual=None` defer, stored-date mismatch process, time-suffix normalization
+  - `TestEnsureFeedRecord` (2 tests): refuse on date mismatch, write on date match
+
+**Backfill**
+- NFLX, PLD, SCHW re-processed via manual-mode invocation `{"tickers":["NFLX","PLD","SCHW"]}` post-deploy to correct the stale `EARNINGS_RECENT#2026-04-16#<ticker>` aggregate rows
+
+**Files modified**
+- `chat-api/backend/src/handlers/earnings_update.py` (+42 / -26 lines across 5 functions)
+- `chat-api/backend/tests/unit/test_earnings_update.py` (+128 / -3 lines, 1 test signature updated for 3-arg `side_effect`, 2 new test classes)
+
+**Verification**
+- 17/17 unit tests in `test_earnings_update.py` pass
+- 416/416 unit subtree tests pass (no regressions)
+- `build/earnings_update.zip` packages cleanly
+- Manual-mode bypass preserved — manual invocation cannot reach either freshness check or feed-record guard
+
 ### getHistoricalValuation Market Intel Tool (2026-04-10)
 
 **Added**

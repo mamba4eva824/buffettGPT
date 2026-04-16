@@ -146,6 +146,7 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
             'fmp_ticker': fmp_symbol,
             'earnings_date': earnings_date,
             'eps_estimated': entry.get('epsEstimated'),
+            'eps_actual': entry.get('epsActual'),
             'revenue_estimated': entry.get('revenueEstimated'),
         }
 
@@ -167,43 +168,42 @@ def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
 # ---------------------------------------------------------------------------
 # Freshness Check — Skip Already-Processed Tickers
 # ---------------------------------------------------------------------------
-def _already_updated_since_earnings(ticker: str, earnings_date: str) -> bool:
+def _already_updated_since_earnings(ticker: str, earnings_date: str, fmp_eps_actual) -> bool:
     """
-    Check if this ticker was already processed after its earnings_date.
+    Check if this ticker was already processed for the announced earnings cycle.
 
-    Looks at cached_at on the latest quarter in metrics-history.
-    If cached_at > earnings_date (as epoch > date), the ticker was already
-    updated for this earnings cycle — skip it.
+    Skip iff ALL three hold:
+      1. FMP reports an eps_actual for the quarter (quarter has been reported).
+      2. Stored earnings_events.earnings_date matches the announced cycle.
+      3. Stored earnings_events.eps_actual is not None (we captured the actual).
     """
+    if fmp_eps_actual is None:
+        return False
+
     try:
         response = metrics_table.query(
             KeyConditionExpression=boto3.dynamodb.conditions.Key('ticker').eq(ticker),
             ScanIndexForward=False,
             Limit=1,
-            ProjectionExpression='ticker, cached_at, earnings_events',
+            ProjectionExpression='ticker, earnings_events',
         )
         items = response.get('Items', [])
         if not items:
             return False
 
-        item = items[0]
-        cached_at = item.get('cached_at')
-        if not cached_at:
+        ee = items[0].get('earnings_events', {}) or {}
+        stored_date = ee.get('earnings_date', '') or ''
+        if stored_date[:10] != earnings_date[:10]:
             return False
 
-        # Convert earnings_date to epoch for comparison
-        from datetime import datetime
-        earnings_epoch = datetime.strptime(earnings_date, '%Y-%m-%d').timestamp()
+        if ee.get('eps_actual') is None:
+            return False
 
-        # If the item was cached after the earnings date, it's already been processed
-        if float(cached_at) > earnings_epoch:
-            ee = item.get('earnings_events', {})
-            # Double-check: does it actually have eps_actual? (not just an estimate)
-            if ee.get('eps_actual') is not None:
-                logger.debug(f"{ticker}: already updated after {earnings_date} (cached_at={cached_at})")
-                return True
-
-        return False
+        logger.debug(
+            f"{ticker}: already updated for earnings_date={earnings_date} "
+            f"(stored eps_actual={ee.get('eps_actual')})"
+        )
+        return True
 
     except Exception as e:
         logger.warning(f"Freshness check failed for {ticker}: {e}")
@@ -473,6 +473,14 @@ def _ensure_feed_record(ticker: str, earnings_date: str) -> None:
             except (json.JSONDecodeError, TypeError):
                 ee = {}
 
+        stored_date = ee.get('earnings_date', '')[:10] if ee.get('earnings_date') else ''
+        if stored_date != earnings_date[:10]:
+            logger.warning(
+                f"_ensure_feed_record: {ticker} stored earnings_date={stored_date!r} "
+                f"does not match requested {earnings_date!r}; refusing to write stale feed record"
+            )
+            return
+
         eps_actual = ee.get('eps_actual')
         eps_estimated = ee.get('eps_estimated')
 
@@ -592,9 +600,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     else:
         calendar = _check_earnings_calendar(lookback_days)
         reported = calendar['reported']
-        # Build earnings_date lookup for freshness check
+        # Build earnings_date + FMP eps_actual lookup for freshness check
         for r in reported:
-            earnings_dates_by_ticker[r['ticker']] = r['earnings_date']
+            earnings_dates_by_ticker[r['ticker']] = {
+                'earnings_date': r['earnings_date'],
+                'fmp_eps_actual': r.get('eps_actual'),
+            }
         tickers_to_process = sorted(set(r['ticker'] for r in reported))
         if include_upcoming:
             response['upcoming'] = calendar['upcoming']
@@ -618,11 +629,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Filter out tickers already processed for this earnings cycle.
     # Skipped tickers still get feed records written (for the dashboard).
     skipped_fresh = []
+    skipped_awaiting_fmp = []
     if not manual_tickers:  # Only skip in auto mode — manual mode always processes
         filtered = []
         for ticker in tickers_to_process:
-            earnings_date = earnings_dates_by_ticker.get(ticker, '')
-            if earnings_date and _already_updated_since_earnings(ticker, earnings_date):
+            earnings_info = earnings_dates_by_ticker.get(ticker, {})
+            earnings_date = earnings_info.get('earnings_date', '')
+            fmp_eps_actual = earnings_info.get('fmp_eps_actual')
+            if fmp_eps_actual is None:
+                # FMP hasn't propagated actuals yet — defer to next run. Do NOT
+                # write a feed record (would pollute aggregates with stale data).
+                skipped_awaiting_fmp.append(ticker)
+            elif earnings_date and _already_updated_since_earnings(ticker, earnings_date, fmp_eps_actual):
                 skipped_fresh.append(ticker)
                 # Still write a feed record from existing metrics-history data
                 _ensure_feed_record(ticker, earnings_date)
@@ -631,9 +649,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if skipped_fresh:
             logger.info(f"Skipping {len(skipped_fresh)} already-processed tickers "
                         f"(feed records ensured): {skipped_fresh}")
+        if skipped_awaiting_fmp:
+            logger.info(f"Deferring {len(skipped_awaiting_fmp)} tickers awaiting FMP actuals: "
+                        f"{skipped_awaiting_fmp}")
         tickers_to_process = filtered
 
     response['skipped_already_processed'] = skipped_fresh
+    response['skipped_awaiting_fmp'] = skipped_awaiting_fmp
 
     # Process each ticker
     for i, ticker in enumerate(tickers_to_process):
