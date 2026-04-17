@@ -24,6 +24,14 @@ from .logger import get_logger
 logger = get_logger(__name__)
 
 
+# Threshold for detecting suspect balance sheet data from FMP.
+# If abs(total_equity) < SUSPECT_EQUITY_TO_REVENUE_RATIO * abs(revenue) for the
+# current quarter, the balance sheet is likely corrupted upstream (seen in the
+# wild with SCHW Q1 2026 — equity $2.7M vs revenue $3.1B, ~1000x too small).
+# Reused by earnings_update.py as a write-gate.
+SUSPECT_EQUITY_TO_REVENUE_RATIO = 0.01
+
+
 def safe_divide(numerator, denominator, default=0.0):
     """Safely divide two numbers, returning default if denominator is 0 or None."""
     try:
@@ -602,7 +610,7 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         # Return calculations (annualized for quarterly data)
         # Minimum denominator threshold: 1% of revenue guards against near-zero
         # denominators that produce extreme ratios (e.g., airlines during COVID)
-        min_denom = abs(revenue) * 0.01 if revenue else 1e6
+        min_denom = abs(revenue) * SUSPECT_EQUITY_TO_REVENUE_RATIO if revenue else 1e6
         roa = round(safe_divide(net_income * 4, total_assets) * 100, 1)  # Annualized
         if abs(total_equity) < min_denom:
             roe = None
@@ -833,7 +841,7 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
             ni_2y = extract_value(income_statement, 'netIncome', i + 8, 0)
             eq_2y = extract_value(balance_sheet, 'totalStockholdersEquity', i + 8, 0)
             roe_2y = safe_divide(ni_2y * 4, eq_2y) * 100 if eq_2y else 0
-            trends['roe_change_2yr'].append(round(roe - roe_2y, 1))
+            trends['roe_change_2yr'].append(round(roe - roe_2y, 1) if roe is not None else None)
         else:
             trends['roe_change_2yr'].append(None)
 

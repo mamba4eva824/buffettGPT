@@ -520,3 +520,217 @@ class TestForceRefreshAndPropagationLag:
         result = lambda_handler({'tickers': ['NFLX']}, None)
 
         assert result['propagation_lag'] == ['NFLX']
+
+
+class TestNarrowScopeAndSanityGates:
+    """Regression tests for narrow-scope writes + sanity/no-new-quarter gates."""
+
+    def test_narrow_scope_writes_only_latest_quarter(self):
+        """AC-1: default mode writes exactly 1 row (the reported quarter)."""
+        import handlers.earnings_update as eu
+
+        items = [
+            {'ticker': 'NFLX', 'fiscal_date': '2025-06-30', 'revenue_profit': {'revenue': 100},
+             'balance_sheet': {'total_equity': 10}, 'fiscal_year': 2025, 'fiscal_quarter': 'Q2'},
+            {'ticker': 'NFLX', 'fiscal_date': '2025-09-30', 'revenue_profit': {'revenue': 120},
+             'balance_sheet': {'total_equity': 12}, 'fiscal_year': 2025, 'fiscal_quarter': 'Q3'},
+            {'ticker': 'NFLX', 'fiscal_date': '2025-12-31', 'revenue_profit': {'revenue': 140},
+             'balance_sheet': {'total_equity': 14}, 'fiscal_year': 2025, 'fiscal_quarter': 'Q4'},
+            {'ticker': 'NFLX', 'fiscal_date': '2026-04-10', 'revenue_profit': {'revenue': 160},
+             'balance_sheet': {'total_equity': 16}, 'earnings_events': {'earnings_date': '2026-04-16'},
+             'fiscal_year': 2026, 'fiscal_quarter': 'Q1'},
+        ]
+        with patch('handlers.earnings_update.get_financial_data', return_value={
+                    'raw_financials': {'income_statement': [{'date': '2026-04-10'}]},
+                    'currency_info': {'code': 'USD'}, 'cache_key': 'v3:NFLX:2026'}), \
+             patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
+             patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
+             patch('handlers.earnings_update.fetch_earnings', return_value=[]), \
+             patch('handlers.earnings_update.fetch_dividends', return_value=[]), \
+             patch('handlers.earnings_update.fetch_ttm_valuations', return_value={}), \
+             patch('handlers.earnings_update._get_stored_max_fiscal_date', return_value='2025-12-31'), \
+             patch.object(eu.metrics_table, 'update_item') as mock_update:
+            result = eu._process_ticker('NFLX', earnings_date='2026-04-16')
+
+        assert result['status'] == 'success'
+        assert result['quarters_written'] == 1
+        assert mock_update.call_count == 1
+        written_key = mock_update.call_args.kwargs['Key']
+        assert written_key == {'ticker': 'NFLX', 'fiscal_date': '2026-04-10'}
+
+    def test_suspect_data_skips_write(self):
+        """AC-3: SCHW-style corrupted balance sheet triggers fmp_suspect_data, no write."""
+        import handlers.earnings_update as eu
+
+        items = [
+            # Previous quarters are fine (won't be inspected since gate only checks latest)
+            {'ticker': 'SCHW', 'fiscal_date': '2025-12-31', 'revenue_profit': {'revenue': 3100000000},
+             'balance_sheet': {'total_equity': 49000000000}, 'fiscal_year': 2025, 'fiscal_quarter': 'Q4'},
+            # Latest quarter: equity $2.7M vs revenue $3.1B — ratio ~0.00087, far below 0.01
+            {'ticker': 'SCHW', 'fiscal_date': '2026-04-10', 'revenue_profit': {'revenue': 3100000000},
+             'balance_sheet': {'total_equity': 2700000},
+             'earnings_events': {'earnings_date': '2026-04-16'},
+             'fiscal_year': 2026, 'fiscal_quarter': 'Q1'},
+        ]
+        with patch('handlers.earnings_update.get_financial_data', return_value={
+                    'raw_financials': {'income_statement': [{'date': '2026-04-10'}]},
+                    'currency_info': {'code': 'USD'}, 'cache_key': 'v3:SCHW:2026'}), \
+             patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
+             patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
+             patch('handlers.earnings_update.fetch_earnings', return_value=[]), \
+             patch('handlers.earnings_update.fetch_dividends', return_value=[]), \
+             patch('handlers.earnings_update.fetch_ttm_valuations', return_value={}), \
+             patch.object(eu.metrics_table, 'update_item') as mock_update:
+            result = eu._process_ticker('SCHW', earnings_date='2026-04-16')
+
+        assert result['status'] == 'fmp_suspect_data'
+        assert result['latest_fiscal_date'] == '2026-04-10'
+        assert mock_update.call_count == 0
+
+    def test_no_new_quarter_skips_write(self):
+        """AC-4a: FMP's latest fiscal_date matches stored max, but earnings_events.earnings_date mismatches."""
+        import handlers.earnings_update as eu
+
+        items = [
+            {'ticker': 'PLD', 'fiscal_date': '2025-12-31',
+             'revenue_profit': {'revenue': 2000000000},
+             'balance_sheet': {'total_equity': 53000000000},
+             'earnings_events': {'earnings_date': '2026-01-05'},  # old cycle
+             'fiscal_year': 2025, 'fiscal_quarter': 'Q4'},
+        ]
+        with patch('handlers.earnings_update.get_financial_data', return_value={
+                    'raw_financials': {'income_statement': [{'date': '2025-12-31'}]},
+                    'currency_info': {'code': 'USD'}, 'cache_key': 'v3:PLD:2026'}), \
+             patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
+             patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
+             patch('handlers.earnings_update.fetch_earnings', return_value=[]), \
+             patch('handlers.earnings_update.fetch_dividends', return_value=[]), \
+             patch('handlers.earnings_update.fetch_ttm_valuations', return_value={}), \
+             patch('handlers.earnings_update._get_stored_max_fiscal_date', return_value='2025-12-31'), \
+             patch.object(eu.metrics_table, 'update_item') as mock_update:
+            result = eu._process_ticker('PLD', earnings_date='2026-01-07')
+
+        assert result['status'] == 'fmp_no_new_quarter'
+        assert mock_update.call_count == 0
+
+    def test_earnings_date_missing_skips_write(self):
+        """AC-4b: FMP has latest fiscal_date matching stored max, but earnings_events.earnings_date is missing."""
+        import handlers.earnings_update as eu
+
+        items = [
+            {'ticker': 'FOO', 'fiscal_date': '2025-12-31',
+             'revenue_profit': {'revenue': 1000000000},
+             'balance_sheet': {'total_equity': 5000000000},
+             'earnings_events': {},  # no earnings_date
+             'fiscal_year': 2025, 'fiscal_quarter': 'Q4'},
+        ]
+        with patch('handlers.earnings_update.get_financial_data', return_value={
+                    'raw_financials': {'income_statement': [{'date': '2025-12-31'}]},
+                    'currency_info': {'code': 'USD'}, 'cache_key': 'v3:FOO:2026'}), \
+             patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
+             patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
+             patch('handlers.earnings_update.fetch_earnings', return_value=[]), \
+             patch('handlers.earnings_update.fetch_dividends', return_value=[]), \
+             patch('handlers.earnings_update.fetch_ttm_valuations', return_value={}), \
+             patch('handlers.earnings_update._get_stored_max_fiscal_date', return_value='2025-12-31'), \
+             patch.object(eu.metrics_table, 'update_item') as mock_update:
+            result = eu._process_ticker('FOO', earnings_date='2026-01-07')
+
+        assert result['status'] == 'fmp_earnings_date_missing'
+        assert mock_update.call_count == 0
+
+    def test_full_reingest_writes_all_quarters(self):
+        """AC-6: full_reingest=True preserves original 20-row write behavior."""
+        import handlers.earnings_update as eu
+
+        # Generate 20 quarters with the latest at 2026-04-10 (within 10 days of earnings_date).
+        # Use sortable date strings: most recent first, walking backward ~90 days each quarter.
+        items = [
+            {'ticker': 'AAPL',
+             'fiscal_date': f'20{21 + q//4:02d}-{["04-10", "01-10", "10-10", "07-10"][q % 4]}'
+                            if q < 20 else '2026-04-10',
+             'revenue_profit': {'revenue': 100000000000},
+             'balance_sheet': {'total_equity': 60000000000},
+             'fiscal_year': 2021 + q // 4, 'fiscal_quarter': f'Q{(q % 4) + 1}'}
+            for q in range(20)
+        ]
+        # Override item[0] to ensure latest_item = 2026-04-10 deterministically
+        items[0] = {'ticker': 'AAPL', 'fiscal_date': '2026-04-10',
+                    'revenue_profit': {'revenue': 100000000000},
+                    'balance_sheet': {'total_equity': 60000000000},
+                    'fiscal_year': 2026, 'fiscal_quarter': 'Q1'}
+        with patch('handlers.earnings_update.get_financial_data', return_value={
+                    'raw_financials': {'income_statement': [{'date': '2026-04-10'}]},
+                    'currency_info': {'code': 'USD'}, 'cache_key': 'v3:AAPL:2026'}), \
+             patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
+             patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
+             patch('handlers.earnings_update.fetch_earnings', return_value=[]), \
+             patch('handlers.earnings_update.fetch_dividends', return_value=[]), \
+             patch('handlers.earnings_update.fetch_ttm_valuations', return_value={}), \
+             patch.object(eu.metrics_table, 'update_item') as mock_update:
+            result = eu._process_ticker('AAPL', earnings_date='2026-04-16', full_reingest=True)
+
+        assert result['status'] == 'success'
+        assert result['quarters_written'] == 20
+        assert mock_update.call_count == 20
+
+
+class TestFeatureExtractorNoneGuard:
+    """Regression tests for feature_extractor None-safety (tonight's SCHW crash)."""
+
+    def test_roe_change_2yr_handles_none_roe(self):
+        """AC-5: when roe is None (corrupted balance sheet), roe_change_2yr returns None, not TypeError."""
+        from utils.feature_extractor import extract_quarterly_trends
+
+        # Build a minimal raw_financials with SCHW-style corrupted Q1 equity
+        # but healthy Q1-2y earlier (normal equity) to force `roe=None` current + `roe_2y=float` prior.
+        # Each list is newest-first per FMP convention; index 0 = latest, index 8 = 2y ago.
+        now = [{'date': '2026-03-31', 'netIncome': 1500000000, 'revenue': 3100000000, 'grossProfit': 2500000000,
+                'operatingIncome': 1500000000, 'ebitda': 2000000000,
+                'researchAndDevelopmentExpenses': 0, 'depreciationAndAmortization': 200000000,
+                'interestExpense': 100000000, 'incomeTaxExpense': 400000000, 'epsdiluted': 0.80,
+                'weightedAverageShsOutDil': 1800000000, 'weightedAverageShsOut': 1800000000}]
+        # 7 fill quarters between now and 2y ago (index 1-7) — minimal structure
+        filler_inc = [{'date': f'2025-{12-q:02d}-31', 'netIncome': 1200000000, 'revenue': 2900000000,
+                       'grossProfit': 2400000000, 'operatingIncome': 1200000000, 'ebitda': 1700000000,
+                       'researchAndDevelopmentExpenses': 0, 'depreciationAndAmortization': 200000000,
+                       'interestExpense': 100000000, 'incomeTaxExpense': 300000000, 'epsdiluted': 0.67,
+                       'weightedAverageShsOutDil': 1800000000, 'weightedAverageShsOut': 1800000000}
+                      for q in range(1, 8)]
+        two_years_ago = [{'date': '2024-03-31', 'netIncome': 1100000000, 'revenue': 2500000000,
+                          'grossProfit': 2000000000, 'operatingIncome': 1100000000, 'ebitda': 1500000000,
+                          'researchAndDevelopmentExpenses': 0, 'depreciationAndAmortization': 200000000,
+                          'interestExpense': 100000000, 'incomeTaxExpense': 300000000, 'epsdiluted': 0.61,
+                          'weightedAverageShsOutDil': 1800000000, 'weightedAverageShsOut': 1800000000}]
+        income = now + filler_inc + two_years_ago
+        # CORRUPTED balance sheet for Q0 only (equity $2.7M, $1000x too small)
+        bs_now = [{'date': '2026-03-31', 'totalStockholdersEquity': 2700000,
+                   'totalAssets': 3400000, 'totalDebt': 7800000,
+                   'cashAndCashEquivalents': 3560000, 'totalCurrentAssets': 3000000,
+                   'totalCurrentLiabilities': 1000000, 'longTermDebt': 5000000,
+                   'shortTermDebt': 2800000, 'totalLiabilities': 2700000}]
+        filler_bs = [{'date': f'2025-{12-q:02d}-31', 'totalStockholdersEquity': 48000000000,
+                      'totalAssets': 500000000000, 'totalDebt': 30000000000,
+                      'cashAndCashEquivalents': 60000000000, 'totalCurrentAssets': 200000000000,
+                      'totalCurrentLiabilities': 100000000000, 'longTermDebt': 25000000000,
+                      'shortTermDebt': 5000000000, 'totalLiabilities': 450000000000}
+                     for q in range(1, 8)]
+        bs_2y = [{'date': '2024-03-31', 'totalStockholdersEquity': 42000000000,
+                  'totalAssets': 480000000000, 'totalDebt': 28000000000,
+                  'cashAndCashEquivalents': 55000000000, 'totalCurrentAssets': 190000000000,
+                  'totalCurrentLiabilities': 95000000000, 'longTermDebt': 23000000000,
+                  'shortTermDebt': 5000000000, 'totalLiabilities': 430000000000}]
+        balance = bs_now + filler_bs + bs_2y
+        cf_all = [{'date': x['date'], 'operatingCashFlow': 1400000000, 'capitalExpenditure': -150000000,
+                   'freeCashFlow': 1250000000, 'dividendsPaid': -200000000, 'commonStockRepurchased': -500000000,
+                   'depreciationAndAmortization': 200000000, 'stockBasedCompensation': 80000000}
+                  for x in income]
+
+        raw = {'balance_sheet': balance, 'income_statement': income, 'cash_flow': cf_all}
+
+        # This should NOT raise TypeError
+        trends = extract_quarterly_trends(raw)
+
+        # roe_change_2yr for index 0 should be None (roe is None for Q0, roe_2y is a float)
+        assert 'roe_change_2yr' in trends
+        assert trends['roe_change_2yr'][0] is None

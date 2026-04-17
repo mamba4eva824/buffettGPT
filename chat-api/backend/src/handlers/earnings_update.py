@@ -47,7 +47,7 @@ from utils.fmp_client import (
     fetch_dividends,
     fetch_ttm_valuations,
 )
-from utils.feature_extractor import extract_quarterly_trends, prepare_metrics_for_cache
+from utils.feature_extractor import extract_quarterly_trends, prepare_metrics_for_cache, SUSPECT_EQUITY_TO_REVENUE_RATIO
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -210,16 +210,45 @@ def _already_updated_since_earnings(ticker: str, earnings_date: str, fmp_eps_act
         return False  # On error, process the ticker
 
 
+def _get_stored_max_fiscal_date(ticker: str) -> Optional[str]:
+    """
+    Return the latest fiscal_date already stored in metrics-history for this ticker,
+    or None if the ticker has no existing rows (first-ever run).
+    """
+    try:
+        response = metrics_table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key('ticker').eq(ticker),
+            ScanIndexForward=False,
+            Limit=1,
+            ProjectionExpression='fiscal_date',
+        )
+        items = response.get('Items', [])
+        if not items:
+            return None
+        return items[0].get('fiscal_date')
+    except Exception as e:
+        logger.warning(f"_get_stored_max_fiscal_date failed for {ticker}: {e}")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Per-Ticker Processing
 # ---------------------------------------------------------------------------
-def _process_ticker(ticker: str, earnings_date: Optional[str] = None) -> Dict[str, Any]:
+def _process_ticker(
+    ticker: str,
+    earnings_date: Optional[str] = None,
+    full_reingest: bool = False,
+) -> Dict[str, Any]:
     """
     Fetch full financials + earnings + dividends + TTM for a single ticker
     and update all categories in metrics-history via update_item.
 
     When earnings_date is provided, force-refreshes the FMP cache and validates
     fresh data reflects the reported quarter.
+
+    When full_reingest is True, writes ALL 20 quarters (backward-compatible with
+    the original batch-ingest behavior). When False (default), writes only the
+    reported quarter after sanity + no-new-quarter gates.
 
     Returns a summary dict for the response.
     """
@@ -305,14 +334,74 @@ def _process_ticker(ticker: str, earnings_date: Optional[str] = None) -> Dict[st
     except Exception as e:
         logger.warning(f"Failed to fetch TTM for {ticker}: {e}")
 
-    # 6. Write all categories via update_item (preserves existing attributes)
-    _update_items(items)
+    # 6. Narrow-scope write (default) OR full reingest (operator opt-in)
+    latest_item = max(items, key=lambda x: x.get('fiscal_date', ''))
+
+    if full_reingest:
+        _update_items(items)
+        logger.info(f"{ticker}: full reingest — wrote {len(items)} quarters")
+    else:
+        # Gate 1: Suspect-data sanity check on the reported quarter's balance sheet.
+        # If equity is implausibly small relative to revenue, FMP's current-quarter
+        # response is likely corrupted (tonight's SCHW crash source).
+        balance_sheet = latest_item.get('balance_sheet', {}) or {}
+        revenue_profit = latest_item.get('revenue_profit', {}) or {}
+        total_equity = balance_sheet.get('total_equity')
+        revenue = revenue_profit.get('revenue')
+
+        if (total_equity is not None and revenue is not None
+                and abs(revenue) > 0
+                and abs(total_equity) < abs(revenue) * SUSPECT_EQUITY_TO_REVENUE_RATIO):
+            logger.warning(
+                f"{ticker}: suspect FMP balance sheet — equity={total_equity} vs "
+                f"revenue={revenue} (ratio {abs(total_equity)/abs(revenue):.5f} < "
+                f"{SUSPECT_EQUITY_TO_REVENUE_RATIO}); refusing to write"
+            )
+            result['status'] = 'fmp_suspect_data'
+            result['latest_fiscal_date'] = latest_item.get('fiscal_date')
+            result['total_equity'] = float(total_equity) if total_equity is not None else None
+            result['revenue'] = float(revenue) if revenue is not None else None
+            return result
+
+        # Gate 2: No-new-quarter check — FMP may return the same fiscal_date we
+        # already have stored. Distinguish three sub-cases via earnings_events.earnings_date:
+        #   - Missing earnings_date → skip as fmp_earnings_date_missing
+        #   - Mismatched earnings_date → skip as fmp_no_new_quarter (FMP lag)
+        #   - Matched earnings_date → proceed (restatement / idempotent rewrite)
+        if earnings_date:
+            stored_max = _get_stored_max_fiscal_date(ticker)
+            latest_fd = latest_item.get('fiscal_date')
+            if stored_max and latest_fd == stored_max:
+                ee = latest_item.get('earnings_events', {}) or {}
+                stored_ee_date = (ee.get('earnings_date') or '')[:10]
+                input_ed = earnings_date[:10]
+                if not stored_ee_date:
+                    logger.warning(
+                        f"{ticker}: FMP latest fiscal_date={latest_fd} matches stored max, "
+                        f"but earnings_events.earnings_date is missing — FMP press-release lag"
+                    )
+                    result['status'] = 'fmp_earnings_date_missing'
+                    result['latest_fiscal_date'] = latest_fd
+                    return result
+                if stored_ee_date != input_ed:
+                    logger.warning(
+                        f"{ticker}: FMP latest fiscal_date={latest_fd} matches stored max, "
+                        f"but earnings_events.earnings_date={stored_ee_date!r} does not match "
+                        f"input earnings_date={input_ed!r} — FMP has not advanced past prior cycle"
+                    )
+                    result['status'] = 'fmp_no_new_quarter'
+                    result['latest_fiscal_date'] = latest_fd
+                    return result
+                # Matched — proceed (restatement or idempotent re-write)
+
+        _update_items([latest_item])
+        logger.info(f"{ticker}: narrow-scope write — wrote 1 row ({latest_item.get('fiscal_date')})")
 
     # 7. Build result summary
     latest = max(items, key=lambda x: x.get('fiscal_date', ''))
     ee = latest.get('earnings_events', {})
     result.update({
-        'quarters_written': len(items),
+        'quarters_written': len(items) if full_reingest else 1,
         'latest_fiscal_date': latest.get('fiscal_date'),
         'latest_fiscal_quarter': latest.get('fiscal_quarter'),
         'earnings_date': ee.get('earnings_date'),
@@ -588,6 +677,18 @@ def _publish_sns_summary(response: Dict[str, Any]) -> None:
                 f"Tickers checked: {checked}\n"
                 f"Tickers updated ({updated}): {tickers_list}"
             )
+            suspect = response.get('suspect_data', [])
+            no_new = response.get('no_new_quarter', [])
+            missing = response.get('earnings_date_missing', [])
+            extra_parts = []
+            if suspect:
+                extra_parts.append(f"Suspect data ({len(suspect)}): {', '.join(suspect)}")
+            if no_new:
+                extra_parts.append(f"No new quarter ({len(no_new)}): {', '.join(no_new)}")
+            if missing:
+                extra_parts.append(f"Earnings date missing ({len(missing)}): {', '.join(missing)}")
+            if extra_parts:
+                message = message + "\n" + "\n".join(extra_parts)
 
         _get_sns_client().publish(
             TopicArn=SNS_TOPIC_ARN,
@@ -611,6 +712,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     manual_tickers = event.get('tickers')
     lookback_days = event.get('lookback_days', 2)
     include_upcoming = event.get('include_upcoming', True)
+    full_reingest = bool(event.get('full_reingest', False))
 
     response = {
         'mode': 'manual' if manual_tickers else 'auto',
@@ -697,7 +799,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         try:
             ticker_earnings_info = earnings_dates_by_ticker.get(ticker, {})
-            result = _process_ticker(ticker, earnings_date=ticker_earnings_info.get('earnings_date'))
+            result = _process_ticker(
+                ticker,
+                earnings_date=ticker_earnings_info.get('earnings_date'),
+                full_reingest=full_reingest,
+            )
             response['results'].append(result)
             if result['status'] == 'success':
                 response['tickers_updated'].append(ticker)
@@ -719,6 +825,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     response['propagation_lag'] = [
         r['ticker'] for r in response['results']
         if r.get('status') == 'fmp_propagation_lag'
+    ]
+    response['suspect_data'] = [
+        r['ticker'] for r in response['results']
+        if r.get('status') == 'fmp_suspect_data'
+    ]
+    response['no_new_quarter'] = [
+        r['ticker'] for r in response['results']
+        if r.get('status') == 'fmp_no_new_quarter'
+    ]
+    response['earnings_date_missing'] = [
+        r['ticker'] for r in response['results']
+        if r.get('status') == 'fmp_earnings_date_missing'
     ]
     response['total_failures'] = len(response['failures'])
 
