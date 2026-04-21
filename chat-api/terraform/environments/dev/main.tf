@@ -183,7 +183,8 @@ module "lambda" {
   log_retention_days  = 7  # Short retention for dev
 
   reserved_concurrency = {
-    analysis_followup  = 10  # Increased for production traffic
+    # analysis_followup concurrency is now set directly on the Docker Lambda
+    # resource in analysis_followup_docker.tf (reserved_concurrent_executions=10).
     sp500_eod_ingest   = 1   # Prevent duplicate parallel runs
   }
 

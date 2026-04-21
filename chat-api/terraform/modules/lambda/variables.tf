@@ -107,6 +107,13 @@ variable "followup_action_image_tag" {
   default     = "v1.0.0"
 }
 
+# Analysis Followup Variables
+variable "analysis_followup_image_tag" {
+  description = "Docker image tag for analysis-followup Lambda (SSE streaming via FastAPI + LWA)"
+  type        = string
+  default     = "latest"
+}
+
 variable "create_followup_action_lambda" {
   description = "Whether to create the followup action Lambda. Set to false on first deploy until Docker image is pushed to ECR."
   type        = bool
