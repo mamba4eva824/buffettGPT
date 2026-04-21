@@ -6,6 +6,16 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Staging Sync — Phase 1 Infra Catch-up (2026-04-20)
+
+**Changed**
+- Staging branch caught up to dev (46 commits) — infra and shared modules merged in
+- All new feature flags explicitly disabled in `terraform/environments/staging/main.tf` (earnings_feed routes, watchlist routes, EOD ingest schedule, earnings update schedule, pipeline notifications) — to be enabled in Phases 2 and 3 of the dev→staging sync
+- Preserved staging-only infra: CloudFront + password gate, FriendsAndFamilyTesting tag, PITR, 14-day retention, 500K token limit, free-tier Market Intelligence access
+
+**Notes**
+- No new market-intelligence features in this commit — all dev's MI work (getHistoricalValuation tool, EOD pipeline, earnings update gates) lands in staging branch via this merge but stays gated behind the disabled flags until Phase 2/3
+
 ### Narrow-Scope Writes + Sanity Gates + None-Guard (2026-04-17)
 
 **Fixed**
