@@ -6,6 +6,233 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Narrow-Scope Writes + Sanity Gates + None-Guard (2026-04-17)
+
+**Fixed**
+- `earnings_update` Lambda crashed on SCHW Q1 2026 ingestion with `TypeError: unsupported operand type(s) for -: 'NoneType' and 'float'` at `feature_extractor.py:836` — crash site was `trends['roe_change_2yr'].append(round(roe - roe_2y, 1))` where `roe=None` was silently set upstream by the `min_denom` guard (lines 605-610) because FMP returned a corrupted Q1 2026 balance sheet (equity $2.7M, ~1000x too small)
+- Root cause exposed by tonight's earlier `force_refresh=True` change (commit `5e81ccb`) — the pre-existing 90-day cache had been masking this latent bug by serving clean pre-earnings snapshots
+
+**Architectural change**
+- `earnings_update._process_ticker` now writes only the reported quarter's row to `metrics-history-dev` (1 row per successful run) instead of overwriting all 20 quarters on every EventBridge trigger
+- Rationale: EventBridge semantic is "new earnings event → append the new quarter." Prior quarters were written correctly months ago when *they* were the latest; re-writing them on every earnings day exposed the Lambda to prior-quarter FMP corruption and obscured data lineage
+- Preserves data integrity: any historical row that was correct stays correct forever unless explicitly refreshed via operator opt-in
+
+**Added — three new safety gates**
+
+1. **Suspect-data gate** (`status='fmp_suspect_data'`): if `abs(total_equity) < SUSPECT_EQUITY_TO_REVENUE_RATIO * abs(revenue)` on the current quarter's balance sheet, the Lambda refuses to write (prevents corrupted FMP data from contaminating the DB). Threshold is `0.01` shared between `feature_extractor.py` and `earnings_update.py` via the new `SUSPECT_EQUITY_TO_REVENUE_RATIO` constant
+2. **No-new-quarter gate** (`status='fmp_no_new_quarter'`): if FMP's `latest_item.fiscal_date` matches the stored max in metrics-history AND the `earnings_events.earnings_date` doesn't match the input earnings_date, the Lambda defers (FMP hasn't propagated the new 10-Q yet)
+3. **Earnings-date-missing gate** (`status='fmp_earnings_date_missing'`): if `earnings_events.earnings_date` is missing entirely on the latest row, the Lambda defers (press release lag)
+
+**Added — tactical crash fix**
+- `feature_extractor.py:836` now guards `roe_change_2yr` against `roe=None`: `round(roe - roe_2y, 1) if roe is not None else None`. Cheap crash prevention for any caller that consumes `extract_quarterly_trends` (includes `sp500_pipeline`, `sp500_backfill`, `action_group_handler`, `report_generator`)
+
+**Added — operator escape hatch**
+- Manual-mode event payload now honors `{"tickers": [...], "full_reingest": true}` — writes all 20 quarters as the old behavior did, for cases where an operator needs to deliberately refresh historical rows (e.g., FMP restatement)
+- Default manual invocation (`{"tickers": [...]}`) uses narrow-scope behavior
+
+**Added — observability**
+- Lambda response now surfaces three new lists: `suspect_data: [...]`, `no_new_quarter: [...]`, `earnings_date_missing: [...]`
+- SNS summary email conditionally appends non-empty lists so operators see blocked tickers without checking CloudWatch
+- CloudWatch logs emit WARN messages on each gate trip with exact values (`equity=$X vs revenue=$Y, ratio=Z`, `fiscal_date=X, stored earnings_date=Y, input=Z`)
+
+**Added — 6 regression tests**
+- `TestNarrowScopeAndSanityGates` (5 tests): narrow-scope writes exactly 1 row; suspect-data skips write; no-new-quarter skips write; earnings-date-missing skips write; full_reingest writes 20
+- `TestFeatureExtractorNoneGuard` (1 test): `roe_change_2yr` returns None instead of raising TypeError when roe is None (reproduces tonight's SCHW crash with synthetic corrupted fixture)
+
+**Design decisions**
+- **Narrow-scope by default, full_reingest opt-in**: matches EventBridge semantics without breaking operator workflows
+- **`feature_extractor` still runs on all 20 quarters**: needed to compute YoY/QoQ deltas for the reported quarter (needs prior quarters as context). Only the *write* is narrowed
+- **Suspect threshold 0.01 (equity < 1% of revenue)**: SCHW Q1 2026 sat at ratio ~0.00087 (well below). No known S&P 500 ticker legitimately falls near this threshold. If false positives appear, relax in a follow-up
+- **Gate ordering: suspect → no-new-quarter → write**: SCHW trips suspect, returns immediately. PLD-style FMP lag trips no-new-quarter. NFLX-style fresh quarter passes both
+- **Zero Terraform or IAM changes**: `DeleteItem` already granted via wildcard but not needed here (we skip writes, don't delete). `Query` already in use for the new `_get_stored_max_fiscal_date` helper
+
+**Scope limits (intentional)**
+- `sp500_pipeline` and `sp500_backfill` untouched — they're designed for full-history ingest
+- `action_group_handler` and `report_generator` unchanged — they only *read* metrics-history, so narrow-scope writes don't affect them (verified by 421-test unit suite baseline + 6 new tests = 427 passing)
+- Manual-mode propagation-lag guard for PLD-style cases deferred (operator can use `full_reingest: true` if needed)
+- Future AI earnings-summary feature deferred
+
+**Operator runbook**
+- **Reprocess a single ticker** (e.g., after suspect_data trip clears):
+  ```bash
+  aws lambda invoke --function-name buffett-dev-earnings-update \
+    --cli-binary-format raw-in-base64-out \
+    --payload '{"tickers":["SCHW"]}' /tmp/out.json
+  ```
+- **Full 20-quarter refresh** (FMP restatement, data repair):
+  ```bash
+  aws lambda invoke --function-name buffett-dev-earnings-update \
+    --cli-binary-format raw-in-base64-out \
+    --payload '{"tickers":["SCHW"], "full_reingest": true}' /tmp/out.json
+  ```
+- **Verify suspect-data skip**: check CloudWatch log group `/aws/lambda/buffett-dev-earnings-update` for `WARN ... suspect FMP balance sheet`
+
+**Files modified**
+- `chat-api/backend/src/utils/feature_extractor.py` (+7/-2 lines: constant + None-guard)
+- `chat-api/backend/src/handlers/earnings_update.py` (+120/-5 lines: narrow-scope block + gates + full_reingest flag + response surfacing + SNS extension)
+- `chat-api/backend/tests/unit/test_earnings_update.py` (+214 lines: 6 new tests in 2 new classes)
+
+**Verification**
+- 28/28 targeted tests pass (22 pre-existing + 6 new)
+- 427/427 broader unit subtree pass (no regressions in any `feature_extractor` or `earnings_update` consumer)
+- All 13 Lambda zips rebuild cleanly
+- Python syntax clean
+
+### Force-Refresh FMP Cache on Earnings Day (2026-04-16)
+
+**Fixed**
+- `earnings_update` Lambda was ingesting stale financial statements for just-reported tickers because `utils/fmp_client.get_financial_data()` served cached FMP data (90-day TTL) instead of fetching the newly-available 10-Q numbers
+- Tonight's confirmation: NFLX/PLD/SCHW all got `[FMP_DEBUG] CACHE HIT` from a cache entry written 2026-02-07 — 68 days stale — so no Q1 2026 row landed in `metrics-history-dev` despite FMP's `/income-statement`, `/balance-sheet-statement`, and `/cash-flow-statement` endpoints already having the Q1 2026 data
+
+**Added**
+- `force_refresh: bool = False` kwarg on `utils.fmp_client.get_financial_data()` — when `True`, the DynamoDB cache read is skipped and FMP is fetched fresh. Fresh response is still written to cache for subsequent readers
+- `earnings_update._process_ticker` now passes `force_refresh=True` unconditionally — every ticker processed by the Lambda bypasses the stale cache
+- Propagation-lag guard: after the fresh FMP fetch, if `raw_financials.income_statement[0].date` is more than 10 days older than `earnings_date`, `_process_ticker` returns early with `status='fmp_propagation_lag'` rather than writing the stale snapshot back to cache (preserves correctness if FMP's inter-endpoint lag means calendar data is ahead of statement data)
+- New response field `propagation_lag: [ticker, ...]` surfaces lagged tickers in the Lambda response + SNS summary for operator visibility
+- 4 regression tests in `tests/unit/test_earnings_update.py::TestForceRefreshAndPropagationLag`:
+  - `test_process_ticker_passes_force_refresh_true`
+  - `test_propagation_lag_returns_early_with_lag_status`
+  - `test_no_lag_guard_when_earnings_date_none`
+  - `test_handler_surfaces_propagation_lag_in_response`
+- 1 new test file `tests/unit/test_fmp_client.py::test_force_refresh_skips_cache` verifies: cache read skipped, fresh FMP call made, cache still written after fetch
+
+**Design decisions**
+- **`force_refresh` default is `False`** — preserves zero-behavior-change for `action_group_handler.get_financial_analysis` (user-facing Bedrock expert agents — latency-critical), `report_generator.prepare_data` (local Claude Code mode), and `sp500_pipeline` (batch ingestion). Verified all call sites use positional args only, cannot accidentally trigger
+- **Kwarg in `fmp_client.py`** (not handler-side cache bust) — keeps cache-key construction (`v3:{ticker}:{fiscal_year}`) encapsulated in one place. Protects against `CACHE_VERSION` drift silently breaking a handler-side hardcode
+- **Propagation-lag guard over aggressive retries** — rather than polling FMP or rolling back cache writes, we defer to the next scheduled run (earnings_update fires twice daily). Worst case: one Lambda cycle delay
+- **No Terraform or IAM change** — existing Lambda role already has `DeleteItem` on `buffett-dev-*` tables via wildcard (not currently used by this change, but ready for future follow-up)
+
+**Backfill**
+- Pre-deploy stale cache entries for NFLX/PLD/SCHW (cached 2026-02-07) explicitly deleted before re-invoking `earnings_update` in manual mode
+- Post-backfill verification: `metrics-history-dev` rows with `fiscal_date='2026-03-31'` present for all three tickers with all 7 categorized buckets populated
+
+**Files modified**
+- `chat-api/backend/src/utils/fmp_client.py` (+18 / -9 lines across `get_financial_data`)
+- `chat-api/backend/src/handlers/earnings_update.py` (+36 / -3 lines: signature change, propagation-lag guard, response surfacing)
+- `chat-api/backend/tests/unit/test_earnings_update.py` (+121 lines, 4 new tests, 0 weakened assertions)
+- `chat-api/backend/tests/unit/test_fmp_client.py` (NEW, 45 lines)
+
+**Verification**
+- 22/22 targeted unit tests pass (17 pre-existing + 4 new + 1 new fmp_client)
+- 421/421 broader unit subtree passes (no regressions in other `get_financial_data` callers)
+- 5/5 FMP integration tests pass (live FMP + DynamoDB)
+- All 13 Lambda zips rebuild cleanly (`utils/fmp_client.py` is copied into every function package)
+- Manual-mode `{"tickers":[...]}` invocation for NFLX/PLD/SCHW produces fresh Q1 2026 rows in `metrics-history-dev`
+
+**Future-feature enablement**
+- This fix is the data-pipeline prerequisite for the planned "AI-generated earnings summary + user push notifications on earnings day" feature. That feature will read directly from `metrics-history-dev` on earnings day to produce plain-English summaries and flag anomalous signals (margin expansion, FCF inflection, leverage changes, capex spikes)
+
+### After-Hours Earnings Reporter Fix (2026-04-16)
+
+**Fixed**
+- Afternoon EventBridge run of `earnings_update` Lambda was silently skipping after-hours reporters (NFLX, PLD, SCHW on 2026-04-16) and writing stale prior-cycle values into `buffett-dev-sp500-aggregates` (EARNINGS_RECENT rows)
+- Root cause: `_already_updated_since_earnings` compared epoch `cached_at > local-midnight(earnings_date)`, which was already "after" the earnings date during the 13:30 UTC morning run. The only guard (`eps_actual is not None`) passed because the prior cycle's actual was still on the latest metrics-history row
+- Side-effect: `_ensure_feed_record` then copied the prior-cycle eps values into an aggregate row keyed under today's `earnings_date`, surfacing stale numbers on the Earnings Tracker dashboard
+
+**Changed**
+- Freshness check now gates on FMP's own `epsActual` field (authoritative "quarter has been reported" signal) — no more `cached_at` epoch math
+- `_already_updated_since_earnings(ticker, earnings_date, fmp_eps_actual)` skips only when all three hold: (1) FMP has eps_actual populated, (2) stored `earnings_events.earnings_date[:10]` matches the announced cycle, (3) stored `eps_actual` is not None
+- Three-way skip loop in `lambda_handler`: `fmp_eps_actual is None` → `skipped_awaiting_fmp` (no feed-record write); cycle already captured → `skipped_fresh` (safe to ensure feed record); else → process
+- `_ensure_feed_record` hardened with an `earnings_date[:10]` equality guard that WARN-logs and refuses to write a stale aggregate row when the latest metrics-history row belongs to a prior cycle
+
+**Added**
+- `skipped_awaiting_fmp` list in Lambda response JSON alongside `skipped_already_processed`
+- 6 regression tests in `tests/unit/test_earnings_update.py`:
+  - `TestAlreadyUpdatedSinceEarnings` (4 tests): happy path, FMP `epsActual=None` defer, stored-date mismatch process, time-suffix normalization
+  - `TestEnsureFeedRecord` (2 tests): refuse on date mismatch, write on date match
+
+**Backfill**
+- NFLX, PLD, SCHW re-processed via manual-mode invocation `{"tickers":["NFLX","PLD","SCHW"]}` post-deploy to correct the stale `EARNINGS_RECENT#2026-04-16#<ticker>` aggregate rows
+
+**Files modified**
+- `chat-api/backend/src/handlers/earnings_update.py` (+42 / -26 lines across 5 functions)
+- `chat-api/backend/tests/unit/test_earnings_update.py` (+128 / -3 lines, 1 test signature updated for 3-arg `side_effect`, 2 new test classes)
+
+**Verification**
+- 17/17 unit tests in `test_earnings_update.py` pass
+- 416/416 unit subtree tests pass (no regressions)
+- `build/earnings_update.zip` packages cleanly
+- Manual-mode bypass preserved — manual invocation cannot reach either freshness check or feed-record guard
+
+### getHistoricalValuation Market Intel Tool (2026-04-10)
+
+**Added**
+- New inline Bedrock tool `getHistoricalValuation` in market intelligence chatbot — answers "is this stock cheap vs its own history?" in a single call
+- 9 frontend-parity valuation metrics with per-metric statistics (min/max/mean/median/percentile/z-score):
+  - Lower-is-cheaper: `pe_ratio`, `pb_ratio`, `ev_to_ebitda`, `price_to_fcf`
+  - Higher-is-cheaper: `earnings_yield`, `fcf_yield`, `roic`, `roe`, `roa`
+- `VALUATION_METRIC_META` constant in [market_intel_tools.py](../../chat-api/backend/src/utils/market_intel_tools.py) with `label`, `plain_english`, `source`, `direction` per metric — retail-friendly translation lives inside tool responses, not the system prompt
+- `_compute_metric_stats` helper — pure function computing statistics, polarity-aware assessment (cheap/fair/expensive), and retail-friendly verdict strings using direction-specific phrasing ("Cheaper than X%" for multiples, "Higher than X% (good for the investor)" for yields/returns)
+- `_derive_pb_ratio` helper — computes P/B from `market_valuation.market_cap / balance_sheet.total_equity` (not stored directly in metrics-history)
+- Sector-relative context in responses: sector name, company count, sector medians from `buffett-dev-sp500-aggregates`
+- System prompt: one line added to market intel supervisor's tool bullet list (zero translation instructions — all plain-English carried in tool response to keep baseline inference cheap)
+- 7 unit tests in `TestGetHistoricalValuation` covering happy path, polarity inversion, sparse history, missing ticker, pb_ratio derivation with `total_equity=0` edge case, and price_to_fcf derivation
+- Executive + technical overview doc: [docs/market-intelligence/historical-valuation-tool.md](./historical-valuation-tool.md)
+
+**Design decisions**
+- **S&P 500 only.** No FMP fallback — entirely served from `metrics-history-{env}` and `sp500-aggregates` DynamoDB tables (zero FMP quota consumed per call)
+- **price_to_fcf derivation.** Derived as `100 / fcf_yield` rather than stored, since `fcf_yield` is already in the historical backfill while `price_to_fcf` only exists on the latest quarter
+- **`ev_to_sales` and `ev_to_fcf` intentionally dropped** — not shown on frontend Valuation tab, and not computed historically by `sp500_backfill.compute_quarterly_valuations`
+- **Quarters clamped to [1, 20]** — prevents `quarters=0` Python slice quirk and negative values
+- **Graceful sparse-history handling** — if `market_valuation` hasn't been backfilled for a ticker, `pe_ratio`/`ev_to_ebitda`/yields return `assessment: "insufficient_history"` with a clear verdict instead of erroring out. `roic`/`roe`/`roa` are always historically available since they're per-quarter features.
+
+**Token cost**
+- Tool spec adds ~337 tokens to baseline inference (paid on every chat turn)
+- Tool response avg ~1,260 tokens (paid only when tool is actually called)
+- Per-query cost at Claude Haiku 4.5 pricing: ~$0.0016
+
+**Files modified**
+- `chat-api/backend/src/utils/market_intel_tools.py` (+240 lines: constant, 2 helpers, handler, dispatcher entry)
+- `chat-api/backend/src/handlers/market_intel_chat.py` (toolSpec + 1-line system prompt bullet)
+- `chat-api/backend/src/utils/unified_tool_executor.py` (`MARKET_INTEL_TOOL_NAMES` set entry)
+- `chat-api/backend/tests/unit/test_market_intel_tools.py` (new `TestGetHistoricalValuation` class)
+
+**Verification**
+- 410 Python unit tests pass (includes 27 in `test_market_intel_tools.py`, 7 new)
+- Terraform validate: PASS
+- Lambda build: PASS (all 20+ zips rebuilt)
+- Sample queries against real dev DynamoDB confirmed for AAPL, MSFT, NVDA
+
+### EOD Ingest Date Fix + Schedule Change (2026-04-09)
+
+**Fixed**
+- EOD ingest Lambda was using yesterday's date (computed in UTC) instead of today's date in Eastern time
+- Since the schedule runs after market close, today's closing prices are already available
+- Now uses `zoneinfo.ZoneInfo("America/New_York")` to compute the correct trading day
+
+**Changed**
+- Moved EOD ingest schedule from 6 PM ET to 5 PM ET (`cron(0 17 ? * MON-FRI *)`)
+
+### Dynamic Market Holiday Calendar (2026-04-06)
+
+**Fixed**
+- Replaced hardcoded `US_MARKET_HOLIDAYS_MMDD` set with dynamic `_us_market_holidays(year)` computation
+- Good Friday 2026 (Apr 3) was missed because calendar was stuck on 2025 dates (`04-18`)
+- All 10 NYSE holidays now computed algorithmically: floating holidays via nth-weekday, Good Friday via Anonymous Gregorian Easter algorithm
+- Fixed-date holidays (New Year's, Juneteenth, July 4th, Christmas) include Saturday→Friday / Sunday→Monday observed-date shifts
+- Results cached per year for warm Lambda performance
+
+### EventBridge Scheduler Migration + Pipeline Notifications (2026-04-05)
+
+**Changed**
+- Migrated all 3 EventBridge schedules from `aws_cloudwatch_event_rule` (fixed UTC) to `aws_scheduler_schedule` with `America/New_York` timezone — eliminates DST drift
+- EOD ingest: `cron(0 18 ? * MON-FRI *)` at 6 PM ET (was 10 PM UTC)
+- Earnings post-close: `cron(0 17 ? * MON-FRI *)` at 5 PM ET (was 9 PM UTC)
+- Earnings post-open: `cron(30 11 ? * MON-FRI *)` at 11:30 AM ET (was 4:30 PM UTC)
+
+**Added**
+- `aws_scheduler_schedule_group` for market data pipelines (`{project}-{env}-market-data`)
+- Dedicated IAM execution role for EventBridge Scheduler (`scheduler.amazonaws.com`)
+- Earnings update DLQ: SQS queue + CloudWatch alarm (mirrors EOD ingest pattern)
+- SNS email notifications on pipeline success, skip, and failure for both Lambdas
+- DLQ CloudWatch alarms wired to SNS alerts topic for crash notifications
+- `sns:Publish` IAM permission for Lambda execution role
+- Enabled monitoring module in CI/CD pipeline (`enable_monitoring=true`)
+- `ALERT_EMAIL` GitHub secret for SNS subscription
+
+**Removed**
+- Legacy `aws_cloudwatch_event_rule`, `aws_cloudwatch_event_target`, `aws_lambda_permission` resources
+
 ### Staging Beta Deployment (2026-04-04)
 
 **Added**

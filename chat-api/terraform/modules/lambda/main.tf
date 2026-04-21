@@ -18,12 +18,8 @@ locals {
       memory_size = 256
       description = "AI search handler with streaming support"
     }
-    analysis_followup = {
-      handler     = "analysis_followup.lambda_handler"
-      timeout     = 60
-      memory_size = 256
-      description = "Follow-up question handler with session memory"
-    }
+    # analysis_followup migrated to Docker Lambda (see analysis_followup_docker.tf)
+    # Python zip runtime can't serialize generators for RESPONSE_STREAM; needs LWA.
     stripe_webhook_handler = {
       handler     = "stripe_webhook_handler.lambda_handler"
       timeout     = 30
@@ -56,6 +52,12 @@ locals {
       memory_size = 512
       description = "S&P 500 sector and index-level aggregate computation"
     }
+    earnings_feed_handler = {
+      handler     = "earnings_feed_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Earnings tracker dashboard API - recent results, upcoming calendar, season overview"
+    }
     market_intel_chat = {
       handler     = "market_intel_chat.lambda_handler"
       timeout     = 120
@@ -73,6 +75,12 @@ locals {
       timeout     = 900
       memory_size = 512
       description = "S&P 500 daily 4-hour candle ingestion after market close"
+    }
+    watchlist_handler = {
+      handler     = "watchlist_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "User watchlist API - add, list, and remove watched stocks"
     }
   }
 }

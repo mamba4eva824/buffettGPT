@@ -4,6 +4,7 @@ import { CATEGORIES } from './mockData';
 import { PANEL_MAP } from './panelMap';
 import useInsightsData from '../../hooks/useInsightsData';
 import sp500Companies from '../../data/sp500Companies.json';
+import InsightsChatPanel from './InsightsChatPanel';
 
 const VALID_TABS = new Set(CATEGORIES.map(c => c.id));
 const VALID_RANGES = new Set(['5Y', '3Y', '1Y']);
@@ -26,6 +27,7 @@ export default function ValueInsights() {
   });
   const [searchInput, setSearchInput] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(() => window.innerWidth >= 1024);
 
   // Sync state changes to URL search params
   useEffect(() => {
@@ -39,7 +41,7 @@ export default function ValueInsights() {
 
   const companyInfo = sp500Companies.find(c => c.ticker === ticker);
   const sector = companyInfo?.sector || '';
-  const { data, ratings, latestPrice, sectorAggregate, postEarnings, loading, error } = useInsightsData(ticker, sector);
+  const { data, ratings, latestPrice, sectorAggregate, postEarnings, executiveSummary, triggers, loading, error } = useInsightsData(ticker, sector);
 
   // Client-side fuzzy search over S&P 500 index
   const searchResults = useMemo(() => {
@@ -182,77 +184,103 @@ export default function ValueInsights() {
         </div>
       </div>
 
-      {/* Main scrollable content */}
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto">
-        {/* Page header */}
-        <header className="mb-8 md:mb-10">
-          <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-tight mb-1">
-            {category?.title}
-          </h1>
-          <p className="text-sand-500 dark:text-warm-300 font-medium max-w-xl text-sm">
-            {category?.description}
-          </p>
-        </header>
+      {/* Main content area with chat panel */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {/* Main scrollable content */}
+        <main className="flex-1 p-4 md:p-8 overflow-y-auto min-w-0 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-sand-300 dark:scrollbar-thumb-warm-700">
+          {/* Page header */}
+          <header className="mb-8 md:mb-10">
+            <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-tight mb-1">
+              {category?.title}
+            </h1>
+            <p className="text-sand-500 dark:text-warm-300 font-medium max-w-xl text-sm">
+              {category?.description}
+            </p>
+          </header>
 
-        {/* Loading state */}
-        {loading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-vi-gold/30 border-t-vi-gold rounded-full animate-spin" />
-              <span className="text-sm text-sand-500 dark:text-warm-300">Loading {ticker} data...</span>
+          {/* Loading state */}
+          {loading && (
+            <div className="flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-2 border-vi-gold/30 border-t-vi-gold rounded-full animate-spin" />
+                <span className="text-sm text-sand-500 dark:text-warm-300">Loading {ticker} data...</span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Error / no data state */}
-        {!loading && error && (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex flex-col items-center gap-2 text-center">
-              <span className="material-symbols-outlined text-3xl text-sand-400 dark:text-warm-500">
-                {error === 'no_data' ? 'search_off' : 'error_outline'}
+          {/* Error / no data state */}
+          {!loading && error && (
+            <div className="flex items-center justify-center py-20">
+              <div className="flex flex-col items-center gap-2 text-center">
+                <span className="material-symbols-outlined text-3xl text-sand-400 dark:text-warm-500">
+                  {error === 'no_data' ? 'search_off' : 'error_outline'}
+                </span>
+                <p className="text-sm font-semibold text-sand-600 dark:text-warm-200">
+                  {error === 'no_data'
+                    ? `No financial data available for ${ticker}`
+                    : 'Failed to load data'}
+                </p>
+                <p className="text-xs text-sand-400 dark:text-warm-400 max-w-xs">
+                  {error === 'no_data'
+                    ? 'This ticker may not have been processed yet. Try a major S&P 500 company.'
+                    : error}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Active category panel */}
+          {!loading && !error && data && PanelComponent && (
+            <PanelComponent
+              data={data}
+              ratings={ratings}
+              latestPrice={latestPrice}
+              postEarnings={postEarnings}
+              timeRange={timeRange}
+              sectorAggregate={sectorAggregate}
+              sector={sector}
+              onSelectCategory={setActiveCategory}
+              triggers={triggers}
+              executiveSummary={executiveSummary}
+            />
+          )}
+
+          {/* Footer */}
+          <footer className="mt-12 flex flex-col md:flex-row justify-between items-center text-sand-400 dark:text-warm-400 text-[10px] font-bold uppercase tracking-widest gap-2">
+            <div className="flex gap-8">
+              <span>Source: SEC Filings / FMP</span>
+              {data && <span>Quarters: {data.length}</span>}
+            </div>
+            <div className="flex gap-4">
+              <span className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full ${data ? 'bg-vi-sage' : 'bg-sand-300 dark:bg-warm-600'}`} />
+                {data ? 'Live Data' : 'No Data'}
               </span>
-              <p className="text-sm font-semibold text-sand-600 dark:text-warm-200">
-                {error === 'no_data'
-                  ? `No financial data available for ${ticker}`
-                  : 'Failed to load data'}
-              </p>
-              <p className="text-xs text-sand-400 dark:text-warm-400 max-w-xs">
-                {error === 'no_data'
-                  ? 'This ticker may not have been processed yet. Try a major S&P 500 company.'
-                  : error}
-              </p>
             </div>
-          </div>
-        )}
+          </footer>
+        </main>
 
-        {/* Active category panel */}
-        {!loading && !error && data && PanelComponent && (
-          <PanelComponent
-            data={data}
-            ratings={ratings}
-            latestPrice={latestPrice}
-            postEarnings={postEarnings}
-            timeRange={timeRange}
-            sectorAggregate={sectorAggregate}
-            sector={sector}
-            onSelectCategory={setActiveCategory}
-          />
-        )}
+        {/* Chat panel */}
+        <InsightsChatPanel
+          ticker={ticker}
+          activeCategory={activeCategory}
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+        />
+      </div>
 
-        {/* Footer */}
-        <footer className="mt-12 flex flex-col md:flex-row justify-between items-center text-sand-400 dark:text-warm-400 text-[10px] font-bold uppercase tracking-widest gap-2">
-          <div className="flex gap-8">
-            <span>Source: SEC Filings / FMP</span>
-            {data && <span>Quarters: {data.length}</span>}
-          </div>
-          <div className="flex gap-4">
-            <span className="flex items-center gap-1">
-              <span className={`w-2 h-2 rounded-full ${data ? 'bg-vi-sage' : 'bg-sand-300 dark:bg-warm-600'}`} />
-              {data ? 'Live Data' : 'No Data'}
-            </span>
-          </div>
-        </footer>
-      </main>
+      {/* Mobile floating chat button */}
+      {!isChatOpen && (
+        <button
+          onClick={() => setIsChatOpen(true)}
+          className="fixed bottom-6 right-6 z-40 lg:hidden
+            w-12 h-12 rounded-full bg-vi-gold text-[#402d00] shadow-lg
+            flex items-center justify-center
+            hover:bg-vi-gold/80 transition-colors"
+        >
+          <span className="material-symbols-outlined text-xl">chat</span>
+        </button>
+      )}
     </div>
   );
 }

@@ -114,6 +114,13 @@ variable "followup_action_image_tag" {
   default     = "v1.0.0"
 }
 
+# Analysis Followup Variables
+variable "analysis_followup_image_tag" {
+  description = "Docker image tag for analysis-followup Lambda (SSE streaming via FastAPI + LWA)"
+  type        = string
+  default     = "latest"
+}
+
 variable "create_followup_action_lambda" {
   description = "Whether to create the followup action Lambda. Set to false on first deploy until Docker image is pushed to ECR."
   type        = bool
@@ -152,6 +159,19 @@ variable "metrics_history_cache_table_arn" {
 
 variable "metrics_history_cache_table_name" {
   description = "Name of the metrics history cache DynamoDB table for followup-action Lambda env var"
+  type        = string
+  default     = ""
+}
+
+# Pipeline Notifications
+variable "enable_pipeline_notifications" {
+  description = "Enable SNS notifications for pipeline success/failure. Must be true when alerts_sns_topic_arn is provided."
+  type        = bool
+  default     = false
+}
+
+variable "alerts_sns_topic_arn" {
+  description = "ARN of the SNS topic for pipeline success/failure notifications. Empty string disables notifications."
   type        = string
   default     = ""
 }

@@ -281,6 +281,13 @@ export const CATEGORIES = [
     title: 'Earnings Quality',
     description: 'Real earnings power beyond GAAP — stock-based compensation and cash conversion analysis.',
   },
+  {
+    id: 'triggers',
+    label: 'Decision Triggers',
+    icon: 'flag',
+    title: 'Decision Triggers',
+    description: 'Actionable buy, sell, and hold conditions',
+  },
 ];
 
 // Format helpers

@@ -1,135 +1,195 @@
 # =============================================================================
-# EventBridge Schedule - S&P 500 EOD 4-Hour Candle Ingestion
+# EventBridge Scheduler — Market Data Pipelines
 # =============================================================================
-# Triggers the sp500_eod_ingest Lambda after US market close.
-# Schedule: 10 PM UTC Mon-Fri (6 PM ET, ~2 hours after market close)
-# This delay ensures FMP has processed and published the day's 4h candles.
-
-resource "aws_cloudwatch_event_rule" "sp500_eod_ingest_schedule" {
-  count = var.enable_eod_ingest_schedule ? 1 : 0
-
-  name                = "${var.project_name}-${var.environment}-sp500-eod-4h-ingest"
-  description         = "Daily S&P 500 4-hour candle ingestion after market close (10 PM UTC / 6 PM ET)"
-  schedule_expression = "cron(0 22 ? * MON-FRI *)"
-
-  tags = merge(
-    var.common_tags,
-    {
-      Name    = "${var.project_name}-${var.environment}-sp500-eod-4h-ingest"
-      Purpose = "Trigger daily 4h stock data ingestion"
-    }
-  )
-}
-
-resource "aws_cloudwatch_event_target" "sp500_eod_ingest_target" {
-  count = var.enable_eod_ingest_schedule ? 1 : 0
-
-  rule      = aws_cloudwatch_event_rule.sp500_eod_ingest_schedule[0].name
-  target_id = "sp500-eod-ingest-lambda"
-  arn       = aws_lambda_function.functions["sp500_eod_ingest"].arn
-  input     = jsonencode({})
-
-  retry_policy {
-    maximum_retry_attempts       = 2
-    maximum_event_age_in_seconds = 3600
-  }
-}
-
-resource "aws_lambda_permission" "allow_eventbridge_eod_ingest" {
-  count = var.enable_eod_ingest_schedule ? 1 : 0
-
-  statement_id  = "AllowEventBridgeInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.functions["sp500_eod_ingest"].function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.sp500_eod_ingest_schedule[0].arn
-}
-
-# =============================================================================
-# EventBridge Schedule - Earnings Update (2x daily)
-# =============================================================================
-# Checks FMP earnings calendar for recently reported S&P 500 companies,
-# fetches full financials + earnings + TTM, updates metrics-history.
+# Uses EventBridge Scheduler (not legacy CloudWatch Event Rules) for native
+# timezone support. All schedules run in America/New_York so cron times
+# automatically adjust for EDT/EST — no DST drift.
 #
-# Post-close: 9 PM UTC (6 PM ET) — catches after-hours earnings
-# Post-open:  4:30 PM UTC (11:30 AM ET) — catches pre-market earnings
+# Schedules:
+#   1. S&P 500 EOD 4h candle ingest — 5:00 PM ET Mon-Fri
+#   2. Earnings update post-close   — 5:00 PM ET Mon-Fri
+#   3. Earnings update post-open    — 9:30 AM ET Mon-Fri
 
-resource "aws_cloudwatch_event_rule" "earnings_update_post_close" {
-  count = var.enable_earnings_update_schedule ? 1 : 0
+# =============================================================================
+# IAM Role — EventBridge Scheduler Execution
+# =============================================================================
+# Scheduler assumes this role to invoke Lambda targets and deliver to DLQs.
 
-  name                = "${var.project_name}-${var.environment}-earnings-update-post-close"
-  description         = "Earnings update after market close (9 PM UTC / 6 PM ET)"
-  schedule_expression = "cron(0 21 ? * MON-FRI *)"
+data "aws_iam_policy_document" "scheduler_assume_role" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "scheduler_execution" {
+  count = (var.enable_eod_ingest_schedule || var.enable_earnings_update_schedule) ? 1 : 0
+
+  name               = "${var.project_name}-${var.environment}-scheduler-execution"
+  assume_role_policy = data.aws_iam_policy_document.scheduler_assume_role.json
 
   tags = merge(
     var.common_tags,
     {
-      Name    = "${var.project_name}-${var.environment}-earnings-update-post-close"
-      Purpose = "Trigger earnings update after market close"
+      Name    = "${var.project_name}-${var.environment}-scheduler-execution"
+      Purpose = "EventBridge Scheduler execution role for market data pipelines"
     }
   )
 }
 
-resource "aws_cloudwatch_event_rule" "earnings_update_post_open" {
-  count = var.enable_earnings_update_schedule ? 1 : 0
+resource "aws_iam_role_policy" "scheduler_invoke_lambda" {
+  count = (var.enable_eod_ingest_schedule || var.enable_earnings_update_schedule) ? 1 : 0
 
-  name                = "${var.project_name}-${var.environment}-earnings-update-post-open"
-  description         = "Earnings update after market open (4:30 PM UTC / 11:30 AM ET)"
-  schedule_expression = "cron(30 16 ? * MON-FRI *)"
+  name = "${var.project_name}-${var.environment}-scheduler-invoke-lambda"
+  role = aws_iam_role.scheduler_execution[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = ["lambda:InvokeFunction"]
+        Resource = [
+          aws_lambda_function.functions["sp500_eod_ingest"].arn,
+          aws_lambda_function.functions["earnings_update"].arn,
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = ["sqs:SendMessage"]
+        Resource = compact([
+          var.enable_eod_ingest_schedule ? aws_sqs_queue.eod_ingest_dlq[0].arn : "",
+          var.enable_earnings_update_schedule ? aws_sqs_queue.earnings_update_dlq[0].arn : "",
+        ])
+      }
+    ]
+  })
+}
+
+# =============================================================================
+# Schedule Group
+# =============================================================================
+
+resource "aws_scheduler_schedule_group" "market_data" {
+  count = (var.enable_eod_ingest_schedule || var.enable_earnings_update_schedule) ? 1 : 0
+
+  name = "${var.project_name}-${var.environment}-market-data"
 
   tags = merge(
     var.common_tags,
     {
-      Name    = "${var.project_name}-${var.environment}-earnings-update-post-open"
-      Purpose = "Trigger earnings update after market open"
+      Name    = "${var.project_name}-${var.environment}-market-data"
+      Purpose = "Schedule group for market data pipelines"
     }
   )
 }
 
-resource "aws_cloudwatch_event_target" "earnings_update_post_close_target" {
-  count = var.enable_earnings_update_schedule ? 1 : 0
+# =============================================================================
+# Schedule — S&P 500 EOD 4-Hour Candle Ingestion
+# =============================================================================
+# 5:00 PM ET Mon-Fri (~1 hour after market close at 4 PM ET).
 
-  rule      = aws_cloudwatch_event_rule.earnings_update_post_close[0].name
-  target_id = "earnings-update-post-close"
-  arn       = aws_lambda_function.functions["earnings_update"].arn
-  input     = jsonencode({})
+resource "aws_scheduler_schedule" "sp500_eod_ingest" {
+  count = var.enable_eod_ingest_schedule ? 1 : 0
 
-  retry_policy {
-    maximum_retry_attempts       = 2
-    maximum_event_age_in_seconds = 3600
+  name        = "${var.project_name}-${var.environment}-sp500-eod-4h-ingest"
+  group_name  = aws_scheduler_schedule_group.market_data[0].name
+  description = "Daily S&P 500 EOD price ingestion (5:00 PM ET, ~1h after market close)"
+
+  schedule_expression          = "cron(0 17 ? * MON-FRI *)"
+  schedule_expression_timezone = "America/New_York"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.functions["sp500_eod_ingest"].arn
+    role_arn = aws_iam_role.scheduler_execution[0].arn
+    input    = jsonencode({})
+
+    retry_policy {
+      maximum_retry_attempts       = 2
+      maximum_event_age_in_seconds = 3600
+    }
+
+    dead_letter_config {
+      arn = aws_sqs_queue.eod_ingest_dlq[0].arn
+    }
   }
 }
 
-resource "aws_cloudwatch_event_target" "earnings_update_post_open_target" {
+# =============================================================================
+# Schedule — Earnings Update Post-Close
+# =============================================================================
+# 5:00 PM ET Mon-Fri — catches after-hours earnings reported shortly after close.
+
+resource "aws_scheduler_schedule" "earnings_update_post_close" {
   count = var.enable_earnings_update_schedule ? 1 : 0
 
-  rule      = aws_cloudwatch_event_rule.earnings_update_post_open[0].name
-  target_id = "earnings-update-post-open"
-  arn       = aws_lambda_function.functions["earnings_update"].arn
-  input     = jsonencode({})
+  name        = "${var.project_name}-${var.environment}-earnings-update-post-close"
+  group_name  = aws_scheduler_schedule_group.market_data[0].name
+  description = "Earnings update after market close (5:00 PM ET)"
 
-  retry_policy {
-    maximum_retry_attempts       = 2
-    maximum_event_age_in_seconds = 3600
+  schedule_expression          = "cron(0 17 ? * MON-FRI *)"
+  schedule_expression_timezone = "America/New_York"
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.functions["earnings_update"].arn
+    role_arn = aws_iam_role.scheduler_execution[0].arn
+    input    = jsonencode({})
+
+    retry_policy {
+      maximum_retry_attempts       = 2
+      maximum_event_age_in_seconds = 3600
+    }
+
+    dead_letter_config {
+      arn = aws_sqs_queue.earnings_update_dlq[0].arn
+    }
   }
 }
 
-resource "aws_lambda_permission" "allow_eventbridge_earnings_post_close" {
+# =============================================================================
+# Schedule — Earnings Update Post-Open
+# =============================================================================
+# 9:30 AM ET Mon-Fri — catches pre-market earnings reported before/after open.
+
+resource "aws_scheduler_schedule" "earnings_update_post_open" {
   count = var.enable_earnings_update_schedule ? 1 : 0
 
-  statement_id  = "AllowEventBridgeEarningsPostClose"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.functions["earnings_update"].function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.earnings_update_post_close[0].arn
-}
+  name        = "${var.project_name}-${var.environment}-earnings-update-post-open"
+  group_name  = aws_scheduler_schedule_group.market_data[0].name
+  description = "Earnings update after market open (9:30 AM ET)"
 
-resource "aws_lambda_permission" "allow_eventbridge_earnings_post_open" {
-  count = var.enable_earnings_update_schedule ? 1 : 0
+  schedule_expression          = "cron(30 9 ? * MON-FRI *)"
+  schedule_expression_timezone = "America/New_York"
 
-  statement_id  = "AllowEventBridgeEarningsPostOpen"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.functions["earnings_update"].function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.earnings_update_post_open[0].arn
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_lambda_function.functions["earnings_update"].arn
+    role_arn = aws_iam_role.scheduler_execution[0].arn
+    input    = jsonencode({})
+
+    retry_policy {
+      maximum_retry_attempts       = 2
+      maximum_event_age_in_seconds = 3600
+    }
+
+    dead_letter_config {
+      arn = aws_sqs_queue.earnings_update_dlq[0].arn
+    }
+  }
 }

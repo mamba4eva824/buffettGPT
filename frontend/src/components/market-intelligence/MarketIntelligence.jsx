@@ -89,9 +89,13 @@ export default function MarketIntelligence({
     }
   }, [initialMessages]);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages (match main Chat: block end + short delay for paint)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length === 0) return;
+    const scrollTimeout = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 100);
+    return () => clearTimeout(scrollTimeout);
   }, [messages]);
 
   const sendMessage = useCallback(async (messageText) => {
@@ -247,91 +251,90 @@ export default function MarketIntelligence({
     </form>
   );
 
-  // Empty state — centered layout matching Chat mode
-  if (messages.length === 0 && !isStreaming) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 pb-24">
-        <div className="max-w-2xl w-full">
-          <div className="text-center mb-8">
-            <h2 className="text-xl font-bold text-sand-900 dark:text-warm-50 mb-2">
-              Market Intelligence
-            </h2>
-            <p className="text-sand-500 dark:text-warm-400 text-sm">
-              Ask questions about the S&P 500 — sectors, companies, rankings, trends, and earnings.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-6">
-            {SUGGESTED_QUERIES.map((query, i) => (
-              <button
-                key={i}
-                onClick={() => handleSuggestionClick(query)}
-                className="text-left px-4 py-3 rounded-xl border border-sand-200 dark:border-warm-700
-                  text-sm text-sand-700 dark:text-warm-200
-                  hover:bg-sand-50 dark:hover:bg-warm-800 hover:border-sand-300 dark:hover:border-warm-600
-                  transition-colors"
-              >
-                {query}
-              </button>
-            ))}
-          </div>
-          {inputBar}
-        </div>
+  const isEmptyLanding = messages.length === 0 && !isStreaming;
 
-        {error && (
-          <div className="max-w-2xl w-full mt-4">
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300">
-              {error}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Messages state — chat layout with pinned input
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 min-h-0">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex gap-3 max-w-3xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.role === 'assistant' && (
-              <div className="h-7 w-7 shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-xs">
-                MI
+      <div className="flex-1 overflow-y-auto min-h-0">
+        {isEmptyLanding ? (
+          <div className="min-h-full flex flex-col justify-center px-4 md:px-6 py-6">
+            <div className="max-w-2xl w-full mx-auto">
+              <div className="text-center mb-8">
+                <h2 className="text-xl font-bold text-sand-900 dark:text-warm-50 mb-2">
+                  Market Intelligence
+                </h2>
+                <p className="text-sand-500 dark:text-warm-400 text-sm">
+                  Ask questions about the S&P 500 — sectors, companies, rankings, trends, and earnings.
+                </p>
               </div>
-            )}
-            <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
-              msg.role === 'user'
-                ? 'bg-indigo-600 text-white max-w-[80%]'
-                : 'bg-sand-50 dark:bg-warm-900 text-sand-800 dark:text-warm-50 max-w-[90%]'
-            }`}>
-              {msg.role === 'user' ? (
-                <div className="whitespace-pre-wrap">{msg.content}</div>
-              ) : (
-                <TypewriterMessage
-                  content={msg.content}
-                  isNew={msg.isNew}
-                  tokenUsage={msg.tokenUsage}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {SUGGESTED_QUERIES.map((query, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => handleSuggestionClick(query)}
+                    className="text-left px-4 py-3 rounded-xl border border-sand-200 dark:border-warm-700
+                      text-sm text-sand-700 dark:text-warm-200
+                      hover:bg-sand-50 dark:hover:bg-warm-800 hover:border-sand-300 dark:hover:border-warm-600
+                      transition-colors"
+                  >
+                    {query}
+                  </button>
+                ))}
+              </div>
+              {error && (
+                <div className="mt-6">
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                    {error}
+                  </div>
+                </div>
               )}
             </div>
-            {msg.role === 'user' && user?.picture && (
-              <img src={user.picture} alt="" className="h-7 w-7 rounded-full shrink-0" />
-            )}
           </div>
-        ))}
+        ) : (
+          <div className="px-4 py-6 space-y-4 min-h-0">
+            {messages.map((msg, i) => (
+              <div key={i} className={`flex gap-3 max-w-3xl mx-auto ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {msg.role === 'assistant' && (
+                  <div className="h-7 w-7 shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-xs">
+                    MI
+                  </div>
+                )}
+                <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                  msg.role === 'user'
+                    ? 'bg-indigo-600 text-white max-w-[80%]'
+                    : 'bg-sand-50 dark:bg-warm-900 text-sand-800 dark:text-warm-50 max-w-[90%]'
+                }`}>
+                  {msg.role === 'user' ? (
+                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                  ) : (
+                    <TypewriterMessage
+                      content={msg.content}
+                      isNew={msg.isNew}
+                      tokenUsage={msg.tokenUsage}
+                    />
+                  )}
+                </div>
+                {msg.role === 'user' && user?.picture && (
+                  <img src={user.picture} alt="" className="h-7 w-7 rounded-full shrink-0" />
+                )}
+              </div>
+            ))}
 
-        {error && (
-          <div className="max-w-3xl mx-auto">
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300">
-              {error}
-            </div>
+            {error && (
+              <div className="max-w-3xl mx-auto">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 text-sm text-red-700 dark:text-red-300">
+                  {error}
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t border-sand-200 dark:border-warm-700 px-4 py-3">
+      <div className="shrink-0 border-t border-sand-100 dark:border-warm-800 p-4 md:p-4 pb-6 md:pb-4 transition-all duration-300 ease-in-out">
         {inputBar}
       </div>
     </div>
