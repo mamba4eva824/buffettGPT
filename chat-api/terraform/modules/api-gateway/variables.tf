@@ -180,3 +180,19 @@ variable "enable_value_insights_routes" {
   type        = bool
   default     = false
 }
+
+variable "enable_earnings_feed_routes" {
+  description = "Enable Earnings Feed dashboard API routes"
+  type        = bool
+  default     = false
+}
+
+# ============================================================================
+# Watchlist API Variables
+# ============================================================================
+
+variable "enable_watchlist_api_routes" {
+  description = "Enable watchlist management routes (add, list, remove stocks)"
+  type        = bool
+  default     = false
+}

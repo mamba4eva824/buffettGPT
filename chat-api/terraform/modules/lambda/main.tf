@@ -5,7 +5,7 @@ locals {
   # Core Lambda function configurations
   # Updated 2026-02: Removed WebSocket handlers and chat_http_handler (deprecated)
   # WebSocket infrastructure deprecated per WEBSOCKET_DEPRECATION_PLAN.md
-  lambda_configs = {
+  lambda_configs_base = {
     conversations_handler = {
       handler     = "conversations_handler.lambda_handler"
       timeout     = 30
@@ -18,12 +18,11 @@ locals {
       memory_size = 256
       description = "AI search handler with streaming support"
     }
-    analysis_followup = {
-      handler     = "analysis_followup.lambda_handler"
-      timeout     = 60
-      memory_size = 256
-      description = "Follow-up question handler with session memory"
-    }
+    # analysis_followup zip is conditionally added below — see analysis_followup_zip_config.
+    # Dev sets var.create_analysis_followup_docker=true and uses the Docker Lambda
+    # in analysis_followup_docker.tf (Python zip runtime can't serialize generators
+    # for RESPONSE_STREAM; LWA pattern needed). Staging keeps the zip until its
+    # ECR image is pushed.
     stripe_webhook_handler = {
       handler     = "stripe_webhook_handler.lambda_handler"
       timeout     = 30
@@ -56,6 +55,12 @@ locals {
       memory_size = 512
       description = "S&P 500 sector and index-level aggregate computation"
     }
+    earnings_feed_handler = {
+      handler     = "earnings_feed_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "Earnings tracker dashboard API - recent results, upcoming calendar, season overview"
+    }
     market_intel_chat = {
       handler     = "market_intel_chat.lambda_handler"
       timeout     = 120
@@ -74,7 +79,25 @@ locals {
       memory_size = 512
       description = "S&P 500 daily 4-hour candle ingestion after market close"
     }
+    watchlist_handler = {
+      handler     = "watchlist_handler.lambda_handler"
+      timeout     = 30
+      memory_size = 256
+      description = "User watchlist API - add, list, and remove watched stocks"
+    }
   }
+
+  # analysis_followup zip config — only included when Docker variant is disabled.
+  analysis_followup_zip_config = var.create_analysis_followup_docker ? {} : {
+    analysis_followup = {
+      handler     = "analysis_followup.lambda_handler"
+      timeout     = 60
+      memory_size = 256
+      description = "Follow-up question handler with session memory"
+    }
+  }
+
+  lambda_configs = merge(local.lambda_configs_base, local.analysis_followup_zip_config)
 }
 
 # ================================================

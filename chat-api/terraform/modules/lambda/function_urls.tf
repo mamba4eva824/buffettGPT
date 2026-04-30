@@ -3,13 +3,11 @@
 
 # NOTE: Prediction Ensemble Function URL is defined in prediction_ensemble_docker.tf (Docker-based)
 
-# Analysis Followup Function URL
-# SECURITY NOTE: authorization_type is NONE because this is an HTTP_PROXY target
-# for API Gateway REST API, which handles JWT auth via its own TOKEN authorizer.
-# The Lambda handler ALSO validates JWT independently (analysis_followup.py:794)
-# so direct Function URL access without a valid JWT returns 401.
-# See docs/api/SECURITY_REVIEW.md CRIT-2 for full analysis.
+# Analysis Followup Function URL — zip variant (used when create_analysis_followup_docker=false).
+# Docker variant lives in analysis_followup_docker.tf. Python zip runtime can't serialize
+# generators for true streaming; staging keeps zip until ECR image is pushed.
 resource "aws_lambda_function_url" "analysis_followup" {
+  count              = var.create_analysis_followup_docker ? 0 : 1
   function_name      = aws_lambda_function.functions["analysis_followup"].function_name
   authorization_type = "NONE"
   invoke_mode        = "RESPONSE_STREAM"
@@ -25,8 +23,7 @@ resource "aws_lambda_function_url" "analysis_followup" {
 }
 
 # Market Intelligence Chat Function URL
-# Same pattern as analysis_followup: NONE auth (JWT validated inside Lambda),
-# RESPONSE_STREAM for SSE streaming via Python generator.
+# NONE auth (JWT validated inside Lambda), RESPONSE_STREAM for SSE streaming via Python generator.
 resource "aws_lambda_function_url" "market_intel_chat" {
   function_name      = aws_lambda_function.functions["market_intel_chat"].function_name
   authorization_type = "NONE"

@@ -24,6 +24,14 @@ from .logger import get_logger
 logger = get_logger(__name__)
 
 
+# Threshold for detecting suspect balance sheet data from FMP.
+# If abs(total_equity) < SUSPECT_EQUITY_TO_REVENUE_RATIO * abs(revenue) for the
+# current quarter, the balance sheet is likely corrupted upstream (seen in the
+# wild with SCHW Q1 2026 — equity $2.7M vs revenue $3.1B, ~1000x too small).
+# Reused by earnings_update.py as a write-gate.
+SUSPECT_EQUITY_TO_REVENUE_RATIO = 0.01
+
+
 def safe_divide(numerator, denominator, default=0.0):
     """Safely divide two numbers, returning default if denominator is 0 or None."""
     try:
@@ -600,14 +608,23 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         net_debt_val = total_debt - cash
 
         # Return calculations (annualized for quarterly data)
+        # Minimum denominator threshold: 1% of revenue guards against near-zero
+        # denominators that produce extreme ratios (e.g., airlines during COVID)
+        min_denom = abs(revenue) * SUSPECT_EQUITY_TO_REVENUE_RATIO if revenue else 1e6
         roa = round(safe_divide(net_income * 4, total_assets) * 100, 1)  # Annualized
-        roe = round(safe_divide(net_income * 4, total_equity) * 100, 1)  # Annualized
+        if abs(total_equity) < min_denom:
+            roe = None
+        else:
+            roe = max(-200.0, min(200.0, round(safe_divide(net_income * 4, total_equity) * 100, 1)))
         # ROIC = NOPAT / Invested Capital, where NOPAT = Operating Income * (1 - tax rate)
         # Invested Capital = Total Equity + Total Debt - Cash
         tax_rate = safe_divide(income_tax, max(operating_income - interest_expense_val, 1))
         nopat = operating_income * (1 - min(tax_rate, 0.4))  # Cap tax rate at 40%
         invested_capital = total_equity + total_debt - cash
-        roic = round(safe_divide(nopat * 4, invested_capital) * 100, 1)  # Annualized
+        if abs(invested_capital) < min_denom:
+            roic = None
+        else:
+            roic = max(-200.0, min(200.0, round(safe_divide(nopat * 4, invested_capital) * 100, 1)))
 
         # Margin calculations
         gross_margin = round(safe_divide(gross_profit, revenue) * 100, 1)
@@ -651,7 +668,13 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
         trends['free_cash_flow'].append(fcf)
         trends['fcf_margin'].append(fcf_margin)
         trends['ocf_to_revenue'].append(round(safe_divide(ocf, revenue) * 100, 1))
-        trends['fcf_to_net_income'].append(round(safe_divide(fcf, max(net_income, 1)), 2))
+        # Only meaningful when net_income > 0; clamp to +/-10x to prevent
+        # extreme spikes from quarters with tiny positive net_income
+        if net_income and net_income > 0:
+            fcf_ni = max(-10.0, min(10.0, round(safe_divide(fcf, net_income), 2)))
+        else:
+            fcf_ni = None
+        trends['fcf_to_net_income'].append(fcf_ni)
         # Capital allocation (5)
         trends['capex'].append(capex)
         trends['capex_intensity'].append(round(safe_divide(capex, revenue) * 100, 1))
@@ -818,7 +841,7 @@ def extract_quarterly_trends(raw_financials: dict, num_quarters: int = 20) -> di
             ni_2y = extract_value(income_statement, 'netIncome', i + 8, 0)
             eq_2y = extract_value(balance_sheet, 'totalStockholdersEquity', i + 8, 0)
             roe_2y = safe_divide(ni_2y * 4, eq_2y) * 100 if eq_2y else 0
-            trends['roe_change_2yr'].append(round(roe - roe_2y, 1))
+            trends['roe_change_2yr'].append(round(roe - roe_2y, 1) if roe is not None else None)
         else:
             trends['roe_change_2yr'].append(None)
 

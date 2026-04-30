@@ -142,6 +142,19 @@ output "stock_data_4h_table_arn" {
 }
 
 # ================================================
+# Watchlist Table (ACTIVE)
+# ================================================
+output "watchlist_table_name" {
+  description = "Name of the user watchlist table"
+  value       = aws_dynamodb_table.watchlist.name
+}
+
+output "watchlist_table_arn" {
+  description = "ARN of the user watchlist table"
+  value       = aws_dynamodb_table.watchlist.arn
+}
+
+# ================================================
 # Summary Output
 # ================================================
 output "table_summary" {
@@ -167,6 +180,9 @@ output "table_summary" {
     }
     waitlist = {
       waitlist = aws_dynamodb_table.waitlist.name
+    }
+    watchlist = {
+      watchlist = aws_dynamodb_table.watchlist.name
     }
   }
 }

@@ -117,6 +117,7 @@ Available tools and when to use them:
 - screenStocks: For filtering by criteria ("Companies with >20% FCF margin in tech")
 - getMetricTrend: For time series analysis ("How has AAPL's margin changed?")
 - getEarningsSurprises: For earnings analysis ("Biggest earnings beats")
+- getHistoricalValuation: For historical valuation trends ("Is AAPL cheap vs its 5-year history?")
 
 Available metrics for screening and ranking:
 revenue, net_income, gross_margin, operating_margin, net_margin, revenue_growth_yoy, eps, roe,
@@ -357,6 +358,28 @@ MARKET_INTEL_TOOLS = {
                             }
                         },
                         "required": ["sectors"]
+                    }
+                }
+            }
+        },
+        {
+            "toolSpec": {
+                "name": "getHistoricalValuation",
+                "description": "Get historical valuation trends for an S&P 500 company. Returns all 9 valuation metrics (P/E, P/B, EV/EBITDA, P/FCF, earnings yield, FCF yield, ROIC, ROE, ROA) with per-metric statistics (min/max/mean/median/percentile/z-score), a cheap/fair/expensive assessment, and a plain-English verdict. Includes sector median context. Use for 'is AAPL cheap vs its own history?' questions.",
+                "inputSchema": {
+                    "json": {
+                        "type": "object",
+                        "properties": {
+                            "ticker": {
+                                "type": "string",
+                                "description": "Stock ticker symbol (e.g., AAPL, MSFT)"
+                            },
+                            "quarters": {
+                                "type": "integer",
+                                "description": "Number of quarters of history to analyze (default 20, max 20)"
+                            }
+                        },
+                        "required": ["ticker"]
                     }
                 }
             }

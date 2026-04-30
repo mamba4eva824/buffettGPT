@@ -184,6 +184,12 @@ module "lambda" {
   create_followup_action_lambda = false
   followup_action_image_tag     = "latest"
 
+  # Pipeline schedules & notifications — deferred to Phase 3 of dev→staging sync
+  # Keep explicitly disabled in Phase 1 (infra catch-up only)
+  enable_eod_ingest_schedule       = false
+  enable_earnings_update_schedule  = false
+  enable_pipeline_notifications    = false
+
   # DynamoDB table ARNs for followup-action Lambda IAM policy
   investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
   financial_data_cache_table_arn  = module.dynamodb.financial_data_cache_table_arn
@@ -241,6 +247,11 @@ module "api_gateway" {
 
   # Value Insights API (S&P 500 market data)
   enable_value_insights_routes = true
+
+  # Earnings Feed + Watchlist APIs — deferred to Phase 2 of dev→staging sync
+  # Keep explicitly disabled in Phase 1 (infra catch-up only)
+  enable_earnings_feed_routes  = false
+  enable_watchlist_api_routes  = false
 
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true

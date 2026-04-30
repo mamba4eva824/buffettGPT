@@ -212,17 +212,17 @@ class TestTradeDateComputation:
 
         return result
 
-    def test_tuesday_returns_monday(self):
-        """Tuesday 10PM UTC → Monday's date."""
+    def test_tuesday_returns_tuesday(self):
+        """Tuesday 6PM ET (22:00 UTC) → Tuesday's date (today's data)."""
         mock_now = datetime(2026, 4, 7, 22, 0, 0, tzinfo=timezone.utc)  # Tuesday
         result = self._run_handler_with_date(mock_now)
-        assert "2026-04-06" in result.get("body", "")  # Monday
+        assert "2026-04-07" in result.get("body", "")  # Tuesday (today)
 
-    def test_monday_returns_friday(self):
-        """Monday 10PM UTC → Friday's date (skip weekend)."""
+    def test_monday_returns_monday(self):
+        """Monday 6PM ET (22:00 UTC) → Monday's date (today's data)."""
         mock_now = datetime(2026, 4, 6, 22, 0, 0, tzinfo=timezone.utc)  # Monday
         result = self._run_handler_with_date(mock_now)
-        assert "2026-04-03" in result.get("body", "")  # Friday
+        assert "2026-04-06" in result.get("body", "")  # Monday (today)
 
     def test_sunday_returns_friday(self):
         """Sunday → Friday (skip Sat+Sun)."""

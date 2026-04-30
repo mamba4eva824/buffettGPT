@@ -110,9 +110,20 @@ locals {
       STOCK_DATA_4H_TABLE              = module.dynamodb.stock_data_4h_table_name
       POWERTOOLS_SERVICE_NAME          = "sp500-eod-ingest"
       POWERTOOLS_METRICS_NAMESPACE     = "SP500EODIngest"
+      SNS_TOPIC_ARN                    = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
+    }
+    earnings_update = {
+      SNS_TOPIC_ARN = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
     }
     value_insights_handler = {
       STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
+    }
+    watchlist_handler = {
+      WATCHLIST_TABLE             = module.dynamodb.watchlist_table_name
+      USERS_TABLE                 = var.enable_authentication ? module.auth[0].users_table_name : ""
+      STOCK_DATA_4H_TABLE         = module.dynamodb.stock_data_4h_table_name
+      METRICS_HISTORY_CACHE_TABLE = module.dynamodb.metrics_history_cache_table_name
+      SP500_AGGREGATES_TABLE      = module.dynamodb.sp500_aggregates_table_name
     }
   }
 }
@@ -172,7 +183,8 @@ module "lambda" {
   log_retention_days  = 7  # Short retention for dev
 
   reserved_concurrency = {
-    analysis_followup  = 10  # Increased for production traffic
+    # analysis_followup concurrency is now set directly on the Docker Lambda
+    # resource in analysis_followup_docker.tf (reserved_concurrent_executions=10).
     sp500_eod_ingest   = 1   # Prevent duplicate parallel runs
   }
 
@@ -188,6 +200,10 @@ module "lambda" {
   # Docker image pushed to ECR - enable Lambda creation
   create_followup_action_lambda = true
   followup_action_image_tag     = "latest"
+
+  # Analysis Followup Lambda — Docker variant (LWA streaming).
+  # Dev runs the FastAPI+LWA image; staging keeps zip until its ECR is populated.
+  create_analysis_followup_docker = true
 
   # DynamoDB table ARNs for followup-action Lambda IAM policy
   # These use the actual table ARNs from the dynamodb module to ensure correct permissions
@@ -206,6 +222,10 @@ module "lambda" {
   # EventBridge schedule for daily 4h candle ingestion
   enable_eod_ingest_schedule      = true
   enable_earnings_update_schedule = true
+
+  # SNS topic for pipeline notifications (success + failure emails)
+  enable_pipeline_notifications = var.enable_monitoring
+  alerts_sns_topic_arn          = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
 }
 
 # ================================================
@@ -257,6 +277,12 @@ module "api_gateway" {
 
   # Value Insights API (financial metrics and ratings)
   enable_value_insights_routes = true
+
+  # Earnings Feed API (earnings tracker dashboard)
+  enable_earnings_feed_routes = true
+
+  # Watchlist API (add, list, remove watched stocks)
+  enable_watchlist_api_routes = true
 
   common_tags = local.common_tags
 }

@@ -6,8 +6,8 @@ and stores it in DynamoDB.
 
 Uses FMP stable API: /stable/historical-chart/4hour?symbol={ticker}
 
-Scheduled via EventBridge: cron(0 22 ? * MON-FRI *)  — 10 PM UTC (6 PM ET)
-Runs ~2 hours after US market close to ensure data availability.
+Scheduled via EventBridge Scheduler: cron(0 17 ? * MON-FRI *) America/New_York
+Runs ~1 hour after US market close to ensure data availability.
 
 Environment Variables:
   FMP_SECRET_NAME       — Secrets Manager name holding the FMP API key
@@ -228,19 +228,80 @@ def batch_write_items(items: List[Dict]) -> Tuple[int, int]:
 # ---------------------------------------------------------------------------
 # Market Holiday Check
 # ---------------------------------------------------------------------------
-# US market holidays (observed dates shift year-to-year, but these are fixed)
-US_MARKET_HOLIDAYS_MMDD = {
-    "01-01",  # New Year's Day
-    "01-20",  # MLK Day (3rd Monday Jan — approximate)
-    "02-17",  # Presidents' Day (3rd Monday Feb — approximate)
-    "04-18",  # Good Friday (varies — update annually)
-    "05-26",  # Memorial Day (last Monday May — approximate)
-    "06-19",  # Juneteenth
-    "07-04",  # Independence Day
-    "09-01",  # Labor Day (1st Monday Sep — approximate)
-    "11-27",  # Thanksgiving (4th Thursday Nov — approximate)
-    "12-25",  # Christmas
-}
+
+
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> datetime:
+    """Return the nth occurrence of a weekday in a given month.
+    weekday: 0=Mon, 1=Tue, ..., 6=Sun.  n: 1=first, 2=second, etc.
+    """
+    import calendar
+    first_day_wd, days_in_month = calendar.monthrange(year, month)
+    # Day of first occurrence of the target weekday
+    first_occ = 1 + (weekday - first_day_wd) % 7
+    day = first_occ + (n - 1) * 7
+    return datetime(year, month, day)
+
+
+def _last_weekday(year: int, month: int, weekday: int) -> datetime:
+    """Return the last occurrence of a weekday in a given month."""
+    import calendar
+    _, days_in_month = calendar.monthrange(year, month)
+    last_day = datetime(year, month, days_in_month)
+    diff = (last_day.weekday() - weekday) % 7
+    return last_day - timedelta(days=diff)
+
+
+def _good_friday(year: int) -> datetime:
+    """Compute Good Friday for a given year using the Anonymous Gregorian algorithm."""
+    a = year % 19
+    b, c = divmod(year, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month, day = divmod(h + l - 7 * m + 114, 31)
+    easter = datetime(year, month, day + 1)
+    return easter - timedelta(days=2)
+
+
+def _us_market_holidays(year: int) -> set:
+    """Compute all NYSE/NASDAQ market holidays for a given year.
+    Returns a set of 'MM-DD' strings.
+    """
+    holidays = set()
+
+    # Fixed-date holidays
+    fixed = [
+        (1, 1),   # New Year's Day
+        (6, 19),  # Juneteenth
+        (7, 4),   # Independence Day
+        (12, 25), # Christmas
+    ]
+    for month, day in fixed:
+        d = datetime(year, month, day)
+        wd = d.weekday()
+        if wd == 5:      # Saturday → observe Friday
+            d -= timedelta(days=1)
+        elif wd == 6:    # Sunday → observe Monday
+            d += timedelta(days=1)
+        holidays.add(d.strftime("%m-%d"))
+
+    # Floating holidays
+    holidays.add(_nth_weekday(year, 1, 0, 3).strftime("%m-%d"))   # MLK Day: 3rd Monday Jan
+    holidays.add(_nth_weekday(year, 2, 0, 3).strftime("%m-%d"))   # Presidents' Day: 3rd Monday Feb
+    holidays.add(_good_friday(year).strftime("%m-%d"))             # Good Friday
+    holidays.add(_last_weekday(year, 5, 0).strftime("%m-%d"))     # Memorial Day: last Monday May
+    holidays.add(_nth_weekday(year, 9, 0, 1).strftime("%m-%d"))   # Labor Day: 1st Monday Sep
+    holidays.add(_nth_weekday(year, 11, 3, 4).strftime("%m-%d"))  # Thanksgiving: 4th Thursday Nov
+
+    return holidays
+
+
+# Cache per year to avoid recomputation on warm invocations
+_holiday_cache: Dict[int, set] = {}
 
 
 def is_market_closed(trade_date: str) -> bool:
@@ -248,10 +309,12 @@ def is_market_closed(trade_date: str) -> bool:
     import calendar
     year, month, day = (int(x) for x in trade_date.split("-"))
     weekday = calendar.weekday(year, month, day)  # Mon=0 ... Sun=6
-    if weekday >= 5:  # Saturday=5, Sunday=6
+    if weekday >= 5:
         return True
-    mmdd = trade_date[5:]  # "YYYY-MM-DD" -> "MM-DD"
-    return mmdd in US_MARKET_HOLIDAYS_MMDD
+    if year not in _holiday_cache:
+        _holiday_cache[year] = _us_market_holidays(year)
+    mmdd = trade_date[5:]
+    return mmdd in _holiday_cache[year]
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +334,64 @@ def already_ingested(trade_date: str) -> bool:
         return len(response.get("Items", [])) > 0
     except ClientError:
         return False
+
+
+# ---------------------------------------------------------------------------
+# SNS Notifications
+# ---------------------------------------------------------------------------
+SNS_TOPIC_ARN = os.environ.get('SNS_TOPIC_ARN', '')
+_sns_client = None
+
+
+def _get_sns_client():
+    global _sns_client
+    if _sns_client is None:
+        _sns_client = boto3.client('sns')
+    return _sns_client
+
+
+def _publish_sns_summary(result: Dict[str, Any]) -> None:
+    """Publish a run summary to SNS. Failures are logged but never raise."""
+    if not SNS_TOPIC_ARN:
+        return
+    try:
+        skipped = result.get('skipped', False)
+        date = result.get('date', 'unknown')
+        written = result.get('recordsWritten', 0)
+        failed = result.get('recordsFailed', 0)
+
+        if skipped:
+            subject = f"[buffett-{ENVIRONMENT}] EOD Ingest: Skipped ({date})"
+            message = f"S&P 500 Daily EOD Ingestion — {date}\nStatus: SKIPPED\n{result.get('body', '')}"
+        elif failed > 0:
+            subject = f"[buffett-{ENVIRONMENT}] EOD Ingest: {written} written, {failed} failed ({date})"
+            message = (
+                f"S&P 500 Daily EOD Ingestion — {date}\n"
+                f"Status: COMPLETED WITH ERRORS\n"
+                f"Tickers processed: {result.get('tickersProcessed', 0)}\n"
+                f"Tickers with data: {result.get('tickersWithData', 0)}\n"
+                f"Tickers empty: {result.get('tickersEmpty', 0)}\n"
+                f"Records written: {written}\n"
+                f"Records failed: {failed}"
+            )
+        else:
+            subject = f"[buffett-{ENVIRONMENT}] EOD Ingest: {written} records written ({date})"
+            message = (
+                f"S&P 500 Daily EOD Ingestion — {date}\n"
+                f"Status: SUCCESS\n"
+                f"Tickers processed: {result.get('tickersProcessed', 0)}\n"
+                f"Tickers with data: {result.get('tickersWithData', 0)}\n"
+                f"Tickers empty: {result.get('tickersEmpty', 0)}\n"
+                f"Records written: {written}"
+            )
+
+        _get_sns_client().publish(
+            TopicArn=SNS_TOPIC_ARN,
+            Subject=subject[:100],  # SNS subject max 100 chars
+            Message=message,
+        )
+    except Exception as e:
+        logger.warning(f"Failed to publish SNS notification: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -297,14 +418,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     force = event.get("force", False)
 
     if not target_date:
-        now = datetime.now(timezone.utc)
-        yesterday = now - timedelta(days=1)
-        wd = yesterday.weekday()
-        if wd == 6:  # Sunday → Friday
-            yesterday -= timedelta(days=2)
-        elif wd == 5:  # Saturday → Friday
-            yesterday -= timedelta(days=1)
-        target_date = yesterday.strftime("%Y-%m-%d")
+        # Use today in Eastern time — the schedule runs at 6 PM ET,
+        # after market close (4 PM ET), so today's data is available.
+        from zoneinfo import ZoneInfo
+        today = datetime.now(ZoneInfo("America/New_York"))
+        wd = today.weekday()
+        if wd == 6:      # Sunday → Friday
+            today -= timedelta(days=2)
+        elif wd == 5:    # Saturday → Friday
+            today -= timedelta(days=1)
+        target_date = today.strftime("%Y-%m-%d")
 
     logger.info(f"Starting 4h EOD ingestion for {target_date} (force={force})")
 
@@ -312,13 +435,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not force and is_market_closed(target_date):
         msg = f"Market closed on {target_date} (weekend or holiday) — skipping"
         logger.info(msg)
-        return {"statusCode": 200, "body": msg, "recordsWritten": 0, "skipped": True}
+        result = {"statusCode": 200, "body": msg, "date": target_date, "recordsWritten": 0, "skipped": True}
+        _publish_sns_summary(result)
+        return result
 
     # --- Idempotency guard ---
     if not force and already_ingested(target_date):
         msg = f"4h data for {target_date} already exists — skipping (pass force=true to overwrite)"
         logger.info(msg)
-        return {"statusCode": 200, "body": msg, "recordsWritten": 0, "skipped": True}
+        result = {"statusCode": 200, "body": msg, "date": target_date, "recordsWritten": 0, "skipped": True}
+        _publish_sns_summary(result)
+        return result
 
     # --- 1. Get tickers ---
     custom_tickers = event.get("tickers")
@@ -358,7 +485,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not all_items:
         msg = f"No EOD data returned for {target_date} — possible market holiday"
         logger.warning(msg)
-        return {"statusCode": 200, "body": msg, "recordsWritten": 0}
+        result = {"statusCode": 200, "body": msg, "date": target_date, "recordsWritten": 0}
+        _publish_sns_summary(result)
+        return result
 
     # --- 3. Write to DynamoDB ---
     written, failed = batch_write_items(all_items)
@@ -383,4 +512,5 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "recordsFailed": failed,
     }
     logger.info("Ingestion complete", extra=result)
+    _publish_sns_summary(result)
     return result

@@ -11,10 +11,10 @@ This pipeline replaces the previous bulk `sp500_pipeline` Lambda (which processe
 ## Architecture
 
 ```
-EventBridge Rules (2x daily, Mon-Fri)
+EventBridge Scheduler (2x daily, Mon-Fri, America/New_York timezone)
     |
-    |-- Post-close:  9:00 PM UTC (6:00 PM ET)
-    |-- Post-open:   4:30 PM UTC (11:30 AM ET)
+    |-- Post-close:  5:00 PM ET  cron(0 17 ? * MON-FRI *)
+    |-- Post-open:  11:30 AM ET  cron(30 11 ? * MON-FRI *)
     |
     v
 Lambda: earnings_update (300s timeout, 512 MB)
@@ -52,7 +52,7 @@ The Earnings Update Pipeline works alongside the [EOD Stock Price Pipeline](even
 
 | | EOD Price Pipeline | Earnings Update Pipeline |
 |---|---|---|
-| **Schedule** | 10 PM UTC daily | 9 PM + 4:30 PM UTC daily |
+| **Schedule** | 6:00 PM ET daily | 5:00 PM + 11:30 AM ET daily |
 | **What it fetches** | Daily closing prices | Full quarterly financials + earnings + TTM |
 | **Tickers per run** | All 498 S&P 500 | Only 5-40 that recently reported |
 | **DynamoDB table** | `stock-data-4h-{env}` | `metrics-history-{env}` |
@@ -74,30 +74,33 @@ US Market Day Timeline (Eastern Time)
 |           Catches pre-market announcements
 |  4:00 PM  Market closes
 |  4:10 PM  After-hours earnings announced (typical window: 4:10-4:30 PM)
-|  6:00 PM  ---- earnings_update (post-close) runs ----
-|           Catches after-hours announcements
-|  6:00 PM  ---- sp500_eod_ingest runs ----
+|  5:00 PM  ---- earnings_update (post-close) AND sp500_eod_ingest run ----
+|           Catches after-hours announcements + captures closing prices
 |           Captures closing prices for all tickers
 |
 ```
 
-The 2-hour delay after market open/close gives FMP time to process the SEC filings (typically minutes to hours after the company files).
+All schedules use EventBridge Scheduler with `America/New_York` timezone, so cron times automatically adjust for EDT/EST with no DST drift. The 1-2 hour delays after market events give FMP time to process the SEC filings.
 
 ---
 
 ## Infrastructure Components
 
-### EventBridge Rules
+### EventBridge Scheduler Schedules
 
-| Rule | Schedule | UTC | Eastern | Purpose |
-|------|----------|-----|---------|---------|
-| Post-close | `cron(0 21 ? * MON-FRI *)` | 9:00 PM | 6:00 PM | After-hours earnings |
-| Post-open | `cron(30 16 ? * MON-FRI *)` | 4:30 PM | 11:30 AM | Pre-market earnings |
+| Schedule | Cron (ET) | Eastern Time | Purpose |
+|----------|-----------|--------------|---------|
+| Post-close | `cron(0 17 ? * MON-FRI *)` | 5:00 PM | After-hours earnings |
+| Post-open | `cron(30 11 ? * MON-FRI *)` | 11:30 AM | Pre-market earnings |
 
-Both rules:
+Both schedules:
+- Timezone: `America/New_York` (auto-adjusts for EDT/EST)
+- Schedule group: `{project}-{env}-market-data`
 - Retry policy: 2 attempts, max event age 1 hour
+- Dead letter queue: SQS `{project}-{env}-earnings-update-dlq` with CloudWatch alarm
 - Feature flag: `enable_earnings_update_schedule` (per environment)
 - Input: `{}` (auto mode)
+- IAM: Dedicated scheduler execution role (not Lambda resource-based policy)
 
 **Terraform**: `chat-api/terraform/modules/lambda/eventbridge.tf`
 
@@ -118,6 +121,7 @@ Both rules:
 - `METRICS_HISTORY_CACHE_TABLE` - DynamoDB table name for quarterly metrics
 - `ENVIRONMENT` - dev/staging/prod
 - `LOG_LEVEL` - Logging verbosity
+- `SNS_TOPIC_ARN` - SNS topic for email notifications (success/skip/failure summaries)
 
 ### FMP API Calls Per Ticker
 
@@ -237,6 +241,27 @@ The `upcoming` array enables "Earnings coming up" alerts for tickers users are t
 
 ---
 
+## Email Notifications
+
+After every run, the Lambda publishes a summary to the `{project}-{env}-alerts` SNS topic, which delivers an email to the configured alert address. One email per invocation.
+
+| Scenario | Email Subject |
+|----------|--------------|
+| Success | `[buffett-dev] Earnings Update: 8 updated` |
+| Partial failures | `[buffett-dev] Earnings Update: 8 updated, 2 failed` |
+| No tickers reported | `[buffett-dev] Earnings Update: No tickers to process` |
+| Lambda crash (DLQ) | CloudWatch alarm notification via same SNS topic |
+
+The email body includes mode (auto/manual), tickers checked, tickers updated (by name), and any failures with ticker and error. If the SNS publish itself fails, it is logged as a warning but does not crash the Lambda.
+
+**Defense in depth**: Two layers of DLQ protection are in place:
+- **Scheduler-level DLQ** — catches invocation failures (throttling, IAM issues, function not found)
+- **Lambda-level DLQ** (`aws_lambda_function_event_invoke_config`) — catches execution failures within the function
+
+Both route to the same SQS queue (`{project}-{env}-earnings-update-dlq`) with a CloudWatch alarm that triggers an email when any message arrives.
+
+---
+
 ## Operational Procedures
 
 ### Manual Invocation
@@ -280,19 +305,32 @@ Check recent invocations:
 aws logs tail /aws/lambda/buffett-dev-earnings-update --since 1d
 ```
 
-Check EventBridge rule status:
+Check EventBridge Scheduler status:
 ```bash
-aws events describe-rule --name buffett-dev-earnings-update-post-close
-aws events describe-rule --name buffett-dev-earnings-update-post-open
+aws scheduler get-schedule --name buffett-dev-earnings-update-post-close --group-name buffett-dev-market-data
+aws scheduler get-schedule --name buffett-dev-earnings-update-post-open --group-name buffett-dev-market-data
+```
+
+Check DLQ depth:
+```bash
+aws sqs get-queue-attributes \
+  --queue-url $(aws sqs get-queue-url --queue-name buffett-dev-earnings-update-dlq --query QueueUrl --output text) \
+  --attribute-names ApproximateNumberOfMessagesVisible
 ```
 
 ### Disabling the Schedule
 
 Set `enable_earnings_update_schedule = false` in the environment's `main.tf` and apply, or disable directly:
 ```bash
-aws events disable-rule --name buffett-dev-earnings-update-post-close
-aws events disable-rule --name buffett-dev-earnings-update-post-open
+aws scheduler update-schedule --name buffett-dev-earnings-update-post-close \
+  --group-name buffett-dev-market-data --state DISABLED \
+  --flexible-time-window '{"Mode":"OFF"}' \
+  --schedule-expression 'cron(0 17 ? * MON-FRI *)' \
+  --schedule-expression-timezone America/New_York \
+  --target "$(aws scheduler get-schedule --name buffett-dev-earnings-update-post-close --group-name buffett-dev-market-data --query 'Target' --output json)"
 ```
+
+Or via Terraform (recommended): set the flag and `terraform apply`.
 
 ---
 
@@ -376,8 +414,8 @@ All within Lambda timeout (300s) and FMP rate limits (300 calls/min with 0.5s de
 
 ### Medium-Term
 
-3. **SNS notifications** — Publish earnings results to an SNS topic that user-facing notification services can subscribe to. The response structure already contains all needed fields.
-4. **DLQ + CloudWatch alarm** — Add SQS dead letter queue for failed invocations (same pattern as EOD pipeline).
+3. ~~**SNS notifications**~~ — **Done.** Lambda publishes run summaries to SNS alerts topic after every invocation (2026-04). DLQ alarms also wired to SNS.
+4. ~~**DLQ + CloudWatch alarm**~~ — **Done.** SQS dead letter queue + CloudWatch alarm added (2026-04). Both scheduler-level and Lambda-level DLQs are in place.
 5. **Earnings quality scoring** — Auto-compute an earnings quality score based on beat rate, surprise consistency, and revenue vs EPS alignment.
 
 ### Long-Term
@@ -397,4 +435,5 @@ All within Lambda timeout (300s) and FMP rate limits (300 calls/min with 0.5s de
 | FMP API calls | ~100-300/day x 22 days = included in FMP plan |
 | Secrets Manager | ~44 calls/month = **$0.02** |
 | EventBridge | Free tier |
+| SNS notifications | ~44 emails/month = **free tier** |
 | **Total** | **< $0.10/month** (excluding FMP API plan) |

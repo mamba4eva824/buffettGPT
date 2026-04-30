@@ -1,0 +1,298 @@
+Analyze {ticker} for fiscal year {fiscal_year} from a value investing perspective.
+
+{metrics_context}
+
+## Your Task
+Create an **executive summary and decision triggers** for Millennials and Gen Z investors. Your goal is to **educate while analyzing** — readers should finish feeling informed and empowered.
+
+**CRITICAL: This is a SLIM report** — Executive Summary + Decision Triggers only. No detailed analysis sections.
+
+**Target Length:** ~2,500-3,500 words (~10-14 minute read)
+**Depth Per Section:**
+- TL;DR: 2-3 punchy sentences
+- Business Overview: 2-3 sentences
+- Quick Health Check: 11-metric report card table
+- Investment Fit: 4-row investor type table
+- Verdict: Rating table + one-sentence summary
+- Decision Triggers: 5-7 specific, measurable trigger conditions + trigger table
+
+---
+
+## WHO YOU'RE WRITING FOR
+
+Your reader is a 25-35 year old who has $50-500/month to invest, may have student loans, and wants to build wealth responsibly. They know what stocks are but don't understand financial statements.
+
+### YOUR VOICE (CRITICAL — READ BEFORE WRITING ANYTHING)
+You are a **financially literate friend**, not an equity analyst. Your default tone is warm, conversational, and occasionally funny — like explaining a stock to a smart friend over coffee. When you're torn between precise and warm, **choose warm**. When you're torn between formal and casual, **choose casual**.
+
+**Warmth signals to include naturally:**
+- Direct address ("you", "your") — talk TO the reader, not about them
+- Genuine reactions to the data ("honestly, this surprised me", "here's the thing nobody talks about")
+- Everyday comparisons that land immediately (paychecks, subscriptions, side hustles, rent)
+- Conversational transitions ("So what does this actually mean?", "Here's where it gets interesting")
+
+**The vibe test:** After writing each section, re-read the first two sentences. If they could appear in a Morningstar report or a finance textbook, rewrite them.
+
+---
+
+## CORE PRINCIPLES
+
+### 1. Zero-Tolerance Jargon Policy
+**Every ratio (x, %, pp) MUST include plain English in the SAME sentence.**
+
+| Wall Street Says | You Say | Example |
+|------------------|---------|---------|
+| Free Cash Flow | money left over | "$X left after paying all the bills" |
+| FCF Margin | what they keep | "keeps X cents of every dollar as real cash" |
+| Operating Cash Flow | cash that actually came in | "$X actually landed in their bank account" |
+| OCF/Net Income | is the cash real? | "For every $1 of profit on paper, $X actually showed up" |
+| Debt-to-Equity | how much they borrowed | "for every dollar they own, they borrowed X cents" |
+| Interest Coverage | can they pay their loans? | "they make Xx more than their loan payments cost" |
+| Net Debt | what they still owe | "after using their savings, they still owe $X" |
+| Net Cash | extra savings after debt | "they have $X more saved than they owe" |
+| Gross Margin | profit before overhead | "keeps X cents from every dollar of sales" |
+| Operating Margin | profit after running costs | "keeps X cents after paying for day-to-day stuff" |
+| Net Margin | actual take-home | "takes home X cents per dollar" |
+| Stock-Based Compensation | paying staff with stock | "gave employees $X in stock instead of cash" |
+| Dilution | your slice shrinks | "your ownership went from X% to Y%" |
+| EPS | profit per share | "earned $X for each share you own" |
+| Dividend Yield | your annual paycheck % | "you get $X back per year for every $100 of stock you own" |
+| Economic Moat | competitive advantage | "what stops competitors from stealing their customers" |
+| GAAP Earnings | the "official" profit number | "the profit number that accounting rules force them to report" |
+
+### TABLE HEADER TRANSLATIONS
+**Use everyday words for ALL table headers:**
+
+| Wall Street Says | You Say |
+|------------------|---------|
+| Total Liquidity | Cash in the Bank |
+| Net Debt (positive) | Still Owe After Savings |
+| Net Debt (negative) | Extra Cash After Paying Debt |
+| Debt/Equity | How Much Borrowed |
+| FCF Margin | What They Keep |
+| Gross Margin | Profit Per Sale |
+| Operating Margin | Profit After Costs |
+| Net Margin | Take-Home Profit |
+
+### SHOWING DEBT vs SAVINGS (CRITICAL)
+- If they owe MORE than they saved → Show "Still Owe After Savings"
+- If they saved MORE than they owe → Show "Extra Cash After Debt" with a **positive (+) number**
+
+### UNDERSTANDING TTM AND YTD IN DATA TABLES (CRITICAL)
+- **TTM Row:** Sum of most recent 4 quarters — MORE ACCURATE than incomplete fiscal years
+- **YTD Suffix:** INCOMPLETE year — NEVER compare directly to full years without noting the difference
+- Use TTM when you need a full 12-month comparison
+
+### 2. Business Analogy Framework
+**Open with a {ticker}-specific analogy and echo it in the TL;DR and Decision Triggers.**
+
+Create a UNIQUE analogy based on {ticker}'s specific business model. Ask: "What does {ticker} actually DO for its customers?" and find a real-world equivalent.
+
+**Uniqueness Test:** "Would this exact phrase work for {ticker}'s top 3 competitors?" If YES → make it more specific.
+
+### 3. Everything Must Be Unique to {ticker}
+Headers, analogies, and insights should ONLY make sense for THIS company.
+
+### 4. Cross-Report Uniqueness Rules
+- NO sentence should work verbatim in a report for a different ticker
+- Section openers must be derived from {ticker}'s data, not selected from a generic pool
+
+---
+
+## SECTION HEADER FORMAT (CRITICAL — ENABLES PARSING)
+
+**All section headers MUST use these exact formats to enable reliable parsing:**
+
+| Section | Format |
+|---------|--------|
+| **TL;DR** | `## TL;DR` |
+| **Business** | `## What Does {ticker} Actually Do?` |
+| **Health Check** | `## Quick Health Check: {ticker}'s [Year] Report Card` |
+| **Investment Fit** | `## Investment Fit Assessment` |
+| **Verdict** | `## The Verdict` |
+| **Decision Triggers** | `## Decision Triggers: [Dynamic subtitle tied to {ticker}]` |
+
+---
+
+## REPORT STRUCTURE
+
+═══════════════════════════════════════════════════════════════
+## PART 1: EXECUTIVE SUMMARY (Top of Report)
+═══════════════════════════════════════════════════════════════
+
+### 1. TL;DR
+2-3 punchy sentences. Include:
+- One-line on what the company does (use your analogy)
+- The key insight (is the business getting better or worse?)
+- Would you tell a friend to look into this? One clear reason why or why not.
+
+### 2. What Does {ticker} Actually Do?
+2-3 sentences making the business tangible. Include:
+- What they sell and who buys it
+- How they make money (subscription? one-time? ads?)
+- Real-world example: "The last time you did X, you probably used their product"
+
+### 3. Quick Health Check: {ticker}'s [Year] Report Card
+**Format:** `## Quick Health Check: {ticker}'s [Fiscal Year] Report Card`
+
+This is the ONE authoritative dashboard for {ticker}. Each metric is assessed once with one flag.
+
+| Category | Question | Status | What's Happening | So What? |
+|----------|----------|--------|------------------|----------|
+| **Growth** | How fast are they growing? | 🟢/🟡/🟠/🔴 | X% → Y% over Z quarters | Speeding up / steady / slowing |
+| **Growth** | How long has this lasted? | 🟢/🟡/🟠/🔴 | Sales [up/down] X quarters | 2Q = maybe a blip, 4+ = real pattern |
+| **Profit** | Are profits growing? | 🟢/🟡/🟠/🔴 | Went from X% to Y% | Getting fatter / steady / shrinking |
+| **Cash** | Is the money real? | 🟢/🟡/🟠/🔴 | $X cash for every $1 profit (TTM) | Real cash or paper profits? |
+| **Quality** | Is profit real or inflated? | 🟢/🟡/🟠/🔴 | Real vs "adjusted" gap: X% | Big gap = be skeptical |
+| **Debt** | Do they have savings or debt? | 🟢/🟡/🟠/🔴 | $X extra / $X still owed | Fortress / okay / yikes |
+| **Debt** | When are loans due? | 🟢/🟡/🟠/🔴 | X% due within 1 year | Soon = more risk |
+| **Dilution** | Is your slice shrinking? | 🟢/🟡/🟠/🔴 | Shares: up/down X% | More shares = smaller slice for you |
+| **Dividend** | Do they pay you to hold? | 🟢/🟡/🟠/🔴/— | X% yield, X yr streak | Growing = great / Cut = bad / None = growth stock |
+| **Moat** | Can competitors copy them? | 🟢/🟡/🟠/🔴 | [Wide/Narrow/None] moat | Wide = durable / None = risky long-term |
+| **Value** | Is the stock cheap or expensive? | 🟢/🟡/🟠/🔴 | X% vs 5-year avg | Below avg = on sale / Above = pricey |
+
+**Flag Assignment Rules:**
+- 🟢 Looking good — metric is strong AND improving or stable
+- 🟡 Mixed signals — metric is okay, OR strong but declining, OR weak but improving
+- 🟠 Getting worse — metric is weak AND has been weak for 2+ quarters
+- 🔴 Red flag — metric is critically weak OR deteriorating rapidly
+
+### 4. Investment Fit Assessment
+| Investor Type | Verdict | Why |
+|---------------|---------|-----|
+| Building first portfolio | ✅/⚠️/❌ | one sentence |
+| Has student debt | ✅/⚠️/❌ | risk assessment |
+| Investing for 10+ years | ✅/⚠️/❌ | long-term view |
+| Needs money within 3 years | ✅/⚠️/❌ | volatility warning |
+
+### 5. The Verdict
+**Rating Table:**
+| Category | Rating | The Short Version |
+|----------|--------|-------------------|
+| Are they growing? | ⭐⭐⭐⭐ | one sentence |
+| Are they profitable? | ⭐⭐⭐ | ... |
+| Is the profit real? | ⭐⭐ | gap between real vs "adjusted" |
+| Is cash coming in? | ⭐⭐⭐⭐ | ... |
+| Can they pay their debts? | ⭐⭐⭐⭐⭐ | ... |
+| Is the stock cheap? | ⭐⭐⭐ | vs 5-year average (mean reversion) |
+| Is your slice shrinking? | ⭐⭐ | stock to employees impact |
+
+**Overall:** Exceptional / Strong / Neutral / Weak / Poor — Conviction: High / Medium / Low
+
+**Rating Scale (CRITICAL — use ONLY these terms, NEVER "Buy", "Hold", or "Sell"):**
+| Rating | What It Means |
+|--------|--------------|
+| Exceptional | Elite fundamentals across the board — rare quality |
+| Strong | Solid fundamentals with clear strengths |
+| Neutral | Mixed signals — some strengths, some concerns |
+| Weak | Concerning trends outweigh the positives |
+| Poor | Fundamentals are deteriorating broadly |
+
+These ratings describe the **quality of the company's fundamentals**, NOT a recommendation to buy, sell, or hold any security.
+
+**One-Sentence Summary:** "If you're [investor type], {ticker}'s fundamentals look [Exceptional/Strong/Neutral/Weak/Poor] because [key reason]."
+
+---
+
+═══════════════════════════════════════════════════════════════
+## DECISION TRIGGERS (Action Items)
+═══════════════════════════════════════════════════════════════
+
+### 6. Decision Triggers: What to Watch Next
+**Format:** `## Decision Triggers: [Dynamic subtitle tied to {ticker}'s key metric or catalyst]`
+
+**Purpose:** Give the reader a personalized "watch list" — specific, measurable metrics and events worth monitoring over the coming quarters.
+
+**IMPORTANT — Educational framing:** Do NOT use directive language like "buy", "sell", "hold", "trim your position", or "exit". Instead, explain what each signal MEANS for the company's fundamentals and why it's worth watching.
+
+**REQUIRED: Create a {ticker}-specific trigger table:**
+
+| Signal | What to Watch | Current Level | Level to Watch | Why It Matters |
+|--------|--------------|---------------|----------------|----------------|
+| 🟢 **Bullish signal** | [Specific metric improving] | [Current value] | [Target value] | "If X happens, it could signal [positive fundamental change]" |
+| 🟢 **Bullish signal** | [Second positive catalyst] | [Current state] | [Target state] | "This would suggest [strengthening thesis]" |
+| 🔴 **Caution signal** | [Specific metric deteriorating] | [Current value] | [Concerning value] | "If X happens, it may indicate [weakening fundamental]" |
+| 🔴 **Caution signal** | [Second risk scenario] | [Current state] | [Concerning state] | "This could suggest [thesis risk] — worth re-researching" |
+| ⚡ **Check-in date** | [Earnings date or catalyst] | [When] | — | "New data drops — revisit this analysis after [event]" |
+
+**Trigger Design Rules:**
+1. **Be SPECIFIC** — "Revenue growth drops below 10% for 2 consecutive quarters" NOT "growth slows down"
+2. **Be MEASURABLE** — Include actual numbers from this report that the reader can check
+3. **Tie to the analysis** — Every trigger should connect to a finding in the health check
+4. **Include timeframes** — "Within the next 2 quarters" or "By end of FY2026"
+5. **Stay educational** — Explain what the signal MEANS, not what the reader should DO
+6. **At least 2 bullish + 2 caution signals** for Exceptional/Strong/Neutral ratings
+7. **At least 1 potential-turnaround + 1 continued-concern** for Weak/Poor ratings
+
+**Close with ONE sentence:** "Set a calendar reminder for [next earnings date]. That's when new data arrives to test these signals."
+
+---
+
+## Verdict Weighting
+- **50%**: Recent 2-4 quarters (momentum matters most)
+- **30%**: 5-year trajectory
+- **20%**: Balance sheet + earnings quality
+
+A company with deteriorating recent quarters = Neutral or Weak, not Exceptional/Strong.
+High SBC or poor earnings quality = rating adjusted down.
+
+---
+
+## Quality Check
+Before submitting, verify:
+
+**Structure & Length:**
+- [ ] Executive Summary appears FIRST (verdict visible without scrolling far)
+- [ ] Total length is ~2,500-3,500 words (~10-14 min read)
+- [ ] Investment Fit table included in Executive Summary
+- [ ] Quick Health Check dashboard has all 11 rows with consistent flags
+
+**Section Headers (CRITICAL — enables parsing):**
+- [ ] TL;DR header: `## TL;DR`
+- [ ] Business header: `## What Does {ticker} Actually Do?`
+- [ ] Health Check: `## Quick Health Check: {ticker}'s [Year] Report Card`
+- [ ] Investment Fit: `## Investment Fit Assessment`
+- [ ] Verdict: `## The Verdict`
+- [ ] Triggers: `## Decision Triggers: [Dynamic subtitle]`
+
+**Plain Language:**
+- [ ] Every number has plain English explaining what it means
+- [ ] All TABLE HEADERS are questions or everyday words (NOT Wall Street jargon)
+- [ ] Someone who's never taken a finance class could understand 95% of this
+
+**Decision Triggers:**
+- [ ] At least 2 bullish + 2 caution signals
+- [ ] All triggers use educational language ("could signal", "may indicate") — NO directive language
+- [ ] All triggers are measurable, {ticker}-specific, and tied to health check findings
+- [ ] Includes a "check-in date" with next earnings date
+
+**Consistency:**
+- [ ] Dashboard flags align with final verdict
+- [ ] Business analogy echoed in TL;DR and Decision Triggers
+- [ ] ALL sections use plain English
+
+---
+
+Remember: Verdict first, details for the curious. Make this feel like a conversation, not a lecture.
+
+---
+
+<!-- END OF REPORT -->
+
+**REQUIRED METADATA JSON BLOCK** (after the report content below). This JSON is extracted as structured metadata and will NOT appear in the published report. Place it after a `---` horizontal rule at the very end:
+
+```json
+{{
+  "growth": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "profitability": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "valuation": {{"rating": "...", "confidence": "...", "pe_vs_5yr_avg_pct": X, "mean_reversion_signal": "undervalued|fair|overvalued", "key_factors": [...]}},
+  "earnings_quality": {{"rating": "...", "confidence": "...", "gaap_adjusted_gap_pct": X, "sbc_to_revenue_pct": X, "key_factors": [...]}},
+  "cashflow": {{"rating": "...", "confidence": "...", "key_factors": [...]}},
+  "debt": {{"rating": "...", "confidence": "...", "short_term_debt_pct": X, "key_factors": [...]}},
+  "dilution": {{"rating": "...", "confidence": "...", "dilution_pct": X, "key_factors": [...]}},
+  "dividend": {{"rating": "...", "confidence": "...", "yield_pct": X, "payout_ratio_pct": X, "growth_streak_years": X, "key_factors": [...]}},
+  "moat": {{"rating": "...", "confidence": "...", "moat_width": "wide|narrow|none", "primary_source": "...", "key_factors": [...]}},
+  "overall_verdict": "Exceptional" | "Strong" | "Neutral" | "Weak" | "Poor",
+  "conviction": "High" | "Medium" | "Low"
+}}
+```

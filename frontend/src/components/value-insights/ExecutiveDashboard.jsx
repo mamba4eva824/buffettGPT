@@ -1,4 +1,6 @@
-import { RatingBadge, Sparkline, useFilteredData } from './shared';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { CARD, RatingBadge, Sparkline, useFilteredData } from './shared';
 import { CATEGORIES, fmt } from './mockData';
 
 const SCORECARD_CONFIG = {
@@ -130,7 +132,7 @@ function ratingCounts(ratings) {
   return { strong, moderate, weak };
 }
 
-export default function ExecutiveDashboard({ data, ratings, latestPrice, timeRange, onSelectCategory }) {
+export default function ExecutiveDashboard({ data, ratings, latestPrice, timeRange, onSelectCategory, executiveSummary, triggers }) {
   const filtered = useFilteredData(data, timeRange);
   const latest = filtered.length > 0 ? filtered[filtered.length - 1] : null;
   const categories = CATEGORIES.filter((c) => c.id !== 'dashboard');
@@ -169,6 +171,21 @@ export default function ExecutiveDashboard({ data, ratings, latestPrice, timeRan
         </div>
         {healthSummary && (
           <p className="text-sm text-sand-600 dark:text-warm-200 leading-relaxed">{healthSummary}</p>
+        )}
+      </div>
+
+      {/* Executive Summary */}
+      <div className={CARD}>
+        <div className="flex items-center gap-2 mb-4">
+          <span className="material-symbols-outlined text-vi-gold text-xl">bolt</span>
+          <h3 className="font-serif font-bold text-sand-800 dark:text-warm-50">Executive Summary</h3>
+        </div>
+        {executiveSummary ? (
+          <div className="prose dark:prose-invert prose-sand max-w-none prose-p:text-sand-700 dark:prose-p:text-warm-200 prose-li:text-sand-700 dark:prose-li:text-warm-200 prose-strong:text-sand-900 dark:prose-strong:text-warm-50 prose-headings:font-serif prose-h3:text-base prose-h4:text-sm">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{executiveSummary}</ReactMarkdown>
+          </div>
+        ) : (
+          <p className="text-sm text-sand-400 dark:text-warm-500 italic">AI analysis not yet available</p>
         )}
       </div>
 
@@ -230,6 +247,21 @@ export default function ExecutiveDashboard({ data, ratings, latestPrice, timeRan
             </div>
           );
         })}
+      </div>
+
+      {/* Decision Triggers */}
+      <div className={CARD}>
+        <div className="flex items-center gap-2 mb-4">
+          <span className="material-symbols-outlined text-vi-gold text-xl">flag</span>
+          <h3 className="font-serif font-bold text-sand-800 dark:text-warm-50">Decision Triggers</h3>
+        </div>
+        {triggers ? (
+          <div className="prose dark:prose-invert prose-sand max-w-none prose-p:text-sand-700 dark:prose-p:text-warm-200 prose-li:text-sand-700 dark:prose-li:text-warm-200 prose-strong:text-sand-900 dark:prose-strong:text-warm-50 prose-headings:font-serif prose-h3:text-base prose-h4:text-sm">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{triggers}</ReactMarkdown>
+          </div>
+        ) : (
+          <p className="text-sm text-sand-400 dark:text-warm-500 italic">AI analysis not yet available</p>
+        )}
       </div>
     </div>
   );

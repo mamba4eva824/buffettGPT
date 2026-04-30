@@ -581,3 +581,82 @@ def test_post_earnings_graceful_when_fmp_fails(aws_resources):
     # But earnings data is still present
     assert pe[0]['eps_actual'] == 2.84
     assert pe[0]['eps_beat'] is True
+
+
+# ============================================================================
+# Executive Summary & Triggers Tests (AC-3, AC-4)
+# ============================================================================
+
+def test_executive_summary_and_triggers_returned_with_report(aws_resources):
+    """AC-3: Response includes executive_summary and triggers when report exists."""
+    aws_resources['reports_table'].put_item(Item={
+        'ticker': 'AAPL',
+        'section_id': '00_executive',
+        'ratings': SAMPLE_RATINGS_DICT,
+        'executive_summary': {
+            'content': '## Executive Summary\nApple remains a strong buy.',
+        },
+    })
+    aws_resources['reports_table'].put_item(Item={
+        'ticker': 'AAPL',
+        'section_id': '19_triggers',
+        'content': '## Decision Triggers\n- Watch for iPhone sales decline.',
+    })
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    assert body['executive_summary'] == '## Executive Summary\nApple remains a strong buy.'
+    assert body['triggers'] == '## Decision Triggers\n- Watch for iPhone sales decline.'
+    # Existing fields unchanged
+    assert body['ratings'] is not None
+    assert body['ratings']['overall_verdict'] == 'BUY'
+
+
+def test_executive_summary_and_triggers_null_without_report(aws_resources):
+    """AC-4: executive_summary and triggers are null when no report exists."""
+    aws_resources['metrics_table'].put_item(Item=SAMPLE_QUARTER)
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    assert body['executive_summary'] is None
+    assert body['triggers'] is None
+    # Other fields still work
+    assert body['quarters_available'] == 1
+    assert body['ratings'] is None
+
+
+def test_executive_summary_null_when_field_missing_from_item(aws_resources):
+    """executive_summary is null when 00_executive item lacks that field."""
+    aws_resources['reports_table'].put_item(Item={
+        'ticker': 'AAPL',
+        'section_id': '00_executive',
+        'ratings': SAMPLE_RATINGS_DICT,
+        # No executive_summary field
+    })
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    assert body['executive_summary'] is None
+    assert body['ratings'] is not None
+
+
+def test_triggers_null_when_section_missing(aws_resources):
+    """triggers is null when 19_triggers section does not exist."""
+    aws_resources['reports_table'].put_item(Item={
+        'ticker': 'AAPL',
+        'section_id': '00_executive',
+        'ratings': SAMPLE_RATINGS_DICT,
+    })
+
+    response = aws_resources['handler'](_make_event('AAPL'), None)
+    body = json.loads(response['body'])
+
+    assert response['statusCode'] == 200
+    assert body['triggers'] is None
+    assert body['ratings'] is not None

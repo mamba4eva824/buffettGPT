@@ -502,7 +502,7 @@ def fetch_from_fmp(ticker: str) -> dict:
     return statements
 
 
-def get_financial_data(ticker: str, fiscal_year: Optional[int] = None) -> dict:
+def get_financial_data(ticker: str, fiscal_year: Optional[int] = None, force_refresh: bool = False) -> dict:
     """
     Get financial data for a company, using cache if available.
 
@@ -514,6 +514,9 @@ def get_financial_data(ticker: str, fiscal_year: Optional[int] = None) -> dict:
     Args:
         ticker: Stock ticker symbol (e.g., 'AAPL')
         fiscal_year: Fiscal year (defaults to current year)
+        force_refresh: If True, skip the DynamoDB cache read and fetch fresh from FMP.
+            The fresh response is still written to cache for subsequent readers.
+            Use when the ticker has just reported and its cache is likely stale.
 
     Returns:
         dict containing:
@@ -532,21 +535,24 @@ def get_financial_data(ticker: str, fiscal_year: Optional[int] = None) -> dict:
     if not ticker.isalpha() or len(ticker) > 5:
         raise ValueError(f"Invalid ticker format: {ticker}")
 
-    # Check cache first
-    cached = get_cached_data(ticker, fiscal_year)
-    if cached:
-        # [FMP_DEBUG] Log cache hit with data summary
-        raw = cached.get('raw_financials', {})
-        logger.info(f"[FMP_DEBUG] CACHE HIT for {ticker}:{fiscal_year}")
-        logger.info(f"[FMP_DEBUG] Cached data: balance_sheet={len(raw.get('balance_sheet', []))} quarters, "
-                    f"income_statement={len(raw.get('income_statement', []))} quarters, "
-                    f"cash_flow={len(raw.get('cash_flow', []))} quarters")
-        # Log sample data point
-        if raw.get('balance_sheet'):
-            bs = raw['balance_sheet'][0]
-            logger.info(f"[FMP_DEBUG] Sample Q0: totalDebt={bs.get('totalDebt')}, "
-                        f"totalEquity={bs.get('totalStockholdersEquity')}, date={bs.get('date')}")
-        return cached
+    # Check cache first (unless forced refresh)
+    if not force_refresh:
+        cached = get_cached_data(ticker, fiscal_year)
+        if cached:
+            # [FMP_DEBUG] Log cache hit with data summary
+            raw = cached.get('raw_financials', {})
+            logger.info(f"[FMP_DEBUG] CACHE HIT for {ticker}:{fiscal_year}")
+            logger.info(f"[FMP_DEBUG] Cached data: balance_sheet={len(raw.get('balance_sheet', []))} quarters, "
+                        f"income_statement={len(raw.get('income_statement', []))} quarters, "
+                        f"cash_flow={len(raw.get('cash_flow', []))} quarters")
+            # Log sample data point
+            if raw.get('balance_sheet'):
+                bs = raw['balance_sheet'][0]
+                logger.info(f"[FMP_DEBUG] Sample Q0: totalDebt={bs.get('totalDebt')}, "
+                            f"totalEquity={bs.get('totalStockholdersEquity')}, date={bs.get('date')}")
+            return cached
+    else:
+        logger.info(f"[FMP_DEBUG] FORCE REFRESH for {ticker}:{fiscal_year} — bypassing cache")
 
     # Cache miss - fetch from FMP
     logger.info(f"[FMP_DEBUG] CACHE MISS for {ticker}:{fiscal_year} - fetching from FMP API")

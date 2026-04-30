@@ -93,13 +93,6 @@ variable "bedrock_model_id" {
   default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
-# Analysis Follow-Up Docker Variables
-variable "analysis_followup_image_tag" {
-  description = "Docker image tag for analysis follow-up Lambda"
-  type        = string
-  default     = "latest"
-}
-
 # Investment Research Variables
 variable "investment_research_image_tag" {
   description = "Docker image tag for investment research Lambda"
@@ -112,6 +105,19 @@ variable "followup_action_image_tag" {
   description = "Docker image tag for followup action Lambda (Bedrock action group handler)"
   type        = string
   default     = "v1.0.0"
+}
+
+# Analysis Followup Variables
+variable "analysis_followup_image_tag" {
+  description = "Docker image tag for analysis-followup Lambda (SSE streaming via FastAPI + LWA)"
+  type        = string
+  default     = "latest"
+}
+
+variable "create_analysis_followup_docker" {
+  description = "If true, deploy analysis_followup as a Docker Lambda (requires ECR image). If false, deploy as a Python zip Lambda. Default false preserves the legacy zip pattern; dev sets true after pushing the LWA image."
+  type        = bool
+  default     = false
 }
 
 variable "create_followup_action_lambda" {
@@ -152,6 +158,19 @@ variable "metrics_history_cache_table_arn" {
 
 variable "metrics_history_cache_table_name" {
   description = "Name of the metrics history cache DynamoDB table for followup-action Lambda env var"
+  type        = string
+  default     = ""
+}
+
+# Pipeline Notifications
+variable "enable_pipeline_notifications" {
+  description = "Enable SNS notifications for pipeline success/failure. Must be true when alerts_sns_topic_arn is provided."
+  type        = bool
+  default     = false
+}
+
+variable "alerts_sns_topic_arn" {
+  description = "ARN of the SNS topic for pipeline success/failure notifications. Empty string disables notifications."
   type        = string
   default     = ""
 }

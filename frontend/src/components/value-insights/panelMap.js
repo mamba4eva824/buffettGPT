@@ -9,6 +9,7 @@ import {
   MoatPanel,
 } from './CategoryPanels';
 import ExecutiveDashboard from './ExecutiveDashboard';
+import DecisionTriggersPanel from './DecisionTriggersPanel';
 
 export const PANEL_MAP = {
   dashboard: ExecutiveDashboard,
@@ -20,4 +21,5 @@ export const PANEL_MAP = {
   debt: DebtPanel,
   earnings_quality: EarningsQualityPanel,
   moat: MoatPanel,
+  triggers: DecisionTriggersPanel,
 };
