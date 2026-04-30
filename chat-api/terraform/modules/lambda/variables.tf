@@ -93,13 +93,6 @@ variable "bedrock_model_id" {
   default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
 
-# Analysis Follow-Up Docker Variables
-variable "analysis_followup_image_tag" {
-  description = "Docker image tag for analysis follow-up Lambda"
-  type        = string
-  default     = "latest"
-}
-
 # Investment Research Variables
 variable "investment_research_image_tag" {
   description = "Docker image tag for investment research Lambda"
@@ -119,6 +112,12 @@ variable "analysis_followup_image_tag" {
   description = "Docker image tag for analysis-followup Lambda (SSE streaming via FastAPI + LWA)"
   type        = string
   default     = "latest"
+}
+
+variable "create_analysis_followup_docker" {
+  description = "If true, deploy analysis_followup as a Docker Lambda (requires ECR image). If false, deploy as a Python zip Lambda. Default false preserves the legacy zip pattern; dev sets true after pushing the LWA image."
+  type        = bool
+  default     = false
 }
 
 variable "create_followup_action_lambda" {

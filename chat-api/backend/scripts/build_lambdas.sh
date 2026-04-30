@@ -31,7 +31,7 @@ FUNCTIONS=(
     "auth_verify"
     "conversations_handler"
     "search_handler"
-    # analysis_followup migrated to Docker+LWA (chat-api/terraform/modules/lambda/analysis_followup_docker.tf)
+    "analysis_followup"
     "stripe_webhook_handler"
     "subscription_handler"
     "waitlist_handler"

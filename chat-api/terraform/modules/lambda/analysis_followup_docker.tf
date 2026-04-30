@@ -4,12 +4,16 @@
 # Python zip runtime cannot serialize generators for RESPONSE_STREAM,
 # so token-by-token streaming requires the LWA pattern.
 # ============================================================================
+# Gated by var.create_analysis_followup_docker. When false, the legacy zip
+# Lambda in main.tf (lambda_configs) + function_urls.tf is used instead.
+# ============================================================================
 
 # ============================================================================
 # ECR Repository
 # ============================================================================
 
 resource "aws_ecr_repository" "analysis_followup" {
+  count                = var.create_analysis_followup_docker ? 1 : 0
   name                 = "${var.project_name}/analysis-followup"
   image_tag_mutability = "MUTABLE"
 
@@ -29,7 +33,8 @@ resource "aws_ecr_repository" "analysis_followup" {
 
 # ECR Repository Policy - Allow Lambda service to pull images
 resource "aws_ecr_repository_policy" "analysis_followup" {
-  repository = aws_ecr_repository.analysis_followup.name
+  count      = var.create_analysis_followup_docker ? 1 : 0
+  repository = aws_ecr_repository.analysis_followup[0].name
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -51,7 +56,8 @@ resource "aws_ecr_repository_policy" "analysis_followup" {
 
 # Lifecycle policy to keep only the latest version
 resource "aws_ecr_lifecycle_policy" "analysis_followup" {
-  repository = aws_ecr_repository.analysis_followup.name
+  count      = var.create_analysis_followup_docker ? 1 : 0
+  repository = aws_ecr_repository.analysis_followup[0].name
 
   policy = jsonencode({
     rules = [
@@ -90,12 +96,13 @@ resource "aws_ecr_lifecycle_policy" "analysis_followup" {
 # ============================================================================
 
 resource "aws_lambda_function" "analysis_followup_docker" {
+  count         = var.create_analysis_followup_docker ? 1 : 0
   function_name = "${var.project_name}-${var.environment}-analysis-followup"
   role          = var.lambda_role_arn
 
   publish      = true
   package_type = "Image"
-  image_uri    = "${aws_ecr_repository.analysis_followup.repository_url}:${var.analysis_followup_image_tag}"
+  image_uri    = "${aws_ecr_repository.analysis_followup[0].repository_url}:${var.analysis_followup_image_tag}"
 
   timeout                        = 60
   memory_size                    = 256
@@ -141,6 +148,7 @@ resource "aws_lambda_function" "analysis_followup_docker" {
 # ============================================================================
 
 resource "aws_cloudwatch_log_group" "analysis_followup_docker" {
+  count             = var.create_analysis_followup_docker ? 1 : 0
   name              = "/aws/lambda/${var.project_name}-${var.environment}-analysis-followup"
   retention_in_days = var.log_retention_days
 
@@ -159,7 +167,8 @@ resource "aws_cloudwatch_log_group" "analysis_followup_docker" {
 # ============================================================================
 
 resource "aws_lambda_function_url" "analysis_followup_docker" {
-  function_name      = aws_lambda_function.analysis_followup_docker.function_name
+  count              = var.create_analysis_followup_docker ? 1 : 0
+  function_name      = aws_lambda_function.analysis_followup_docker[0].function_name
   authorization_type = "NONE"
   invoke_mode        = "RESPONSE_STREAM"
 
