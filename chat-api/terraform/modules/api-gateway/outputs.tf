@@ -53,6 +53,11 @@ output "analysis_api_endpoint" {
   value       = var.enable_analysis_api ? "${aws_api_gateway_stage.analysis[0].invoke_url}/analysis" : null
 }
 
+output "analysis_api_base_url" {
+  description = "Base URL of the Analysis REST API Gateway (stage invoke URL without path suffix)"
+  value       = var.enable_analysis_api ? aws_api_gateway_stage.analysis[0].invoke_url : null
+}
+
 output "analysis_api_execution_arn" {
   description = "Execution ARN for Analysis REST API Gateway"
   value       = var.enable_analysis_api ? aws_api_gateway_rest_api.analysis[0].execution_arn : null

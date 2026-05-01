@@ -227,7 +227,7 @@ class TestSignupHappyPath:
         assert body['status'] == 'waitlisted'
         assert body['message'] == "You're on the waitlist!"
         assert 'tiers' in body
-        assert len(body['tiers']) == 3
+        assert len(body['tiers']) == 2
 
     def test_signup_with_valid_referral_credits_referrer(self, handler, dynamodb_mock, seeded_user, signup_event):
         signup_event['body'] = json.dumps({
@@ -240,16 +240,6 @@ class TestSignupHappyPath:
         # Verify referrer was credited
         referrer = dynamodb_mock.get_item(Key={'email': seeded_user['email']})['Item']
         assert int(referrer['referral_count']) == 1
-
-    def test_referrer_auto_promoted_to_early_access(self, handler, dynamodb_mock, seeded_user, signup_event):
-        signup_event['body'] = json.dumps({
-            'email': 'friend@example.com',
-            'referral_code': seeded_user['referral_code'],
-        })
-        handler.lambda_handler(signup_event, None)
-
-        referrer = dynamodb_mock.get_item(Key={'email': seeded_user['email']})['Item']
-        assert referrer['status'] == 'early_access'
 
     def test_queue_position_increments_with_signups(self, handler, dynamodb_mock):
         emails = ['first@example.com', 'second@example.com', 'third@example.com']
@@ -531,8 +521,8 @@ class TestTierCalculation:
     def test_zero_referrals_shows_first_tier_as_next(self, handler):
         info = handler._get_tier_info(0)
         assert info['current_tier'] is None
-        assert info['next_tier']['name'] == 'Early Access'
-        assert info['next_tier']['referrals_needed'] == 1
+        assert info['next_tier']['name'] == '1 Month Free Plus'
+        assert info['next_tier']['referrals_needed'] == 3
 
     def test_count_at_threshold_shows_tier_as_current(self, handler):
         info = handler._get_tier_info(3)
@@ -727,25 +717,25 @@ class TestEmailIntegration:
             'email': 'referred@example.com',
             'referral_code': seeded_user['referral_code'],
         })
-        with patch.object(handler, 'send_tier_unlocked_email') as mock_tier:
+        with patch.object(handler, 'send_referral_success_email') as mock_ref, \
+             patch.object(handler, 'send_tier_unlocked_email') as mock_tier:
             resp = handler.lambda_handler(signup_event, None)
             assert resp['statusCode'] == 201
 
-            # First referral → tier threshold 1 → tier unlocked email
-            mock_tier.assert_called_once()
-            call_kwargs = mock_tier.call_args
-            assert call_kwargs[1]['to'] == seeded_user['email']
-            assert call_kwargs[1]['tier_name'] == 'Early Access'
-            assert call_kwargs[1]['referral_count'] == 1
+            # First referral (count=1) — no tier at 1, so referral success email only
+            mock_ref.assert_called_once()
+            assert mock_ref.call_args[1]['to'] == seeded_user['email']
+            assert mock_ref.call_args[1]['referral_count'] == 1
+            mock_tier.assert_not_called()
 
     def test_referral_success_email_when_no_tier_unlocked(self, handler, dynamodb_mock, signup_event):
         """When referral_count goes from 1 to 2, no tier unlocked — sends referral success email."""
-        # Seed referrer with 1 referral (already at Early Access tier)
+        # Seed referrer with 1 referral (no tier unlocked yet, first tier at 3)
         dynamodb_mock.put_item(Item={
             'email': 'referrer2@example.com',
             'referral_code': 'BUFF-BBBB',
             'referral_count': 1,
-            'status': 'early_access',
+            'status': 'waitlisted',
             'created_at': '2026-02-12T10:00:00+00:00',
             'ip_address': '10.0.0.2',
         })
@@ -776,7 +766,7 @@ class TestEmailIntegration:
             'email': 'friend3@example.com',
             'referral_code': seeded_user['referral_code'],
         })
-        with patch.object(handler, 'send_tier_unlocked_email', side_effect=Exception("Email down")):
+        with patch.object(handler, 'send_referral_success_email', side_effect=Exception("Email down")):
             resp = handler.lambda_handler(signup_event, None)
             assert resp['statusCode'] == 201
 

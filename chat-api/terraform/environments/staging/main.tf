@@ -68,6 +68,10 @@ locals {
     # Token Usage Tracking (monthly limits for follow-up agent)
     TOKEN_USAGE_TABLE   = try(module.dynamodb.token_usage_table_name, "")
     DEFAULT_TOKEN_LIMIT = "500000"  # 500K tokens for staging/testing
+    TOKEN_LIMIT_FREE    = "500000"  # Free tier gets 500K in staging
+
+    # Staging: bypass subscription check so free-tier users can access Market Intelligence
+    BYPASS_SUBSCRIPTION_CHECK = "true"
 
     # JWT Authentication Configuration
     JWT_SECRET_ARN = module.auth[0].jwt_secret_arn
@@ -99,6 +103,14 @@ locals {
       RESEND_API_KEY_ARN = module.email.resend_api_key_arn
       RESEND_FROM_EMAIL  = module.email.resend_from_email
       API_BASE_URL       = module.api_gateway.http_api_endpoint
+    }
+    sp500_eod_ingest = {
+      STOCK_DATA_4H_TABLE          = module.dynamodb.stock_data_4h_table_name
+      POWERTOOLS_SERVICE_NAME      = "sp500-eod-ingest"
+      POWERTOOLS_METRICS_NAMESPACE = "SP500EODIngest"
+    }
+    value_insights_handler = {
+      STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
     }
   }
 }
@@ -150,11 +162,28 @@ module "lambda" {
   function_env_vars   = local.lambda_function_env_vars
   log_retention_days  = 14 # 2 week retention for staging
 
-  reserved_concurrency = {
-    analysis_followup = 10
-  }
+  # analysis_followup concurrency moved to the Docker Lambda resource directly
+  # (reserved_concurrent_executions=10 in modules/lambda/analysis_followup_docker.tf).
+  reserved_concurrency = {}
 
   common_tags = local.common_tags
+
+  # CORS: allow CloudFront + localhost origins for Function URLs (market_intel_chat).
+  cors_allowed_origins = [
+    module.cloudfront.cloudfront_url,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000"
+  ]
+
+  # analysis_followup Docker Function URL has its own CORS list — must include
+  # CloudFront so the staging frontend can POST without preflight failure.
+  analysis_followup_cors_allowed_origins = [
+    module.cloudfront.cloudfront_url,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000"
+  ]
 
   # KMS key for DynamoDB encryption
   kms_key_arn = module.core.kms_key_arn
@@ -163,6 +192,20 @@ module "lambda" {
   # Docker image NOT yet pushed to staging ECR - disable Lambda creation
   create_followup_action_lambda = false
   followup_action_image_tag     = "latest"
+
+  # Analysis Followup Lambda — Docker variant (LWA streaming).
+  # Staging consumes the dev-managed ECR repo (data lookup); does NOT create the
+  # repo itself (create_analysis_followup_docker_ecr stays at default false).
+  # image_tag is documentary: lifecycle.ignore_changes=[image_uri] means future
+  # terraform applies don't roll the image — use `aws lambda update-function-code`.
+  create_analysis_followup_docker = true
+  analysis_followup_image_tag     = "latest"
+
+  # Pipeline schedules & notifications — deferred to Phase 3 of dev→staging sync
+  # Keep explicitly disabled in Phase 1 (infra catch-up only)
+  enable_eod_ingest_schedule       = false
+  enable_earnings_update_schedule  = false
+  enable_pipeline_notifications    = false
 
   # DynamoDB table ARNs for followup-action Lambda IAM policy
   investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
@@ -218,6 +261,16 @@ module "api_gateway" {
   # Subscription/Stripe API (checkout, portal, status, webhook)
   enable_subscription_routes = true
   enable_stripe_webhook      = true
+
+  # Value Insights API (S&P 500 market data)
+  enable_value_insights_routes = true
+
+  # Earnings Feed + Watchlist APIs — Phase 2 of dev→staging sync.
+  # Routes hit the earnings_feed_handler / watchlist_handler Lambdas that
+  # Phase 1 already deployed. Earnings tab returns empty data until Phase 3
+  # enables the EOD/earnings EventBridge schedules to populate aggregates.
+  enable_earnings_feed_routes  = true
+  enable_watchlist_api_routes  = true
 
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
@@ -327,6 +380,10 @@ module "cloudfront" {
   project_name = local.project_name
   environment  = local.environment
   price_class  = "PriceClass_100" # US, Canada, Europe
+
+  # Password protection for staging beta
+  enable_basic_auth      = true
+  basic_auth_credentials = var.basic_auth_credentials
 
   common_tags = local.common_tags
 }

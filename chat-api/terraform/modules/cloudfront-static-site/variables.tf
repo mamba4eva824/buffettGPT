@@ -26,8 +26,27 @@ variable "wait_for_deployment" {
   default     = true
 }
 
+variable "site_name" {
+  description = "Short name to distinguish this site (e.g., 'app' or 'landing')"
+  type        = string
+  default     = "frontend"
+}
+
 variable "common_tags" {
   description = "Common tags to apply to all resources"
   type        = map(string)
   default     = {}
+}
+
+variable "enable_basic_auth" {
+  description = "Enable basic auth password protection"
+  type        = bool
+  default     = false
+}
+
+variable "basic_auth_credentials" {
+  description = "Base64-encoded username:password for basic auth"
+  type        = string
+  default     = ""
+  sensitive   = true
 }

@@ -71,6 +71,7 @@ resource "aws_lambda_function" "auth_callback" {
       USERS_TABLE             = aws_dynamodb_table.users.name
       ENVIRONMENT             = var.environment
       PROJECT_NAME            = var.project_name
+      FRONTEND_URL            = var.frontend_url
     }
   }
 

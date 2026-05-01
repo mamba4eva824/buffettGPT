@@ -120,9 +120,6 @@ jobs:
             --secret-string "${{ secrets.JWT_SECRET }}" \
             --region ${{ env.AWS_REGION }}
 
-          # NOTE: Pinecone API key secret removed (2025-01)
-          # Knowledge Base and Pinecone integration deprecated
-
           echo "✅ AWS Secrets Manager secrets created/updated successfully"
 
       - name: Setup Terraform
@@ -148,6 +145,7 @@ jobs:
             -var="google_client_secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
             -var="jwt_secret=${{ secrets.JWT_SECRET }}" \
             -var="alert_email=${{ secrets.ALERT_EMAIL }}" \
+            -var="basic_auth_credentials=${{ secrets.BASIC_AUTH_CREDENTIALS }}" \
             -detailed-exitcode
           EXIT_CODE=$?
           set -e
@@ -182,6 +180,67 @@ jobs:
           echo "  Research Lambda: $RESEARCH_URL"
           echo "  Followup Lambda: $FOLLOWUP_URL"
           echo "  Market Intel: $MARKET_INTEL_URL"
+
+  build-docker-lambdas:
+    name: Build Docker Lambda - ${{ matrix.lambda.name }}
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure]
+    strategy:
+      fail-fast: false
+      matrix:
+        lambda:
+          - name: investment-research
+            dockerfile_dir: chat-api/backend/lambda/investment_research
+            ecr_repo: buffett/investment-research
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.lambda.dockerfile_dir }}
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:${{ github.sha }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:latest
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            GIT_COMMIT=${{ github.sha }}
+          cache-from: type=gha,scope=staging-${{ matrix.lambda.name }}
+          cache-to: type=gha,mode=max,scope=staging-${{ matrix.lambda.name }}
+          provenance: false
+
+      - name: Update Lambda function
+        run: |
+          FUNCTION_NAME="buffett-staging-${{ matrix.lambda.name }}"
+          IMAGE_URI="${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:${{ github.sha }}"
+
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --image-uri $IMAGE_URI \
+            --region ${{ env.AWS_REGION }}
+
+          aws lambda wait function-updated \
+            --function-name $FUNCTION_NAME \
+            --region ${{ env.AWS_REGION }}
+
+          echo "Lambda $FUNCTION_NAME updated with image: $IMAGE_URI"
 
   build-frontend:
     name: Build Frontend
@@ -287,7 +346,7 @@ jobs:
   deployment-summary:
     name: Deployment Summary
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure, build-frontend, deploy-frontend]
+    needs: [deploy-infrastructure, build-docker-lambdas, build-frontend, deploy-frontend]
     if: always()
 
     steps:
@@ -299,10 +358,12 @@ jobs:
           echo "Environment: staging"
           echo "HTTP API: ${{ needs.deploy-infrastructure.outputs.http_api_endpoint }}"
           echo "Research Lambda: ${{ needs.deploy-infrastructure.outputs.research_function_url }}"
+          echo "Market Intel: ${{ needs.deploy-infrastructure.outputs.market_intel_url }}"
           echo "Frontend: ${{ secrets.CLOUDFRONT_URL }}"
           echo ""
           echo "✅ Backend infrastructure deployed"
           echo "✅ Lambda functions deployed"
+          echo "✅ Docker Lambdas built and pushed"
           echo "✅ Frontend built and deployed to CloudFront"
           echo ""
           echo "📋 Next Steps:"

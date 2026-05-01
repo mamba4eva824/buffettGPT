@@ -45,7 +45,6 @@ waitlist_table = dynamodb.Table(WAITLIST_TABLE)
 
 # Referral tier definitions
 REFERRAL_TIERS = [
-    {"name": "Early Access", "threshold": 1, "reward": "Skip the waitlist"},
     {"name": "1 Month Free Plus", "threshold": 3, "reward": "1 month free Plus subscription"},
     {"name": "3 Months Free Plus", "threshold": 5, "reward": "3 months free Plus subscription"},
 ]
@@ -346,20 +345,6 @@ def _credit_referrer(referrer_email: str, referrer_code: str = '') -> None:
             ReturnValues='UPDATED_NEW',
         )
         new_count = int(response['Attributes'].get('referral_count', 0))
-
-        # Update status to early_access if they hit the first tier
-        if new_count >= 1:
-            try:
-                waitlist_table.update_item(
-                    Key={'email': referrer_email},
-                    UpdateExpression='SET #s = :status',
-                    ExpressionAttributeNames={'#s': 'status'},
-                    ExpressionAttributeValues={':status': 'early_access', ':waitlisted': 'waitlisted'},
-                    ConditionExpression='#s = :waitlisted',
-                )
-            except ClientError as e:
-                if e.response['Error']['Code'] != 'ConditionalCheckFailedException':
-                    raise
 
         # Send referral notification emails (fire-and-forget — never block credit)
         try:

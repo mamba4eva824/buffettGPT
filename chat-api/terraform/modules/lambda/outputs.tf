@@ -109,8 +109,8 @@ output "fmp_api_key_name" {
 # }
 
 output "analysis_followup_url" {
-  description = "Function URL for analysis followup (SSE streaming via Docker+LWA)"
-  value       = try(aws_lambda_function_url.analysis_followup_docker.function_url, null)
+  description = "Function URL for analysis followup (SSE streaming). Docker+LWA when create_analysis_followup_docker=true, otherwise zip Lambda."
+  value = var.create_analysis_followup_docker ? try(aws_lambda_function_url.analysis_followup_docker[0].function_url, null) : try(aws_lambda_function_url.analysis_followup[0].function_url, null)
 }
 
 output "market_intel_chat_url" {
