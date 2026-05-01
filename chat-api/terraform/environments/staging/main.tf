@@ -201,11 +201,19 @@ module "lambda" {
   create_analysis_followup_docker = true
   analysis_followup_image_tag     = "latest"
 
-  # Pipeline schedules & notifications — deferred to Phase 3 of dev→staging sync
-  # Keep explicitly disabled in Phase 1 (infra catch-up only)
-  enable_eod_ingest_schedule       = false
-  enable_earnings_update_schedule  = false
-  enable_pipeline_notifications    = false
+  # Pipeline schedules — staging is the always-on data pipeline env.
+  # Shared FMP API key (300 calls/min limit) is the reason dev's schedules are
+  # off; only staging fires the EOD + earnings cron now.
+  # Cron: EOD ingest 5pm ET, earnings_update 5pm ET + 11:30am ET (matches dev's
+  # prior schedule before Phase 3a moved them here).
+  enable_eod_ingest_schedule      = true
+  enable_earnings_update_schedule = true
+
+  # Pipeline notifications — staging now owns the success/failure email path.
+  # alerts_sns_topic_arn comes from the staging monitoring module so the
+  # subscription delivers to var.alert_email (set by GitHub Actions secret).
+  enable_pipeline_notifications = true
+  alerts_sns_topic_arn          = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
 
   # DynamoDB table ARNs for followup-action Lambda IAM policy
   investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
