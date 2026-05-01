@@ -1,0 +1,304 @@
+name: Promote dev → staging
+
+# Manual-only promotion helper. Opens a PR from `dev` to `staging` containing
+# only the paths that should cross the env boundary. Env-specific files
+# (terraform/environments/{dev,staging}/, deploy-{dev,staging}.yml,
+# frontend/.env.{development,staging,production}, the MI changelog) are
+# explicitly reverted to staging's pre-merge state and an audit step
+# hard-fails if any of them leak into the diff.
+#
+# Trigger by clicking "Run workflow" in the GitHub Actions UI, or:
+#   gh workflow run promote-dev-to-staging.yml
+#
+# Kill switch: `gh workflow disable promote-dev-to-staging.yml`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: "PR title (defaults to 'chore(promote): dev → staging — <date>')"
+        required: false
+        default: ""
+      draft:
+        description: "Open the PR as a draft (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  promote:
+    name: Open dev → staging PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout staging (full history)
+        uses: actions/checkout@v4
+        with:
+          ref: staging
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Skip if a prior promotion PR is still open
+        id: stale_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          OPEN=$(gh pr list \
+            --base staging \
+            --state open \
+            --label promotion \
+            --json number,headRefName \
+            --jq 'length')
+          if [ "$OPEN" -gt 0 ]; then
+            echo "An open dev→staging promotion PR already exists. Close or merge it first."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure required labels exist
+        if: steps.stale_check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create promotion --color 0E8A16 --description "dev→staging promotion PR" 2>/dev/null || true
+          gh label create automated --color FBCA04 --description "Opened by an automation"   2>/dev/null || true
+
+      - name: Create promotion branch off staging
+        if: steps.stale_check.outputs.skip != 'true'
+        id: branch
+        run: |
+          set -euo pipefail
+          BRANCH="promote/dev-to-staging-${{ github.run_id }}"
+          git checkout -b "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Merge dev with --no-commit (so we can revert excluded paths)
+        if: steps.stale_check.outputs.skip != 'true'
+        id: merge
+        run: |
+          set -euo pipefail
+          if git merge --no-commit --no-ff --no-edit origin/dev; then
+            echo "conflict=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "conflict=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Revert excluded paths to staging's pre-merge state
+        if: steps.stale_check.outputs.skip != 'true' && steps.merge.outputs.conflict == 'false'
+        run: |
+          set -euo pipefail
+          # Paths that legitimately differ between envs and must NEVER promote
+          # automatically. The MI CHANGELOG drifts continuously and is updated
+          # by hand on the phase PRs themselves.
+          EXCLUDED=(
+            "chat-api/terraform/environments/dev"
+            "chat-api/terraform/environments/staging"
+            ".github/workflows/deploy-dev.yml"
+            ".github/workflows/deploy-staging.yml"
+            ".github/workflows/promote-dev-to-staging.yml"
+            "frontend/.env.development"
+            "frontend/.env.staging"
+            "frontend/.env.production"
+            "docs/market-intelligence/CHANGELOG.md"
+          )
+          # Revert each path to whatever staging had at HEAD (before the merge).
+          # `HEAD` here points to staging's tip because we haven't committed yet.
+          for path in "${EXCLUDED[@]}"; do
+            if [ -e "$path" ] || git ls-files -- "$path" | grep -q .; then
+              git checkout HEAD -- "$path" 2>/dev/null || true
+            fi
+          done
+
+      - name: Audit — fail if any excluded path leaked into the staged diff
+        if: steps.stale_check.outputs.skip != 'true' && steps.merge.outputs.conflict == 'false'
+        run: |
+          set -euo pipefail
+          LEAKED=$(git diff --cached --name-only | \
+            grep -E '^(chat-api/terraform/environments/(dev|staging)/|\.github/workflows/(deploy-(dev|staging)|promote-dev-to-staging)\.yml|frontend/\.env\.(development|staging|production)|docs/market-intelligence/CHANGELOG\.md)' \
+            || true)
+          if [ -n "$LEAKED" ]; then
+            echo "::error::Excluded paths leaked into the promotion diff:"
+            echo "$LEAKED"
+            exit 1
+          fi
+
+      - name: Skip if no actionable diff after exclusions
+        if: steps.stale_check.outputs.skip != 'true' && steps.merge.outputs.conflict == 'false'
+        id: noop_check
+        run: |
+          set -euo pipefail
+          if git diff --cached --quiet; then
+            echo "Nothing to promote — staging already contains every shared change from dev."
+            echo "noop=true" >> "$GITHUB_OUTPUT"
+            git merge --abort 2>/dev/null || true
+          else
+            echo "noop=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit merge
+        if: |
+          steps.stale_check.outputs.skip != 'true' &&
+          steps.merge.outputs.conflict == 'false' &&
+          steps.noop_check.outputs.noop != 'true'
+        run: |
+          set -euo pipefail
+          git commit -m "chore(promote): dev → staging (run ${{ github.run_id }})
+
+          Promotes shared backend / frontend / module / docs changes from dev
+          into staging. Env-specific paths (terraform/environments/{dev,staging}/,
+          deploy-{dev,staging}.yml, .env.*, MI CHANGELOG) were intentionally
+          reverted to staging's pre-merge state."
+
+      - name: Build commit list for PR body
+        if: |
+          steps.stale_check.outputs.skip != 'true' &&
+          steps.merge.outputs.conflict == 'false' &&
+          steps.noop_check.outputs.noop != 'true'
+        id: commits
+        run: |
+          set -euo pipefail
+          # Recent dev commits not yet on staging — limited to 30 to keep the
+          # body readable.
+          {
+            echo 'list<<EOF'
+            git log --oneline --no-merges origin/staging..origin/dev | head -30
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Push promotion branch (retry once on race)
+        if: |
+          steps.stale_check.outputs.skip != 'true' &&
+          steps.merge.outputs.conflict == 'false' &&
+          steps.noop_check.outputs.noop != 'true'
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.branch.outputs.branch }}"
+          if ! git push origin "$BRANCH"; then
+            echo "Push failed once; refetching staging and retrying via rebase."
+            git fetch origin staging
+            git rebase origin/staging
+            git push origin "$BRANCH"
+          fi
+
+      - name: Open PR
+        if: |
+          steps.stale_check.outputs.skip != 'true' &&
+          steps.merge.outputs.conflict == 'false' &&
+          steps.noop_check.outputs.noop != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.branch.outputs.branch }}"
+          TITLE="${{ inputs.title }}"
+          if [ -z "$TITLE" ]; then
+            TITLE="chore(promote): dev → staging — $(date -u +'%Y-%m-%d')"
+          fi
+          DRAFT_FLAG=""
+          if [ "${{ inputs.draft }}" = "true" ]; then
+            DRAFT_FLAG="--draft"
+          fi
+
+          BODY=$(cat <<EOF
+          Auto-opened by [\`promote-dev-to-staging.yml\`](.github/workflows/promote-dev-to-staging.yml). Promotes shared changes from \`dev\` into \`staging\`.
+
+          ## Excluded paths
+          The following paths are reverted to staging's pre-merge state and never appear in this PR's diff:
+          - \`chat-api/terraform/environments/{dev,staging}/\`
+          - \`.github/workflows/deploy-{dev,staging}.yml\`
+          - \`frontend/.env.{development,staging,production}\`
+          - \`docs/market-intelligence/CHANGELOG.md\` (hand-updated on the phase PRs themselves)
+
+          ## Commits being promoted (most recent first)
+          \`\`\`
+          ${{ steps.commits.outputs.list }}
+          \`\`\`
+
+          ## ⚠ CI did not run pre-merge
+          GitHub recursion guard: a PR opened by \`GITHUB_TOKEN\` does not trigger \`on: push\` / \`on: pull_request\` workflows. \`deploy-staging.yml\` will run only on the merge commit's push event. Verify locally if uncertain.
+
+          ## Reviewer checklist
+          - [ ] Diff contains no env-specific files (audit step already enforced this)
+          - [ ] If MI files changed, \`docs/market-intelligence/CHANGELOG.md\` has a hand-written entry on staging (or in this PR via a follow-up commit)
+          - [ ] No half-finished feature flags landing on staging that should stay dev-only
+
+          ## Kill switch
+          \`gh workflow disable promote-dev-to-staging.yml\`
+          EOF
+          )
+
+          gh pr create \
+            --base staging \
+            --head "$BRANCH" \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --label promotion \
+            --label automated \
+            $DRAFT_FLAG
+
+      - name: Open DRAFT PR with conflict markers (conflict path)
+        if: steps.stale_check.outputs.skip != 'true' && steps.merge.outputs.conflict == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BRANCH="${{ steps.branch.outputs.branch }}"
+          # Stage everything (conflict markers and all) and commit so the
+          # branch can be pushed for human resolution.
+          git add -A
+          git commit -m "chore(promote): dev → staging — CONFLICT, requires human resolution
+
+          Auto-promotion hit a merge conflict on a non-excluded path. Branch
+          is pushed as a draft PR; the reviewer must resolve conflicts and
+          remove the markers before this can merge."
+          git push origin "$BRANCH"
+
+          BODY=$(cat <<EOF
+          🚧 **Merge conflict during auto-promotion.** This PR is a DRAFT — please resolve conflict markers locally:
+
+          \`\`\`
+          gh pr checkout <pr-number>
+          # resolve conflicts
+          git add -A && git commit
+          git push
+          gh pr ready
+          \`\`\`
+
+          The conflict is on a path NOT in the auto-mirror exclusion list, which usually means dev and staging are diverging on shared code (rare — typically a hotfix landed directly on staging).
+          EOF
+          )
+
+          gh pr create \
+            --base staging \
+            --head "$BRANCH" \
+            --title "chore(promote): dev → staging — CONFLICT (run ${{ github.run_id }})" \
+            --body "$BODY" \
+            --label promotion \
+            --label automated \
+            --draft
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### Promotion run summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.stale_check.outputs.skip }}" = "true" ]; then
+            echo "🟡 Skipped: an open promotion PR already exists. Close/merge it before promoting again." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.merge.outputs.conflict }}" = "true" ]; then
+            echo "🚧 Conflict — opened DRAFT PR for human resolution." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.noop_check.outputs.noop }}" = "true" ]; then
+            echo "✅ Nothing to promote — staging already has every shared dev change." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "✅ PR opened on \`${{ steps.branch.outputs.branch }}\`." >> "$GITHUB_STEP_SUMMARY"
+          fi
