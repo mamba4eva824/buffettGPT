@@ -87,7 +87,7 @@ def _get_fmp_api_key() -> str:
 # ---------------------------------------------------------------------------
 # Earnings Calendar
 # ---------------------------------------------------------------------------
-def _check_earnings_calendar(lookback_days: int = 2) -> Dict[str, List]:
+def _check_earnings_calendar(lookback_days: int = 7) -> Dict[str, List]:
     """
     Check FMP earnings calendar for S&P 500 tickers that recently reported.
 
@@ -717,7 +717,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     Manual mode: processes specific tickers from event payload.
     """
     manual_tickers = event.get('tickers')
-    lookback_days = event.get('lookback_days', 2)
+    lookback_days = event.get('lookback_days', 7)
     include_upcoming = event.get('include_upcoming', True)
     full_reingest = bool(event.get('full_reingest', False))
 
