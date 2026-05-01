@@ -108,6 +108,12 @@ locals {
       STOCK_DATA_4H_TABLE          = module.dynamodb.stock_data_4h_table_name
       POWERTOOLS_SERVICE_NAME      = "sp500-eod-ingest"
       POWERTOOLS_METRICS_NAMESPACE = "SP500EODIngest"
+      # Pipeline notifications — _publish_sns_summary short-circuits if this is empty.
+      SNS_TOPIC_ARN = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
+    }
+    earnings_update = {
+      # Pipeline notifications — _publish_sns_summary short-circuits if this is empty.
+      SNS_TOPIC_ARN = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
     }
     value_insights_handler = {
       STOCK_DATA_4H_TABLE = module.dynamodb.stock_data_4h_table_name
