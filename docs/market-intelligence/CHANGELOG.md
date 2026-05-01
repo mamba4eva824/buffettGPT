@@ -6,6 +6,16 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Reverse Sync — staging → dev (2026-05-01)
+
+**Changed**
+- Dev branch caught up to staging (14 commits across Phase 1, 1.5, and 2 had merged into staging only and never reached the dev branch)
+- Added `create_analysis_followup_docker_ecr = true` to `chat-api/terraform/environments/dev/main.tf` so the next dev CI deploy doesn't try to destroy the shared ECR repo that already lives in dev's tfstate
+
+**Notes**
+- No new market-intelligence behavior in this commit — the MI work merged in via this sync (16-tool unified executor, `getHistoricalValuation`, market_intel_chat handler) was already deployed to dev manually during Phase 1.5; this commit just makes the dev branch agree with the live dev environment
+- Unblocks Phase 3 (move EventBridge schedules from dev to staging) by making it safe to push the dev-side disable to the dev branch
+
 ### Staging Sync — Phase 1 Infra Catch-up (2026-04-20)
 
 **Changed**
