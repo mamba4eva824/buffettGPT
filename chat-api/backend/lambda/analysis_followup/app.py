@@ -98,7 +98,10 @@ app.add_middleware(JWTAuthMiddleware)
 
 @app.get('/health')
 async def health() -> Response:
-    return JSONResponse({'status': 'ok'}, status_code=200)
+    # The deploy-{env}.yml smoke test asserts `.status == "healthy"` (matches
+    # the existing investment_research /health contract). Don't drift back to
+    # "ok" — it'll silently fail post-deploy smoke and skip the rest of CI.
+    return JSONResponse({'status': 'healthy'}, status_code=200)
 
 
 @app.post('/')
