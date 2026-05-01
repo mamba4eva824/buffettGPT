@@ -162,14 +162,23 @@ module "lambda" {
   function_env_vars   = local.lambda_function_env_vars
   log_retention_days  = 14 # 2 week retention for staging
 
-  reserved_concurrency = {
-    analysis_followup = 10
-  }
+  # analysis_followup concurrency moved to the Docker Lambda resource directly
+  # (reserved_concurrent_executions=10 in modules/lambda/analysis_followup_docker.tf).
+  reserved_concurrency = {}
 
   common_tags = local.common_tags
 
-  # CORS: allow CloudFront + localhost origins for Function URLs (market_intel_chat, analysis_followup)
+  # CORS: allow CloudFront + localhost origins for Function URLs (market_intel_chat).
   cors_allowed_origins = [
+    module.cloudfront.cloudfront_url,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000"
+  ]
+
+  # analysis_followup Docker Function URL has its own CORS list — must include
+  # CloudFront so the staging frontend can POST without preflight failure.
+  analysis_followup_cors_allowed_origins = [
     module.cloudfront.cloudfront_url,
     "http://localhost:3000",
     "http://localhost:5173",
@@ -183,6 +192,14 @@ module "lambda" {
   # Docker image NOT yet pushed to staging ECR - disable Lambda creation
   create_followup_action_lambda = false
   followup_action_image_tag     = "latest"
+
+  # Analysis Followup Lambda — Docker variant (LWA streaming).
+  # Staging consumes the dev-managed ECR repo (data lookup); does NOT create the
+  # repo itself (create_analysis_followup_docker_ecr stays at default false).
+  # image_tag is documentary: lifecycle.ignore_changes=[image_uri] means future
+  # terraform applies don't roll the image — use `aws lambda update-function-code`.
+  create_analysis_followup_docker = true
+  analysis_followup_image_tag     = "latest"
 
   # Pipeline schedules & notifications — deferred to Phase 3 of dev→staging sync
   # Keep explicitly disabled in Phase 1 (infra catch-up only)
