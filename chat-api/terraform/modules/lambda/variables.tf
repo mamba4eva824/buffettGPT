@@ -120,6 +120,22 @@ variable "create_analysis_followup_docker" {
   default     = false
 }
 
+variable "create_analysis_followup_docker_ecr" {
+  description = "If true, this module creates the buffett/analysis-followup ECR repo (+ policy + lifecycle). One env must own it; others should set this false and let the data block look up the existing repo. Default false."
+  type        = bool
+  default     = false
+}
+
+variable "analysis_followup_cors_allowed_origins" {
+  description = "Allowed origins for the analysis_followup Docker Function URL CORS. Defaults to localhost-only for dev; staging/prod should pass their CloudFront origin."
+  type        = list(string)
+  default = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+  ]
+}
+
 variable "create_followup_action_lambda" {
   description = "Whether to create the followup action Lambda. Set to false on first deploy until Docker image is pushed to ECR."
   type        = bool

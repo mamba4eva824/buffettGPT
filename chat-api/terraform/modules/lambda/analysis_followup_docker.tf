@@ -4,16 +4,21 @@
 # Python zip runtime cannot serialize generators for RESPONSE_STREAM,
 # so token-by-token streaming requires the LWA pattern.
 # ============================================================================
-# Gated by var.create_analysis_followup_docker. When false, the legacy zip
-# Lambda in main.tf (lambda_configs) + function_urls.tf is used instead.
+# Two flags govern this file:
+#   - create_analysis_followup_docker      → creates Lambda + log group + URL
+#   - create_analysis_followup_docker_ecr  → creates the shared ECR repo
+#
+# Dev sets BOTH true (it owns the repo). Staging sets only the first true and
+# reads the dev-managed repo via the `data` block below. This avoids the
+# "two states own the same resource" footgun across envs.
 # ============================================================================
 
 # ============================================================================
-# ECR Repository
+# ECR Repository (created by ONE env only; data-looked-up by the rest)
 # ============================================================================
 
 resource "aws_ecr_repository" "analysis_followup" {
-  count                = var.create_analysis_followup_docker ? 1 : 0
+  count                = var.create_analysis_followup_docker_ecr ? 1 : 0
   name                 = "${var.project_name}/analysis-followup"
   image_tag_mutability = "MUTABLE"
 
@@ -29,11 +34,23 @@ resource "aws_ecr_repository" "analysis_followup" {
     Name    = "analysis-followup-ecr"
     Service = "followup-chat-streaming"
   })
+
+  # ECR repo is shared across envs — destroying it in one would break the
+  # other. Forces an explicit `terraform state rm` if you ever need to remove.
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Non-creator envs read the existing repo to pull image_uri.
+data "aws_ecr_repository" "analysis_followup_shared" {
+  count = var.create_analysis_followup_docker && !var.create_analysis_followup_docker_ecr ? 1 : 0
+  name  = "${var.project_name}/analysis-followup"
 }
 
 # ECR Repository Policy - Allow Lambda service to pull images
 resource "aws_ecr_repository_policy" "analysis_followup" {
-  count      = var.create_analysis_followup_docker ? 1 : 0
+  count      = var.create_analysis_followup_docker_ecr ? 1 : 0
   repository = aws_ecr_repository.analysis_followup[0].name
 
   policy = jsonencode({
@@ -56,7 +73,7 @@ resource "aws_ecr_repository_policy" "analysis_followup" {
 
 # Lifecycle policy to keep only the latest version
 resource "aws_ecr_lifecycle_policy" "analysis_followup" {
-  count      = var.create_analysis_followup_docker ? 1 : 0
+  count      = var.create_analysis_followup_docker_ecr ? 1 : 0
   repository = aws_ecr_repository.analysis_followup[0].name
 
   policy = jsonencode({
@@ -95,6 +112,14 @@ resource "aws_ecr_lifecycle_policy" "analysis_followup" {
 # Lambda Function (Container)
 # ============================================================================
 
+locals {
+  analysis_followup_ecr_repository_url = (
+    var.create_analysis_followup_docker_ecr
+    ? try(aws_ecr_repository.analysis_followup[0].repository_url, "")
+    : try(data.aws_ecr_repository.analysis_followup_shared[0].repository_url, "")
+  )
+}
+
 resource "aws_lambda_function" "analysis_followup_docker" {
   count         = var.create_analysis_followup_docker ? 1 : 0
   function_name = "${var.project_name}-${var.environment}-analysis-followup"
@@ -102,7 +127,7 @@ resource "aws_lambda_function" "analysis_followup_docker" {
 
   publish      = true
   package_type = "Image"
-  image_uri    = "${aws_ecr_repository.analysis_followup[0].repository_url}:${var.analysis_followup_image_tag}"
+  image_uri    = "${local.analysis_followup_ecr_repository_url}:${var.analysis_followup_image_tag}"
 
   timeout                        = 60
   memory_size                    = 256
@@ -133,8 +158,9 @@ resource "aws_lambda_function" "analysis_followup_docker" {
     Service = "followup-chat-streaming"
   })
 
+  # ECR dependency is implicit via local.analysis_followup_ecr_repository_url
+  # (which references either the in-state repo or the data lookup).
   depends_on = [
-    aws_ecr_repository.analysis_followup,
     aws_cloudwatch_log_group.analysis_followup_docker
   ]
 
@@ -174,12 +200,8 @@ resource "aws_lambda_function_url" "analysis_followup_docker" {
 
   cors {
     allow_credentials = true
-    allow_origins = [
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "http://localhost:8000",
-    ]
-    allow_methods  = ["POST"]
+    allow_origins     = var.analysis_followup_cors_allowed_origins
+    allow_methods     = ["POST"]
     allow_headers  = ["content-type", "authorization"]
     expose_headers = ["content-type"]
     max_age        = 86400
