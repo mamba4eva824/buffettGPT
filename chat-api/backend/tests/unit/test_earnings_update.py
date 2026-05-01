@@ -448,27 +448,119 @@ class TestForceRefreshAndPropagationLag:
         self, mock_table, mock_get_financial_data, mock_extract,
         mock_prepare, mock_earnings, mock_dividends, mock_ttm,
     ):
-        """When FMP hasn't propagated the reported quarter, return lag status and skip processing."""
+        """When FMP hasn't propagated the reported quarter, return lag status and skip processing.
+
+        AFL-style case: latest income statement is from prior cycle — both period-end
+        and filingDate are stale (~3 months old).
+        """
         mock_get_financial_data.return_value = {
             'raw_financials': {
-                'income_statement': [{'date': '2026-01-20'}],
-                'balance_sheet': [{'date': '2026-01-20'}],
-                'cash_flow': [{'date': '2026-01-20'}],
+                'income_statement': [{
+                    'date': '2025-12-31',
+                    'filingDate': '2026-01-20',
+                    'acceptedDate': '2026-01-20 16:00:00',
+                }],
+                'balance_sheet': [{'date': '2025-12-31'}],
+                'cash_flow': [{'date': '2025-12-31'}],
             },
             'currency_info': {'code': 'USD'},
-            'cache_key': 'v3:NFLX:2026',
+            'cache_key': 'v3:AFL:2026',
         }
 
         from handlers.earnings_update import _process_ticker
-        # Gap = 2026-04-16 - 2026-01-20 = 86 days (> 10).
-        result = _process_ticker('NFLX', earnings_date='2026-04-16')
+        # filingDate=2026-01-20, earnings_date=2026-04-29 → gap=99d → REJECT
+        result = _process_ticker('AFL', earnings_date='2026-04-29')
 
         assert result['status'] == 'fmp_propagation_lag'
-        assert result['latest_statement_date'] == '2026-01-20'
-        assert result['earnings_date'] == '2026-04-16'
+        assert result['latest_filing_date'] == '2026-01-20'
+        assert result['latest_statement_date'] == '2025-12-31'
+        assert result['earnings_date'] == '2026-04-29'
         # Early return: pipeline steps below the guard must not execute.
         mock_extract.assert_not_called()
         mock_prepare.assert_not_called()
+
+    @patch('handlers.earnings_update.fetch_ttm_valuations')
+    @patch('handlers.earnings_update.fetch_dividends')
+    @patch('handlers.earnings_update.fetch_earnings')
+    @patch('handlers.earnings_update.prepare_metrics_for_cache')
+    @patch('handlers.earnings_update.extract_quarterly_trends')
+    @patch('handlers.earnings_update.get_financial_data')
+    @patch('handlers.earnings_update.metrics_table')
+    def test_lag_guard_passes_when_filing_date_matches_earnings_date(
+        self, mock_table, mock_get_financial_data, mock_extract,
+        mock_prepare, mock_earnings, mock_dividends, mock_ttm,
+    ):
+        """AAPL-style case: period-end is ~33 days old (always, by design) but
+        filingDate is same-day as the announcement — guard MUST pass.
+
+        This is the regression case for the bug where the guard compared
+        period-end date instead of filingDate.
+        """
+        mock_get_financial_data.return_value = {
+            'raw_financials': {
+                'income_statement': [{
+                    'date': '2026-03-28',          # fiscal period-end (Apple Q2 FY26)
+                    'filingDate': '2026-04-30',    # 10-Q actually filed today
+                    'acceptedDate': '2026-04-30 16:30:41',
+                }],
+                'balance_sheet': [{'date': '2026-03-28'}],
+                'cash_flow': [{'date': '2026-03-28'}],
+            },
+            'currency_info': {'code': 'USD'},
+            'cache_key': 'v3:AAPL:2026',
+        }
+        mock_extract.return_value = {'quarters': [1]}
+        mock_prepare.return_value = MOCK_ITEMS
+        mock_earnings.return_value = []
+        mock_dividends.return_value = []
+        mock_ttm.return_value = {}
+        mock_table.update_item.return_value = {}
+
+        from handlers.earnings_update import _process_ticker
+        result = _process_ticker('AAPL', earnings_date='2026-04-30')
+
+        # Guard must NOT fire: filingDate==earnings_date, gap=0d.
+        assert result['status'] != 'fmp_propagation_lag'
+        mock_extract.assert_called_once()
+        mock_prepare.assert_called_once()
+
+    @patch('handlers.earnings_update.fetch_ttm_valuations')
+    @patch('handlers.earnings_update.fetch_dividends')
+    @patch('handlers.earnings_update.fetch_earnings')
+    @patch('handlers.earnings_update.prepare_metrics_for_cache')
+    @patch('handlers.earnings_update.extract_quarterly_trends')
+    @patch('handlers.earnings_update.get_financial_data')
+    @patch('handlers.earnings_update.metrics_table')
+    def test_lag_guard_falls_back_to_accepted_date_when_filing_date_missing(
+        self, mock_table, mock_get_financial_data, mock_extract,
+        mock_prepare, mock_earnings, mock_dividends, mock_ttm,
+    ):
+        """When filingDate is null/empty, fall back to acceptedDate (not period-end)."""
+        mock_get_financial_data.return_value = {
+            'raw_financials': {
+                'income_statement': [{
+                    'date': '2026-03-31',
+                    'filingDate': None,
+                    'acceptedDate': '2026-04-30 16:30:41',
+                }],
+                'balance_sheet': [{'date': '2026-03-31'}],
+                'cash_flow': [{'date': '2026-03-31'}],
+            },
+            'currency_info': {'code': 'USD'},
+            'cache_key': 'v3:MSFT:2026',
+        }
+        mock_extract.return_value = {'quarters': [1]}
+        mock_prepare.return_value = MOCK_ITEMS
+        mock_earnings.return_value = []
+        mock_dividends.return_value = []
+        mock_ttm.return_value = {}
+        mock_table.update_item.return_value = {}
+
+        from handlers.earnings_update import _process_ticker
+        result = _process_ticker('MSFT', earnings_date='2026-04-29')
+
+        # acceptedDate=2026-04-30 > earnings_date=2026-04-29 → no lag.
+        assert result['status'] != 'fmp_propagation_lag'
 
     @patch('handlers.earnings_update.fetch_ttm_valuations')
     @patch('handlers.earnings_update.fetch_dividends')
@@ -541,7 +633,8 @@ class TestNarrowScopeAndSanityGates:
              'fiscal_year': 2026, 'fiscal_quarter': 'Q1'},
         ]
         with patch('handlers.earnings_update.get_financial_data', return_value={
-                    'raw_financials': {'income_statement': [{'date': '2026-04-10'}]},
+                    'raw_financials': {'income_statement': [
+                        {'date': '2026-04-10', 'filingDate': '2026-04-16'}]},
                     'currency_info': {'code': 'USD'}, 'cache_key': 'v3:NFLX:2026'}), \
              patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
              patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
@@ -573,7 +666,8 @@ class TestNarrowScopeAndSanityGates:
              'fiscal_year': 2026, 'fiscal_quarter': 'Q1'},
         ]
         with patch('handlers.earnings_update.get_financial_data', return_value={
-                    'raw_financials': {'income_statement': [{'date': '2026-04-10'}]},
+                    'raw_financials': {'income_statement': [
+                        {'date': '2026-04-10', 'filingDate': '2026-04-16'}]},
                     'currency_info': {'code': 'USD'}, 'cache_key': 'v3:SCHW:2026'}), \
              patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
              patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
@@ -599,7 +693,8 @@ class TestNarrowScopeAndSanityGates:
              'fiscal_year': 2025, 'fiscal_quarter': 'Q4'},
         ]
         with patch('handlers.earnings_update.get_financial_data', return_value={
-                    'raw_financials': {'income_statement': [{'date': '2025-12-31'}]},
+                    'raw_financials': {'income_statement': [
+                        {'date': '2025-12-31', 'filingDate': '2026-01-07'}]},
                     'currency_info': {'code': 'USD'}, 'cache_key': 'v3:PLD:2026'}), \
              patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
              patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
@@ -625,7 +720,8 @@ class TestNarrowScopeAndSanityGates:
              'fiscal_year': 2025, 'fiscal_quarter': 'Q4'},
         ]
         with patch('handlers.earnings_update.get_financial_data', return_value={
-                    'raw_financials': {'income_statement': [{'date': '2025-12-31'}]},
+                    'raw_financials': {'income_statement': [
+                        {'date': '2025-12-31', 'filingDate': '2026-01-07'}]},
                     'currency_info': {'code': 'USD'}, 'cache_key': 'v3:FOO:2026'}), \
              patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
              patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \
@@ -660,7 +756,8 @@ class TestNarrowScopeAndSanityGates:
                     'balance_sheet': {'total_equity': 60000000000},
                     'fiscal_year': 2026, 'fiscal_quarter': 'Q1'}
         with patch('handlers.earnings_update.get_financial_data', return_value={
-                    'raw_financials': {'income_statement': [{'date': '2026-04-10'}]},
+                    'raw_financials': {'income_statement': [
+                        {'date': '2026-04-10', 'filingDate': '2026-04-16'}]},
                     'currency_info': {'code': 'USD'}, 'cache_key': 'v3:AAPL:2026'}), \
              patch('handlers.earnings_update.extract_quarterly_trends', return_value={}), \
              patch('handlers.earnings_update.prepare_metrics_for_cache', return_value=items), \

@@ -265,25 +265,32 @@ def _process_ticker(
         return result
 
     # Propagation-lag guard: verify FMP's fresh response reflects the reported quarter.
-    # If earnings_date provided but FMP's latest income_statement is older than
-    # earnings_date - 10 days, FMP hasn't propagated the 10-Q yet. Log + flag the result.
+    # Compare announcement date (earnings_date) against the income statement's filing
+    # date — NOT its period-end date. period-end is fiscal-quarter-end (e.g. 2026-03-31)
+    # and announcements run ~30 days later, so comparing against period-end always
+    # triggers the guard for normal calendar-quarter filers. filingDate (with fallback
+    # to acceptedDate then date) tracks when FMP actually has the 10-Q.
     if earnings_date:
         income_statements = raw_financials.get('income_statement', [])
         if income_statements:
-            latest_date = income_statements[0].get('date', '')
-            if latest_date and latest_date < earnings_date:
+            latest_stmt = income_statements[0]
+            filing_date = (latest_stmt.get('filingDate')
+                           or (latest_stmt.get('acceptedDate') or '')[:10]
+                           or latest_stmt.get('date') or '')
+            if filing_date and filing_date < earnings_date:
                 from datetime import datetime as _dt
                 try:
                     gap_days = (_dt.strptime(earnings_date[:10], '%Y-%m-%d') -
-                                _dt.strptime(latest_date[:10], '%Y-%m-%d')).days
-                    if gap_days > 10:
+                                _dt.strptime(filing_date[:10], '%Y-%m-%d')).days
+                    if gap_days > 5:
                         logger.warning(
-                            f"{ticker}: FMP income_statement latest={latest_date} is "
-                            f"{gap_days} days older than earnings_date={earnings_date} — "
-                            f"FMP propagation lag, will retry next run"
+                            f"{ticker}: REJECT[propagation_lag] FMP income_statement "
+                            f"filingDate={filing_date} is {gap_days} days older than "
+                            f"earnings_date={earnings_date} — will retry next run"
                         )
                         result['status'] = 'fmp_propagation_lag'
-                        result['latest_statement_date'] = latest_date
+                        result['latest_statement_date'] = latest_stmt.get('date', '')
+                        result['latest_filing_date'] = filing_date
                         result['earnings_date'] = earnings_date
                         return result
                 except ValueError:
