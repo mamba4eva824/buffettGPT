@@ -6,6 +6,26 @@ All notable changes to the Market Intelligence feature are documented here.
 
 ## [Unreleased]
 
+### Reverse Sync — staging → dev (2026-05-01)
+
+**Changed**
+- Dev branch caught up to staging (14 commits across Phase 1, 1.5, and 2 had merged into staging only and never reached the dev branch)
+- Added `create_analysis_followup_docker_ecr = true` to `chat-api/terraform/environments/dev/main.tf` so the next dev CI deploy doesn't try to destroy the shared ECR repo that already lives in dev's tfstate
+
+**Notes**
+- No new market-intelligence behavior in this commit — the MI work merged in via this sync (16-tool unified executor, `getHistoricalValuation`, market_intel_chat handler) was already deployed to dev manually during Phase 1.5; this commit just makes the dev branch agree with the live dev environment
+- Unblocks Phase 3 (move EventBridge schedules from dev to staging) by making it safe to push the dev-side disable to the dev branch
+
+### Staging Sync — Phase 1 Infra Catch-up (2026-04-20)
+
+**Changed**
+- Staging branch caught up to dev (46 commits) — infra and shared modules merged in
+- All new feature flags explicitly disabled in `terraform/environments/staging/main.tf` (earnings_feed routes, watchlist routes, EOD ingest schedule, earnings update schedule, pipeline notifications) — to be enabled in Phases 2 and 3 of the dev→staging sync
+- Preserved staging-only infra: CloudFront + password gate, FriendsAndFamilyTesting tag, PITR, 14-day retention, 500K token limit, free-tier Market Intelligence access
+
+**Notes**
+- No new market-intelligence features in this commit — all dev's MI work (getHistoricalValuation tool, EOD pipeline, earnings update gates) lands in staging branch via this merge but stays gated behind the disabled flags until Phase 2/3
+
 ### Narrow-Scope Writes + Sanity Gates + None-Guard (2026-04-17)
 
 **Fixed**
@@ -232,6 +252,20 @@ All notable changes to the Market Intelligence feature are documented here.
 
 **Removed**
 - Legacy `aws_cloudwatch_event_rule`, `aws_cloudwatch_event_target`, `aws_lambda_permission` resources
+
+### Staging Beta Deployment (2026-04-04)
+
+**Added**
+- CloudFront Function basic auth for staging password protection (`enable_basic_auth` variable)
+- `BYPASS_SUBSCRIPTION_CHECK` env var to allow free-tier Market Intelligence access in staging
+- Environment-configurable token limits (`TOKEN_LIMIT_FREE`, `TOKEN_LIMIT_PLUS`, `TOKEN_LIMIT_ANONYMOUS`)
+- `stock-data-4h` support in `copy_reports_to_staging.py` with PK-based ticker extraction
+- Value Insights routes enabled in staging API Gateway
+- `sp500_eod_ingest` and `value_insights_handler` Lambda env vars for staging
+
+**Changed**
+- Bedrock follow-up agent upgraded from Claude 3.5 Haiku to Haiku 4.5 (dev + staging)
+- `FRONTEND_URL` now passed to auth_callback Lambda for dynamic CORS in staging
 
 ### S&P 500 Daily EOD Price Pipeline (2026-04-03)
 

@@ -57,9 +57,9 @@ class TokenUsageTracker:
     # Default token limits by user tier
     # These must match the limits set by Stripe webhook handler
     DEFAULT_LIMITS = {
-        'anonymous': 0,        # No access
-        'free': 100000,        # 100K tokens/month
-        'plus': 2000000,       # 2M tokens/month
+        'anonymous': int(os.environ.get('TOKEN_LIMIT_ANONYMOUS', '0')),
+        'free': int(os.environ.get('TOKEN_LIMIT_FREE', '100000')),
+        'plus': int(os.environ.get('TOKEN_LIMIT_PLUS', '2000000')),
     }
 
     def __init__(self, table_name: Optional[str] = None, dynamodb_resource=None):

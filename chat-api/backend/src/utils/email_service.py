@@ -207,7 +207,6 @@ def send_welcome_email(to: str, referral_code: str, referral_link: str) -> Optio
             <strong>Skip the line</strong> &mdash; share your link and unlock rewards:
         </p>
         <ul style="font-size: 15px; line-height: 1.8; color: #333; padding-left: 20px;">
-            <li><strong>1 referral</strong> &rarr; Early access</li>
             <li><strong>3 referrals</strong> &rarr; 1 month free Plus</li>
             <li><strong>5 referrals</strong> &rarr; 3 months free Plus</li>
         </ul>

@@ -13,6 +13,7 @@ Uses moto to mock DynamoDB — no real AWS calls.
 import json
 import os
 import sys
+from datetime import date, timedelta
 from decimal import Decimal
 
 import boto3
@@ -20,6 +21,11 @@ import pytest
 from moto import mock_aws
 
 TABLE_NAME = 'buffett-test-sp500-aggregates'
+
+# Dynamic future date so the upcoming-earnings fixture doesn't time-bomb.
+# The handler filters out earnings_date < today, so a hardcoded date will
+# silently start failing once today catches up.
+_UPCOMING_DATE = (date.today() + timedelta(days=30)).strftime('%Y-%m-%d')
 
 
 @pytest.fixture(scope='module')
@@ -88,11 +94,11 @@ def _seed_test_data(table):
     upcoming_events = [
         {
             'aggregate_type': 'EARNINGS_UPCOMING',
-            'aggregate_key': '2026-04-15#NVDA',
+            'aggregate_key': f'{_UPCOMING_DATE}#NVDA',
             'ticker': 'NVDA',
             'company_name': 'NVIDIA Corporation',
             'sector': 'Technology',
-            'earnings_date': '2026-04-15',
+            'earnings_date': _UPCOMING_DATE,
             'eps_estimated': Decimal('1.75'),
         },
     ]

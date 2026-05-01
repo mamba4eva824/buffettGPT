@@ -1,6 +1,6 @@
 # Staging Environment Outputs
 # These values are used by CI/CD and for sharing access with testers
-# Updated 2025-01: Removed CloudFront, deprecated DynamoDB, and Knowledge Base outputs
+# Updated 2026-03: Added market intelligence, removed landing page and deprecated outputs
 
 # ================================================
 # API Gateway Outputs
@@ -88,22 +88,10 @@ output "bedrock_agent_alias_id" {
 output "staging_access_info" {
   description = "Information for accessing the staging environment"
   value = {
-    environment    = "staging"
-    frontend_url   = module.cloudfront.cloudfront_url
-    http_api_url   = module.api_gateway.http_api_endpoint
-    research_url   = module.lambda.investment_research_docker_function_url
-    instructions   = "Share the frontend URL with friends and family for testing."
+    environment  = "staging"
+    frontend_url = module.cloudfront.cloudfront_url
+    http_api_url = module.api_gateway.http_api_endpoint
+    research_url = module.lambda.investment_research_docker_function_url
+    instructions = "Share the frontend URL with friends and family for testing."
   }
 }
-
-# ================================================
-# DEPRECATED OUTPUTS (Removed 2025-01)
-# ================================================
-# The following outputs were removed as part of RAG chatbot deprecation:
-# - chat_messages_table_name (table removed)
-# - bedrock_knowledge_base_id (KB removed)
-# - cloudfront_distribution_id (module removed)
-# - cloudfront_url (module removed)
-# - cloudfront_domain_name (module removed)
-# - s3_bucket_name (module removed)
-# ================================================

@@ -147,11 +147,10 @@ class TestSignupHappyPath:
 
     def test_signup_returns_tiers(self, signup_user_a):
         tiers = signup_user_a["tiers"]
-        assert len(tiers) == 3
-        assert tiers[0]["name"] == "Early Access"
-        assert tiers[0]["threshold"] == 1
-        assert tiers[1]["threshold"] == 3
-        assert tiers[2]["threshold"] == 5
+        assert len(tiers) == 2
+        assert tiers[0]["name"] == "1 Month Free Plus"
+        assert tiers[0]["threshold"] == 3
+        assert tiers[1]["threshold"] == 5
 
     def test_signup_returns_referral_link(self, signup_user_a):
         link = signup_user_a["referral_link"]
@@ -200,36 +199,6 @@ class TestReferralChain:
         assert data["referral_count"] >= 1, (
             f"Expected referral_count >= 1, got {data['referral_count']}"
         )
-
-    def test_referrer_promoted_to_early_access(self, signup_user_a, signup_user_b, test_emails):
-        """User A should be promoted to early_access after 1 referral."""
-        resp = requests.get(
-            f"{API_BASE_URL}/waitlist/status",
-            params={
-                "email": test_emails["user_a"],
-                "code": signup_user_a["referral_code"],
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "early_access", (
-            f"Expected early_access, got {data['status']}"
-        )
-
-    def test_referrer_has_current_tier(self, signup_user_a, signup_user_b, test_emails):
-        """User A with 1 referral should have Early Access as current tier."""
-        resp = requests.get(
-            f"{API_BASE_URL}/waitlist/status",
-            params={
-                "email": test_emails["user_a"],
-                "code": signup_user_a["referral_code"],
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
-        data = resp.json()
-        assert data["current_tier"] is not None
-        assert data["current_tier"]["name"] == "Early Access"
 
     def test_referred_user_has_no_credit(self, signup_user_b, test_emails):
         """User B (the referred user) should have 0 referrals themselves."""
@@ -480,21 +449,6 @@ class TestReferralCreditRegression:
             f"Expected referral_count=1 in DynamoDB, got {item['referral_count']}"
         )
 
-    def test_referral_promotion_exact_in_dynamodb(
-        self, signup_user_a, signup_user_b, test_emails, dynamodb_table
-    ):
-        """After 1 referral, DynamoDB record has status == 'early_access' (not API — raw table).
-
-        This catches the original bug: if :waitlisted was missing from
-        ExpressionAttributeValues, the conditional update would fail silently
-        and status would remain 'waitlisted' in the table.
-        """
-        item = dynamodb_table.get_item(Key={"email": test_emails["user_a"]})["Item"]
-        assert item["status"] == "early_access", (
-            f"Expected status='early_access' in DynamoDB, got '{item['status']}'. "
-            "This may indicate the _credit_referrer conditional update is broken."
-        )
-
     def test_double_referral_increments_count(
         self, signup_user_a, signup_user_b, signup_user_d, test_emails, dynamodb_table
     ):
@@ -504,31 +458,6 @@ class TestReferralCreditRegression:
             f"Expected referral_count=2 after two referrals, got {item['referral_count']}"
         )
 
-    def test_double_referral_preserves_early_access(
-        self, signup_user_a, signup_user_b, signup_user_d, test_emails
-    ):
-        """After a second referral, A stays early_access (ConditionalCheckFailed is handled).
-
-        The second referral triggers _credit_referrer again. The conditional update
-        'SET status = early_access WHERE status = waitlisted' should fail with
-        ConditionalCheckFailedException (A is already early_access). This must be
-        caught gracefully — no 500 error, and status must not revert.
-        """
-        resp = requests.get(
-            f"{API_BASE_URL}/waitlist/status",
-            params={
-                "email": test_emails["user_a"],
-                "code": signup_user_a["referral_code"],
-            },
-            timeout=REQUEST_TIMEOUT,
-        )
-        assert resp.status_code == 200, (
-            f"Status check returned {resp.status_code}, expected 200. "
-            "ConditionalCheckFailedException may not be handled correctly."
-        )
-        data = resp.json()
-        assert data["status"] == "early_access"
-        assert data["referral_count"] == 2
 
 
 # ---------------------------------------------------------------------------

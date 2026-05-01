@@ -97,7 +97,13 @@ variable "bedrock_agent_description" {
 variable "bedrock_foundation_model" {
   description = "Foundation model for Bedrock agent"
   type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+  default     = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+}
+
+variable "basic_auth_credentials" {
+  description = "Base64-encoded username:password for staging basic auth"
+  type        = string
+  sensitive   = true
 }
 
 variable "bedrock_agent_instruction" {

@@ -201,6 +201,12 @@ module "lambda" {
   create_followup_action_lambda = true
   followup_action_image_tag     = "latest"
 
+  # Analysis Followup Lambda — Docker variant (LWA streaming).
+  # Dev runs the FastAPI+LWA image AND owns the shared ECR repository.
+  # Staging consumes the same repo via data lookup (count=0 on its side).
+  create_analysis_followup_docker     = true
+  create_analysis_followup_docker_ecr = true
+
   # DynamoDB table ARNs for followup-action Lambda IAM policy
   # These use the actual table ARNs from the dynamodb module to ensure correct permissions
   investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
