@@ -271,8 +271,15 @@ jobs:
       fail-fast: false  # Continue building other Lambdas if one fails
       matrix:
         lambda:
+          # dockerfile_dir = build context, dockerfile_path = Dockerfile
+          # location relative to the context. Most Lambdas use the standard
+          # pattern (context = the lambda dir, Dockerfile inside it). The
+          # analysis-followup wrapper needs a wider context (chat-api/backend)
+          # so its Dockerfile can COPY src/handlers/ + src/utils/ +
+          # investment_research/ alongside the wrapper code.
           - name: investment-research
             dockerfile_dir: chat-api/backend/lambda/investment_research
+            dockerfile_path: Dockerfile
             ecr_repo: buffett/investment-research
             change_output: investment_research_changed
             manual_input: build_investment_research
@@ -281,12 +288,14 @@ jobs:
           # See: archived/prediction_ensemble/
           - name: followup-action
             dockerfile_dir: chat-api/backend/lambda/followup_action
+            dockerfile_path: Dockerfile
             ecr_repo: buffett/followup-action
             change_output: followup_action_changed
             manual_input: build_followup_action
             has_health_endpoint: false  # Action group Lambda, no HTTP endpoint
           - name: analysis-followup
-            dockerfile_dir: chat-api/backend/lambda/analysis_followup
+            dockerfile_dir: chat-api/backend
+            dockerfile_path: lambda/analysis_followup/Dockerfile
             ecr_repo: buffett/analysis-followup
             change_output: analysis_followup_changed
             manual_input: build_analysis_followup
@@ -380,6 +389,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.lambda.dockerfile_dir }}
+          file: ${{ matrix.lambda.dockerfile_dir }}/${{ matrix.lambda.dockerfile_path }}
           push: true
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ matrix.lambda.ecr_repo }}:${{ github.sha }}

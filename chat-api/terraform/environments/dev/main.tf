@@ -221,12 +221,20 @@ module "lambda" {
   metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
   metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
 
-  # EventBridge schedule for daily 4h candle ingestion
-  enable_eod_ingest_schedule      = true
-  enable_earnings_update_schedule = true
+  # EventBridge schedules — moved to staging only (Phase 3 of dev→staging sync).
+  # Shared FMP API key has a 300 calls/min ceiling; running EOD + earnings
+  # pipelines twice (once per env) at the same 5pm ET tick contended for quota
+  # and produced partial writes. Dev data refreshes are now manual:
+  #   aws lambda invoke --function-name buffett-dev-sp500-eod-ingest /tmp/out.json
+  #   aws lambda invoke --function-name buffett-dev-earnings-update --payload '{}' /tmp/out.json
+  enable_eod_ingest_schedule      = false
+  enable_earnings_update_schedule = false
 
-  # SNS topic for pipeline notifications (success + failure emails)
-  enable_pipeline_notifications = var.enable_monitoring
+  # Pipeline notifications also moved to staging — staging now publishes
+  # success/failure emails. Dev's monitoring SNS topic still exists for other
+  # alarms (rate limits, lambda errors, dashboards), so keep alerts_sns_topic_arn
+  # wired in case manual invokes need to publish.
+  enable_pipeline_notifications = false
   alerts_sns_topic_arn          = var.enable_monitoring ? module.monitoring[0].sns_topic_arn : ""
 }
 
