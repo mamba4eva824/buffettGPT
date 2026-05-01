@@ -265,10 +265,12 @@ module "api_gateway" {
   # Value Insights API (S&P 500 market data)
   enable_value_insights_routes = true
 
-  # Earnings Feed + Watchlist APIs — deferred to Phase 2 of dev→staging sync
-  # Keep explicitly disabled in Phase 1 (infra catch-up only)
-  enable_earnings_feed_routes  = false
-  enable_watchlist_api_routes  = false
+  # Earnings Feed + Watchlist APIs — Phase 2 of dev→staging sync.
+  # Routes hit the earnings_feed_handler / watchlist_handler Lambdas that
+  # Phase 1 already deployed. Earnings tab returns empty data until Phase 3
+  # enables the EOD/earnings EventBridge schedules to populate aggregates.
+  enable_earnings_feed_routes  = true
+  enable_watchlist_api_routes  = true
 
   # Waitlist API (signup, status, referral tracking)
   enable_waitlist_routes = true
