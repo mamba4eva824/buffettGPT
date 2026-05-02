@@ -69,55 +69,9 @@ module "iam" {
 # ================================================
 
 # ================================================
-# Follow-up Agent for Investment Research Questions
-# Handles follow-up questions about investment reports
-# using action groups to retrieve report sections and metrics
+# Follow-up Agent + ReportResearch action group removed (2026-05).
+# The live follow-up agent runs on Bedrock Runtime converse_stream with
+# inline tools (chat-api/backend/src/handlers/analysis_followup.py).
+# The Bedrock Agent definition, ReportResearch action group, and the
+# followup-action Docker Lambda were all unused.
 # ================================================
-
-module "followup_agent" {
-  source = "./modules/agent"
-
-  agent_name              = "${var.project_name}-${var.environment}-followup"
-  agent_description       = "Follow-up research assistant for investment report questions"
-  agent_role_arn          = module.iam.agent_role_arn
-  foundation_model        = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
-  agent_instruction       = file("${path.module}/prompts/followup_agent_v1.txt")
-  idle_session_ttl        = var.idle_session_ttl
-
-  # No knowledge base association - uses action groups for data retrieval
-  associate_knowledge_base = false
-  knowledge_base_id        = ""
-
-  # No guardrails (removed)
-  guardrail_configuration = null
-
-  enable_prompt_override  = false
-  create_agent_version    = false  # Route alias to DRAFT (which has action groups)
-  agent_alias_name        = "live"
-  agent_alias_description = "Live alias for followup agent"
-
-  tags = local.common_tags
-
-  depends_on = [module.iam]
-}
-
-# Action Group for Follow-up Agent
-# Provides access to report sections, ratings, and metrics history
-module "followup_agent_action_group" {
-  count  = var.enable_followup_action_group ? 1 : 0
-  source = "./modules/action-group"
-
-  agent_id          = module.followup_agent.agent_id
-  agent_version     = "DRAFT"
-  action_group_name = "ReportResearch"
-  description       = "Actions for retrieving investment report sections, ratings, and metrics"
-
-  lambda_arn           = var.followup_action_lambda_arn
-  lambda_function_name = var.followup_action_lambda_function_name
-  agent_arn            = module.followup_agent.agent_arn
-  api_schema_content   = file("${path.module}/schemas/followup_action.yaml")
-
-  lambda_permission_statement_id = "AllowBedrockInvokeFollowup"
-
-  depends_on = [module.followup_agent]
-}

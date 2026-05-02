@@ -153,26 +153,6 @@ output "investment_research_docker_function_url" {
   value       = try(aws_lambda_function_url.investment_research_docker.function_url, null)
 }
 
-# ================================================
-# Followup Action Docker Outputs (Bedrock Action Group Handler)
-# ================================================
-
-output "followup_action_arn" {
-  description = "ARN of the followup action Docker Lambda function"
-  value       = try(aws_lambda_function.followup_action[0].arn, null)
-}
-
-output "followup_action_name" {
-  description = "Name of the followup action Docker Lambda function"
-  value       = try(aws_lambda_function.followup_action[0].function_name, null)
-}
-
-output "followup_action_ecr_url" {
-  description = "ECR repository URL for followup action"
-  value       = try(aws_ecr_repository.followup_action.repository_url, null)
-}
-
-output "followup_action_invoke_arn" {
-  description = "Invoke ARN of the followup action Docker Lambda function"
-  value       = try(aws_lambda_function.followup_action[0].invoke_arn, null)
-}
+# NOTE: Followup Action Docker outputs (followup_action_arn, followup_action_name,
+# followup_action_ecr_url, followup_action_invoke_arn) removed 2026-05 along with the
+# Bedrock action group cleanup.

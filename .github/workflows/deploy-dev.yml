@@ -17,12 +17,8 @@ on:
         default: false
         type: boolean
       # NOTE: build_prediction_ensemble removed (2025-01) - archived
+      # NOTE: build_followup_action removed (2026-05) - Bedrock action group cleanup
       # See: archived/prediction_ensemble/
-      build_followup_action:
-        description: 'Build Followup Action Docker Lambda (Bedrock action group handler)'
-        required: false
-        default: false
-        type: boolean
       build_analysis_followup:
         description: 'Build Analysis Followup Docker Lambda'
         required: false
@@ -78,7 +74,7 @@ jobs:
     outputs:
       investment_research_changed: ${{ steps.changes.outputs.investment_research }}
       # NOTE: prediction_ensemble_changed removed (2025-01) - archived
-      followup_action_changed: ${{ steps.changes.outputs.followup_action }}
+      # NOTE: followup_action_changed removed (2026-05) - Bedrock action group cleanup
       analysis_followup_changed: ${{ steps.changes.outputs.analysis_followup }}
       any_docker_changed: ${{ steps.changes.outputs.any_docker }}
 
@@ -96,21 +92,18 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" ]]; then
             IR_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/investment_research/" && echo "true" || echo "false")
             # NOTE: prediction_ensemble removed (2025-01) - archived
-            FA_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/followup_action/" && echo "true" || echo "false")
+            # NOTE: followup_action removed (2026-05) - Bedrock action group cleanup
             AF_CHANGED=$(git diff --name-only HEAD^ HEAD | grep -q "chat-api/backend/lambda/analysis_followup/" && echo "true" || echo "false")
           else
             IR_CHANGED="false"
-            FA_CHANGED="false"
             AF_CHANGED="false"
           fi
 
           echo "investment_research=$IR_CHANGED" >> $GITHUB_OUTPUT
-          echo "followup_action=$FA_CHANGED" >> $GITHUB_OUTPUT
           echo "analysis_followup=$AF_CHANGED" >> $GITHUB_OUTPUT
-          echo "any_docker=$([[ $IR_CHANGED == 'true' || $FA_CHANGED == 'true' || $AF_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+          echo "any_docker=$([[ $IR_CHANGED == 'true' || $AF_CHANGED == 'true' ]] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
 
           echo "Investment Research changed: $IR_CHANGED"
-          echo "Followup Action changed: $FA_CHANGED"
           echo "Analysis Followup changed: $AF_CHANGED"
 
   build-backend:
@@ -265,7 +258,6 @@ jobs:
       needs.detect-changes.outputs.any_docker_changed == 'true' ||
       inputs.build_all_docker == true ||
       inputs.build_investment_research == true ||
-      inputs.build_followup_action == true ||
       inputs.build_analysis_followup == true
     strategy:
       fail-fast: false  # Continue building other Lambdas if one fails
@@ -285,14 +277,8 @@ jobs:
             manual_input: build_investment_research
             has_health_endpoint: true
           # NOTE: prediction-ensemble removed (2025-01) - archived
+          # NOTE: followup-action removed (2026-05) - Bedrock action group cleanup
           # See: archived/prediction_ensemble/
-          - name: followup-action
-            dockerfile_dir: chat-api/backend/lambda/followup_action
-            dockerfile_path: Dockerfile
-            ecr_repo: buffett/followup-action
-            change_output: followup_action_changed
-            manual_input: build_followup_action
-            has_health_endpoint: false  # Action group Lambda, no HTTP endpoint
           - name: analysis-followup
             dockerfile_dir: chat-api/backend
             dockerfile_path: lambda/analysis_followup/Dockerfile
@@ -308,10 +294,8 @@ jobs:
           LAMBDA_NAME: ${{ matrix.lambda.name }}
           BUILD_ALL: ${{ inputs.build_all_docker }}
           BUILD_IR: ${{ inputs.build_investment_research }}
-          BUILD_FA: ${{ inputs.build_followup_action }}
           BUILD_AF: ${{ inputs.build_analysis_followup }}
           IR_CHANGED: ${{ needs.detect-changes.outputs.investment_research_changed }}
-          FA_CHANGED: ${{ needs.detect-changes.outputs.followup_action_changed }}
           AF_CHANGED: ${{ needs.detect-changes.outputs.analysis_followup_changed }}
         run: |
           # Build if:
@@ -333,10 +317,7 @@ jobs:
             echo "Building $LAMBDA_NAME: manual input selected"
           fi
           # NOTE: prediction-ensemble removed (2025-01) - archived
-          if [[ "$LAMBDA_NAME" == "followup-action" && "$BUILD_FA" == "true" ]]; then
-            SHOULD_BUILD="true"
-            echo "Building $LAMBDA_NAME: manual input selected"
-          fi
+          # NOTE: followup-action removed (2026-05) - Bedrock action group cleanup
           if [[ "$LAMBDA_NAME" == "analysis-followup" && "$BUILD_AF" == "true" ]]; then
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: manual input selected"
@@ -348,10 +329,7 @@ jobs:
             echo "Building $LAMBDA_NAME: path changed"
           fi
           # NOTE: prediction-ensemble removed (2025-01) - archived
-          if [[ "$LAMBDA_NAME" == "followup-action" && "$FA_CHANGED" == "true" ]]; then
-            SHOULD_BUILD="true"
-            echo "Building $LAMBDA_NAME: path changed"
-          fi
+          # NOTE: followup-action removed (2026-05) - Bedrock action group cleanup
           if [[ "$LAMBDA_NAME" == "analysis-followup" && "$AF_CHANGED" == "true" ]]; then
             SHOULD_BUILD="true"
             echo "Building $LAMBDA_NAME: path changed"
@@ -499,7 +477,6 @@ jobs:
           echo ""
           echo "Docker Lambda Builds:"
           echo "  Investment Research changed: ${{ needs.detect-changes.outputs.investment_research_changed }}"
-          echo "  Followup Action changed: ${{ needs.detect-changes.outputs.followup_action_changed }}"
           echo "  Analysis Followup changed: ${{ needs.detect-changes.outputs.analysis_followup_changed }}"
           echo "  Build job result: ${{ needs.build-docker-lambdas.result }}"
           echo ""

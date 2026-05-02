@@ -103,33 +103,16 @@ variable "create_agent_version" {
 }
 
 # ================================================
-# Followup Agent Action Group Variables
+# REMOVED VARIABLES (2025-01 + 2026-05 Cleanup)
 # ================================================
-# NOTE: Expert agent action group variables (action_group_lambda_arn,
+# Followup agent action group variables (enable_followup_action_group,
+# followup_action_lambda_arn, followup_action_lambda_function_name) removed
+# 2026-05 alongside the followup Bedrock Agent and ReportResearch action group.
+# Expert agent action group variables (action_group_lambda_arn,
 # action_group_lambda_function_name, enable_action_groups) were removed
-# when the prediction ensemble was archived (2025-01)
-
-variable "enable_followup_action_group" {
-  description = "Whether to create action group for followup agent"
-  type        = bool
-  default     = false
-}
-
-variable "followup_action_lambda_arn" {
-  description = "ARN of the Lambda function that handles followup action group invocations"
-  type        = string
-  default     = null
-}
-
-variable "followup_action_lambda_function_name" {
-  description = "Name of the Lambda function that handles followup action group invocations"
-  type        = string
-  default     = null
-}
-
+# when the prediction ensemble was archived (2025-01).
 # ================================================
-# REMOVED VARIABLES (2025-01 Cleanup)
-# ================================================
+# Other REMOVED VARIABLES:
 # The following variables were removed as part of RAG chatbot deprecation:
 #
 # Pinecone/Secrets:

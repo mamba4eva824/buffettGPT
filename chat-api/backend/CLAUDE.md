@@ -1,42 +1,21 @@
 # Backend - Lambda & Docker Rules
 
-## 🏗️ Supervisor Agent Architecture
+## 🏗️ Agent Architecture
 
-### Agent Types & APIs
+Two live agents, both using **Bedrock Runtime** (`converse_stream`) with inline `tools`:
 
-| Agent | API | Prompt Location | Streaming | Action Groups |
-|-------|-----|-----------------|-----------|---------------|
-| **Expert Agents** (debt, cashflow, growth) | `invoke_agent()` | Terraform `.txt` files | No (full response → supervisor) | Yes |
-| **Supervisor** | `converse_stream()` | `orchestrator.py:520-640` | Yes (token → frontend) | No |
+| Agent | Handler | API | Tools |
+|-------|---------|-----|-------|
+| **Follow-up Q&A** | `src/handlers/analysis_followup.py` | `bedrock_runtime.converse_stream` | 6 inline tools (getReportSection, getReportRatings, getMetricsHistory, getAvailableReports, compareStocks, getFinancialSnapshot) |
+| **Market Intelligence** | `src/handlers/market_intel_chat.py` | `bedrock_runtime.converse_stream` | 9 inline tools (screenStocks, getSectorOverview, getTopCompanies, etc.) |
 
-- **Expert agents** use `invoke_agent()` (bedrock-agent-runtime) which supports action groups
-- **Supervisor** uses `converse_stream()` (bedrock-runtime) for true token streaming but no action groups
+Tool dispatch is unified in `src/utils/unified_tool_executor.py` — both agents share the same `execute_tool(tool_name, tool_input)` entry point.
 
-### Inference Flow (Hybrid Mode)
+**Deprecated patterns (do not reintroduce):**
+- Bedrock **Agents** (`bedrock-agent-runtime.invoke_agent`) with **action groups** — removed 2025-01 (expert agents) and 2026-05 (follow-up agent).
+- Docker action-group Lambdas (e.g. `followup-action`, `prediction-ensemble`) — removed alongside their Bedrock Agents.
 
-```
-Stage 1: Connection
-Stage 2: orchestrator.py → fetch_and_run_inference()
-         └─ Runs ML inference for all 3 models (debt, cashflow, growth)
-         └─ Emits inference events to frontend bubbles
-
-Stage 3: Expert Agents (parallel via asyncio.gather)
-         └─ User message includes pre-computed inference
-         └─ Agents call action group with skip_inference=true
-         └─ Action group returns value_metrics only (no duplicate inference)
-
-Stage 4: Supervisor (streaming)
-         └─ Receives 3 expert analyses
-         └─ Synthesizes into final verdict
-         └─ Streams tokens to frontend
-```
-
-### Feature Flag: USE_ACTION_GROUP_MODE
-
-| Mode | Inference Source | Metrics Source |
-|------|------------------|----------------|
-| `true` (hybrid) | Orchestrator Stage 2 → passed in prompt | Action group (skip_inference=true) |
-| `false` (pre-computed) | Orchestrator Stage 2 → passed in prompt | Passed in prompt (no action group call) |
+When adding a new tool, extend `unified_tool_executor.py` and the agent's `*_TOOLS` schema array. Do **not** create a Bedrock Agent or action group.
 
 ---
 

@@ -57,10 +57,6 @@ locals {
     # Bedrock Configuration
     BEDROCK_REGION = var.bedrock_region
 
-    # Follow-up Agent Configuration (for investment research follow-up questions)
-    FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
-    FOLLOWUP_AGENT_ALIAS = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
-
     # FMP API Configuration (Ensemble Analysis)
     FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
     FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
@@ -195,11 +191,10 @@ module "lambda" {
 
   # NOTE: model_s3_bucket and prediction_ensemble_image_tag removed (2025-01)
   # See: archived/prediction_ensemble/
-
-  # Followup Action Lambda (Bedrock action group handler)
-  # Docker image pushed to ECR - enable Lambda creation
-  create_followup_action_lambda = true
-  followup_action_image_tag     = "latest"
+  #
+  # NOTE: followup-action Lambda + Bedrock action group removed (2026-05).
+  # The follow-up agent now runs via Bedrock Runtime converse_stream + inline
+  # tools in chat-api/backend/src/handlers/analysis_followup.py.
 
   # Analysis Followup Lambda — Docker variant (LWA streaming).
   # Dev runs the FastAPI+LWA image AND owns the shared ECR repository.
@@ -207,17 +202,12 @@ module "lambda" {
   create_analysis_followup_docker     = true
   create_analysis_followup_docker_ecr = true
 
-  # DynamoDB table ARNs for followup-action Lambda IAM policy
-  # These use the actual table ARNs from the dynamodb module to ensure correct permissions
-  investment_reports_v2_table_arn = module.dynamodb.investment_reports_v2_table_arn
-  financial_data_cache_table_arn  = module.dynamodb.financial_data_cache_table_arn
-
-  # DynamoDB table names for followup-action Lambda environment variables
-  # These use the actual table names from the dynamodb module (not project-prefixed)
+  # DynamoDB table ARNs / names — kept for use by Lambdas that read these tables
+  # (analysis_followup, etc.) via IAM policies and env vars.
+  investment_reports_v2_table_arn  = module.dynamodb.investment_reports_v2_table_arn
+  financial_data_cache_table_arn   = module.dynamodb.financial_data_cache_table_arn
   investment_reports_v2_table_name = module.dynamodb.investment_reports_v2_table_name
   financial_data_cache_table_name  = module.dynamodb.financial_data_cache_table_name
-
-  # Metrics History Cache table for followup-action Lambda
   metrics_history_cache_table_arn  = module.dynamodb.metrics_history_cache_table_arn
   metrics_history_cache_table_name = module.dynamodb.metrics_history_cache_table_name
 
@@ -361,9 +351,13 @@ module "monitoring" {
 }
 
 # ================================================
-# Bedrock Module - Expert Agents Only
+# Bedrock Module — IAM service role only
 # ================================================
 # Updated 2025-01: Removed Knowledge Base, Pinecone, and Guardrails
+# Updated 2026-05: Removed follow-up Bedrock Agent + ReportResearch action group.
+#                  The live follow-up agent runs on Bedrock Runtime
+#                  converse_stream + inline tools (no Bedrock Agent needed).
+#                  This module now only provisions the agent IAM service role.
 
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -372,28 +366,9 @@ module "bedrock" {
   environment  = local.environment
   aws_region   = var.aws_region
 
-  # Agent Configuration
-  agent_name          = var.bedrock_agent_name
-  agent_description   = var.bedrock_agent_description
-  foundation_model_id = var.bedrock_foundation_model
-  agent_instruction   = var.bedrock_agent_instruction
-
-  # Enable prompt override to customize temperature and instructions
-  enable_prompt_override = true
-
-  # Create agent version after deployment
-  # Set to true to use versioned routing (prevents DRAFT routing issues)
-  create_agent_version = true
-
-  # NOTE: Expert Agent action groups removed (2025-01) - prediction ensemble archived
-  # See: archived/prediction_ensemble/
-
-  # Action Group for Follow-up Agent
-  # Uses dedicated followup-action Lambda for report data retrieval
-  # Docker image pushed to ECR and Lambda creation enabled
-  enable_followup_action_group         = true
-  followup_action_lambda_arn           = module.lambda.followup_action_arn
-  followup_action_lambda_function_name = module.lambda.followup_action_name
+  foundation_model_id        = var.bedrock_foundation_model
+  source_bucket_arn          = ""
+  attach_bedrock_full_access = false
 }
 
 # ================================================

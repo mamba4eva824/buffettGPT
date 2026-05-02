@@ -95,13 +95,6 @@ def verify_jwt_token(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         logger.error(f"JWT verification error: {e}")
         return None
 
-# Initialize Bedrock clients
-# bedrock-agent-runtime: For invoke_agent API (agent with action groups)
-bedrock_agent_client = boto3.client(
-    'bedrock-agent-runtime',
-    region_name=os.environ.get('BEDROCK_REGION', 'us-east-1')
-)
-
 # bedrock-runtime: For converse_stream API (direct model invocation with token tracking)
 bedrock_runtime_client = boto3.client(
     'bedrock-runtime',
@@ -113,9 +106,6 @@ FOLLOWUP_MODEL_ID = os.environ.get(
     'FOLLOWUP_MODEL_ID',
     'us.anthropic.claude-haiku-4-5-20251001-v1:0'
 )
-
-# Keep backward compatibility alias
-bedrock_client = bedrock_agent_client
 
 # Initialize DynamoDB for message persistence
 dynamodb = boto3.resource('dynamodb')

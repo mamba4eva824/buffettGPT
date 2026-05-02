@@ -68,18 +68,11 @@ output "dynamodb_tables" {
 }
 
 # ================================================
-# Bedrock Outputs
+# Bedrock Outputs (removed 2026-05)
 # ================================================
-
-output "bedrock_agent_id" {
-  description = "The ID of the Bedrock agent"
-  value       = module.bedrock.followup_agent_id
-}
-
-output "bedrock_agent_alias_id" {
-  description = "The alias ID of the Bedrock agent"
-  value       = module.bedrock.followup_agent_alias_id
-}
+# bedrock_agent_id and bedrock_agent_alias_id removed alongside the follow-up
+# Bedrock Agent + ReportResearch action group cleanup. The follow-up agent now
+# runs on Bedrock Runtime converse_stream + inline tools — no Bedrock Agent.
 
 # ================================================
 # Access Instructions Output
