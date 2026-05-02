@@ -52,10 +52,6 @@ locals {
     # Bedrock Configuration
     BEDROCK_REGION = var.bedrock_region
 
-    # Follow-up Agent Configuration (for investment research follow-up questions)
-    FOLLOWUP_AGENT_ID    = try(module.bedrock.followup_agent_id, "")
-    FOLLOWUP_AGENT_ALIAS = "TSTALIASID"  # Test alias routes to DRAFT (has action groups)
-
     # FMP API Configuration (Ensemble Analysis)
     FMP_SECRET_NAME            = "${local.project_name}-${local.environment}-fmp"
     FINANCIAL_DATA_CACHE_TABLE = try(module.dynamodb.financial_data_cache_table_name, "")
@@ -188,10 +184,9 @@ module "lambda" {
   # KMS key for DynamoDB encryption
   kms_key_arn = module.core.kms_key_arn
 
-  # Followup Action Lambda (Bedrock action group handler)
-  # Docker image NOT yet pushed to staging ECR - disable Lambda creation
-  create_followup_action_lambda = false
-  followup_action_image_tag     = "latest"
+  # NOTE: followup-action Lambda + Bedrock action group removed (2026-05).
+  # The follow-up agent now runs via Bedrock Runtime converse_stream + inline
+  # tools in chat-api/backend/src/handlers/analysis_followup.py.
 
   # Analysis Followup Lambda — Docker variant (LWA streaming).
   # Staging consumes the dev-managed ECR repo (data lookup); does NOT create the
@@ -342,9 +337,12 @@ module "monitoring" {
 }
 
 # ================================================
-# Bedrock Module - Expert Agents Only
+# Bedrock Module — IAM service role only
 # ================================================
 # Updated 2025-01: Removed Knowledge Base, Pinecone, and Guardrails
+# Updated 2026-05: Removed follow-up Bedrock Agent + ReportResearch action group.
+#                  The live follow-up agent runs on Bedrock Runtime
+#                  converse_stream + inline tools (no Bedrock Agent needed).
 
 module "bedrock" {
   source = "../../modules/bedrock"
@@ -353,21 +351,9 @@ module "bedrock" {
   environment  = local.environment
   aws_region   = var.aws_region
 
-  # Agent Configuration
-  agent_name          = var.bedrock_agent_name
-  agent_description   = var.bedrock_agent_description
-  foundation_model_id = var.bedrock_foundation_model
-  agent_instruction   = var.bedrock_agent_instruction
-
-  # Enable prompt override to customize temperature and instructions
-  enable_prompt_override = true
-
-  # Agent versioning - set to true to use versioned routing (not DRAFT)
-  create_agent_version = true
-
-  # Action Group for Follow-up Agent
-  # Docker image NOT yet pushed to staging ECR - disable action group
-  enable_followup_action_group = false
+  foundation_model_id        = var.bedrock_foundation_model
+  source_bucket_arn          = ""
+  attach_bedrock_full_access = false
 }
 
 # ================================================

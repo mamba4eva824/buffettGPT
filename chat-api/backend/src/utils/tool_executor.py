@@ -1,10 +1,10 @@
 """
 Tool Executor for Follow-Up Agent
 
-Implements the 4 tool functions that replace Bedrock Agent action groups.
-Queries DynamoDB directly for investment reports and metrics.
-
-Based on followup_action/services/report_service.py action group Lambda.
+Implements the tool functions invoked via Bedrock Runtime converse_stream's
+inline `tools` parameter. Queries DynamoDB directly for investment reports
+and metrics. (The deprecated followup-action action-group Lambda was removed
+in 2026-05; this module is the live replacement.)
 """
 
 import json

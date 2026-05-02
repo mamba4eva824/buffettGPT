@@ -16,12 +16,14 @@
 - **Expert agents** use `invoke_agent()` API which loads system prompts from Bedrock agent configuration (Terraform-managed)
 - **Supervisor** uses `converse_stream()` API for true token streaming, which requires inline system prompt (Python code)
 
-### Action Group Schema
+### Action Groups (REMOVED)
 
-The action group schema defines the API that agents can call:
-- **File**: `modules/bedrock/schemas/value_investor_action.yaml`
-- **Endpoint**: `/analyze` with `ticker`, `analysis_type`, and `skip_inference` parameters
-- **Handler**: `backend/lambda/prediction_ensemble/handlers/action_group.py`
+Bedrock Agents action groups were used by the deprecated expert agent (Debt/Cashflow/Growth) and follow-up agent architectures. Both have been removed:
+
+- Expert agent action group (`value_investor_action.yaml`, `prediction_ensemble`) — archived 2025-01.
+- Follow-up agent action group (`followup_action.yaml`, `followup-action` Docker Lambda) — removed 2026-05.
+
+Live agents (`analysis_followup`, `market_intel_chat`) now use **Bedrock Runtime `converse_stream` with inline `tools`**. Tool schemas live in the Python handlers under `chat-api/backend/src/handlers/`. No Bedrock Agent or action group is needed.
 
 ---
 

@@ -100,12 +100,8 @@ variable "investment_research_image_tag" {
   default     = "latest"
 }
 
-# Followup Action Variables
-variable "followup_action_image_tag" {
-  description = "Docker image tag for followup action Lambda (Bedrock action group handler)"
-  type        = string
-  default     = "v1.0.0"
-}
+# NOTE: followup_action_image_tag removed (2026-05) along with the
+# followup-action Docker Lambda + Bedrock action group.
 
 # Analysis Followup Variables
 variable "analysis_followup_image_tag" {
@@ -136,44 +132,43 @@ variable "analysis_followup_cors_allowed_origins" {
   ]
 }
 
-variable "create_followup_action_lambda" {
-  description = "Whether to create the followup action Lambda. Set to false on first deploy until Docker image is pushed to ECR."
-  type        = bool
-  default     = false
-}
+# NOTE: create_followup_action_lambda removed (2026-05) along with the
+# followup-action Docker Lambda + Bedrock action group.
 
+# DynamoDB table references (kept after 2026-05 followup-action cleanup —
+# still used by other Lambdas for IAM policies and env vars).
 variable "investment_reports_v2_table_arn" {
-  description = "ARN of the investment reports v2 DynamoDB table for followup-action Lambda IAM policy"
+  description = "ARN of the investment reports v2 DynamoDB table"
   type        = string
   default     = ""
 }
 
 variable "financial_data_cache_table_arn" {
-  description = "ARN of the financial data cache DynamoDB table for followup-action Lambda IAM policy"
+  description = "ARN of the financial data cache DynamoDB table"
   type        = string
   default     = ""
 }
 
 variable "investment_reports_v2_table_name" {
-  description = "Name of the investment reports v2 DynamoDB table for followup-action Lambda env var"
+  description = "Name of the investment reports v2 DynamoDB table"
   type        = string
   default     = ""
 }
 
 variable "financial_data_cache_table_name" {
-  description = "Name of the financial data cache DynamoDB table for followup-action Lambda env var"
+  description = "Name of the financial data cache DynamoDB table"
   type        = string
   default     = ""
 }
 
 variable "metrics_history_cache_table_arn" {
-  description = "ARN of the metrics history cache DynamoDB table for followup-action Lambda IAM policy"
+  description = "ARN of the metrics history cache DynamoDB table"
   type        = string
   default     = ""
 }
 
 variable "metrics_history_cache_table_name" {
-  description = "Name of the metrics history cache DynamoDB table for followup-action Lambda env var"
+  description = "Name of the metrics history cache DynamoDB table"
   type        = string
   default     = ""
 }
