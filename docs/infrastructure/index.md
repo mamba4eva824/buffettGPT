@@ -24,6 +24,7 @@ BuffettGPT runs entirely on AWS with infrastructure managed through Terraform:
 | [Deployment](deployment.md) | CI/CD pipelines and environment promotion |
 | [EventBridge EOD Pipeline](eventbridge-eod-pipeline.md) | Daily S&P 500 price ingestion via EventBridge |
 | [EventBridge Earnings Update](eventbridge-earnings-update.md) | 2x daily earnings ingestion for recently reported companies |
+| [Investment Research Lambda Revival](investment-research-lambda-revival.md) | Recovery runbook for the Inactive/502 state on `buffett-dev-investment-research` |
 
 ## Terraform Modules
 
